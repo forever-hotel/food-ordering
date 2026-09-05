@@ -1,0 +1,27 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: foss-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: food_ordering
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: foss-rabbitmq
+    restart: unless-stopped
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+
+volumes:
+  postgres_data:
+  rabbitmq_data:
