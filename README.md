@@ -1,15 +1,15 @@
 # Forever Hotel Food Ordering System
 
 Food ordering application for the Forever Hotel Management System. The
-repository currently contains the initial frontend and backend application
-scaffolds. Food browsing, cart management, ordering, and order tracking are
-planned features and are not implemented yet.
+repository currently contains the initial frontend and backend scaffolds.
+Food browsing, cart management, ordering, and order tracking are planned
+features and are not implemented yet.
 
 ## Project Structure
 
-- `frontend/` - Next.js 16 application using React, TypeScript, and Tailwind CSS
+- `frontend/` - Next.js 16 application using React 19, TypeScript, and Tailwind CSS 4
 - `backend/` - NestJS 12 application using TypeScript
-- `docker-compose.yml` - optional local PostgreSQL and RabbitMQ services
+- `docker-compose.yml` - optional local PostgreSQL 16 and RabbitMQ 3 services
 
 ## Prerequisites
 
@@ -29,9 +29,17 @@ cd ../frontend
 npm install
 ```
 
-No environment files are required for the current implementation. The
-frontend uses `http://localhost:3001` as its default API URL, and the backend
-uses port `3001` with CORS enabled for `http://localhost:3000`.
+No environment files are required for the default local setup. The available
+configuration variables are:
+
+| Application | Variable              | Default                 | Purpose                                    |
+| ----------- | --------------------- | ----------------------- | ------------------------------------------ |
+| Frontend    | `NEXT_PUBLIC_API_URL` | `http://localhost:3001` | Base URL reserved for backend API requests |
+| Backend     | `PORT`                | `3001`                  | HTTP listening port                        |
+| Backend     | `FRONTEND_URL`        | `http://localhost:3000` | Allowed CORS origin                        |
+
+To override the frontend API URL, create `frontend/.env.local`. Backend
+variables can be exported in the shell before starting the application.
 
 ## Run the Applications
 
@@ -45,7 +53,8 @@ npm run start:dev
 ```
 
 The backend is available at [http://localhost:3001](http://localhost:3001).
-Its current health check is `GET /`, which returns the NestJS starter response.
+Its only current route is `GET /`, which returns the NestJS starter response
+`Hello World!`.
 
 Start the frontend in the second terminal:
 
@@ -56,11 +65,21 @@ npm run dev
 
 The frontend is available at [http://localhost:3000](http://localhost:3000).
 
-To use a different backend URL, create `frontend/.env.local`:
+Example frontend override:
 
 ```env
 NEXT_PUBLIC_API_URL=http://localhost:3001
 ```
+
+Example backend overrides in PowerShell:
+
+```powershell
+$env:PORT = '3010'
+$env:FRONTEND_URL = 'http://localhost:3000'
+npm run start:dev
+```
+
+When the backend port is changed, update `NEXT_PUBLIC_API_URL` to match it.
 
 ## Optional Local Services
 
@@ -78,6 +97,9 @@ Available service endpoints:
 - RabbitMQ: `localhost:5672`
 - RabbitMQ Management UI: [http://localhost:15672](http://localhost:15672)
   (`guest` / `guest`)
+
+The Compose service names are `postgres` and `rabbitmq`; the local container
+names are `foss-postgres` and `foss-rabbitmq`.
 
 Check or stop the services:
 
@@ -114,12 +136,18 @@ npm run format:check
 npm run build
 ```
 
-## Current Status
+## Current Implementation Status
 
-- Frontend: default Next.js starter page
-- Backend: NestJS starter endpoint and tests
+- Frontend: default Next.js starter page; no food ordering screens are
+  implemented yet
+- Backend: NestJS starter endpoint at `GET /`, with CORS configuration and
+  starter unit/e2e tests
+- API client: backend base URL constant exists in `frontend/libs/api.ts`, but
+  no requests are currently made from the UI
 - Database and messaging: Docker Compose services are available, but not yet
   connected to the backend
+- Authentication, menus, carts, orders, payments, and order tracking: not yet
+  implemented
 
 Update this README and the relevant environment documentation whenever a new
 runtime dependency, service, or configuration variable is introduced.
