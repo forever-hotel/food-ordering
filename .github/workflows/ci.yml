@@ -21,6 +21,24 @@ jobs:
     name: Backend - Lint, Format, Test & Build
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: foss_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d foss_test"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/foss_test
+
     defaults:
       run:
         working-directory: backend
@@ -38,6 +56,9 @@ jobs:
 
       - name: Install backend dependencies
         run: npm ci
+
+      - name: Run database migrations
+        run: npm run migration:run
 
       - name: Run backend lint
         run: npm run lint

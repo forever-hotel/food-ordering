@@ -29,17 +29,20 @@ cd ../frontend
 npm install
 ```
 
-No environment files are required for the default local setup. The available
-configuration variables are:
+The available configuration variables are:
 
 | Application | Variable              | Default                 | Purpose                                    |
 | ----------- | --------------------- | ----------------------- | ------------------------------------------ |
 | Frontend    | `NEXT_PUBLIC_API_URL` | `http://localhost:3001` | Base URL reserved for backend API requests |
 | Backend     | `PORT`                | `3001`                  | HTTP listening port                        |
 | Backend     | `FRONTEND_URL`        | `http://localhost:3000` | Allowed CORS origin                        |
+| Backend     | `DATABASE_URL`        | Required; no default    | PostgreSQL connection URL                  |
+| Backend     | `RABBITMQ_URL`        | `amqp://localhost:5672` | RabbitMQ connection string                 |
 
 To override the frontend API URL, create `frontend/.env.local`. Backend
-variables can be exported in the shell before starting the application.
+variables must be defined in the shell or a local `.env` file before starting
+the application. Copy the example values from `backend/.env.example` into a
+`backend/.env` file when working locally.
 
 ## Run the Applications
 
@@ -81,10 +84,42 @@ npm run start:dev
 
 When the backend port is changed, update `NEXT_PUBLIC_API_URL` to match it.
 
+## Database Development
+
+The backend uses PostgreSQL with TypeORM.
+
+Database schema changes are managed through version-controlled migrations.
+Automatic TypeORM schema synchronization is disabled.
+
+### Start the Development Database
+
+Start the configured PostgreSQL development environment:
+
+```bash
+docker compose up -d
+```
+
+### Run Migrations
+
+From the `backend/` directory, apply the pending migrations:
+
+```bash
+npm run migration:run
+```
+
+Other migration commands are available for inspecting, creating, generating,
+and reverting migrations:
+
+```bash
+npm run migration:show
+npm run migration:create -- src/database/migrations/MigrationName
+npm run migration:generate -- src/database/migrations/MigrationName
+npm run migration:revert
+```
+
 ## Optional Local Services
 
-The Compose file starts PostgreSQL and RabbitMQ for future application
-integration. The current backend does not connect to either service yet.
+The Compose file also starts RabbitMQ for future application integration.
 
 ```bash
 docker compose up -d
@@ -144,7 +179,9 @@ npm run build
   starter unit/e2e tests
 - API client: backend base URL constant exists in `frontend/libs/api.ts`, but
   no requests are currently made from the UI
-- Database and messaging: Docker Compose services are available, but not yet
+- Database: PostgreSQL is configured through TypeORM and managed with
+  version-controlled migrations
+- Messaging: RabbitMQ is available through Docker Compose, but is not yet
   connected to the backend
 - Authentication, menus, carts, orders, payments, and order tracking: not yet
   implemented
