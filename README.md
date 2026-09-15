@@ -36,10 +36,13 @@ The available configuration variables are:
 | Frontend    | `NEXT_PUBLIC_API_URL` | `http://localhost:3001` | Base URL reserved for backend API requests |
 | Backend     | `PORT`                | `3001`                  | HTTP listening port                        |
 | Backend     | `FRONTEND_URL`        | `http://localhost:3000` | Allowed CORS origin                        |
-| Backend     | `DATABASE_URL`        | `postgresql://postgres:postgres@localhost:5432/food_ordering` | PostgreSQL connection URL |
+| Backend     | `DATABASE_URL`        | Required; no default    | PostgreSQL connection URL                  |
+| Backend     | `RABBITMQ_URL`        | `amqp://localhost:5672` | RabbitMQ connection string                 |
 
 To override the frontend API URL, create `frontend/.env.local`. Backend
-variables can be exported in the shell before starting the application.
+variables must be defined in the shell or a local `.env` file before starting
+the application. Copy the example values from `backend/.env.example` into a
+`backend/.env` file when working locally.
 
 ## Run the Applications
 

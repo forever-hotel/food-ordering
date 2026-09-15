@@ -22,7 +22,7 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config ./test/jest-e2e.json",
     "migration:create": "typeorm migration:create",
-    "migration:generate": "typeorm-ts-node-esm migration:generate",
+    "migration:generate": "typeorm-ts-node-esm migration:generate -d ./src/database/data-source.ts",
     "migration:show": "typeorm-ts-node-esm migration:show -d ./src/database/data-source.ts",
     "migration:run": "typeorm-ts-node-esm migration:run -d ./src/database/data-source.ts",
     "migration:revert": "typeorm-ts-node-esm migration:revert -d ./src/database/data-source.ts"
