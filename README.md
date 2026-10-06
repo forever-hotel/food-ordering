@@ -36,13 +36,18 @@ The available configuration variables are:
 | Frontend    | `NEXT_PUBLIC_API_URL` | `http://localhost:3001` | Base URL reserved for backend API requests |
 | Backend     | `PORT`                | `3001`                  | HTTP listening port                        |
 | Backend     | `FRONTEND_URL`        | `http://localhost:3000` | Allowed CORS origin                        |
-| Backend     | `DATABASE_URL`        | Required; no default    | PostgreSQL connection URL                  |
-| Backend     | `RABBITMQ_URL`        | `amqp://localhost:5672` | RabbitMQ connection string                 |
+| Backend     | `DATABASE_URL`        | Required; no default    | PostgreSQL URL, for example `postgresql://postgres:postgres@localhost:5432/food_ordering` |
+| Backend     | `RABBITMQ_URL`        | `amqp://localhost:5672` | Reserved RabbitMQ URL; not used by the backend yet |
 
 To override the frontend API URL, create `frontend/.env.local`. Backend
 variables must be defined in the shell or a local `.env` file before starting
 the application. Copy the example values from `backend/.env.example` into a
-`backend/.env` file when working locally.
+`backend/.env` file when working locally. The `DATABASE_URL` value must be a
+valid PostgreSQL URL, for example:
+
+```env
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/food_ordering
+```
 
 ## Run the Applications
 
@@ -188,3 +193,21 @@ npm run build
 
 Update this README and the relevant environment documentation whenever a new
 runtime dependency, service, or configuration variable is introduced.
+
+## Planned Backend Structure
+
+The backend currently contains the NestJS starter application and TypeORM
+database infrastructure. The following directories are reserved for the
+planned Forever Hotel backend structure; they are not implemented or
+registered as NestJS modules yet.
+
+```text
+backend/src/
+├── config/         # Planned environment-driven configuration
+├── common/         # Planned cross-cutting reusable backend code
+├── database/       # TypeORM connection and persistence infrastructure
+├── messaging/      # Planned RabbitMQ infrastructure
+├── realtime/       # Planned shared real-time platform adapter
+├── integrations/   # Planned Auth Service, KMS and WKMS clients
+├── health/         # Planned liveness/readiness endpoints
+└── modules/        # Planned FOSS domain modules
