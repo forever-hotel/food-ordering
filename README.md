@@ -176,14 +176,24 @@ npm run format:check
 npm run build
 ```
 
+If the frontend app routes are moved or renamed, remove the generated Next.js
+output before rebuilding so stale type validators are not used:
+
+```powershell
+cd frontend
+Remove-Item -Recurse -Force .next
+npm run build
+```
+
 ## Current Implementation Status
 
 - Frontend: default Next.js starter page; no food ordering screens are
   implemented yet
 - Backend: NestJS starter endpoint at `GET /`, with CORS configuration and
   starter unit/e2e tests
-- API client: backend base URL constant exists in `frontend/libs/api.ts`, but
-  no requests are currently made from the UI
+- API client: backend base URL constant exists in
+  `frontend/src/lib/api/config.ts`, but no requests are currently made from
+  the UI
 - Database: PostgreSQL is configured through TypeORM and managed with
   version-controlled migrations
 - Messaging: RabbitMQ is available through Docker Compose, but is not yet
@@ -211,3 +221,22 @@ backend/src/
 ├── integrations/   # Planned Auth Service, KMS and WKMS clients
 ├── health/         # Planned liveness/readiness endpoints
 └── modules/        # Planned FOSS domain modules
+```
+
+## Frontend Architecture
+
+The FOSS Guest App follows the Forever Hotel standard Next.js App Router
+structure.
+
+```text
+frontend/src/
+├── app/          # Routes and layouts
+├── components/   # Reusable shared UI
+├── features/     # FOSS business features
+├── lib/          # API, auth and realtime infrastructure
+├── hooks/        # Shared hooks
+├── providers/    # Application providers
+├── config/       # Frontend configuration
+├── types/        # Shared TypeScript types
+└── styles/       # Shared styles
+```
