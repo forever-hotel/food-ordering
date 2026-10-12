@@ -9,15 +9,15 @@ describe('FossSessionRepository', () => {
 
   let typeOrmRepository: {
     findOne: jest.MockedFunction<Repository<FossSession>['findOne']>;
-    save: jest.MockedFunction<
-      (session: FossSession) => Promise<FossSession>
-    >;
+    save: jest.MockedFunction<(session: FossSession) => Promise<FossSession>>;
   };
 
   beforeEach(() => {
     typeOrmRepository = {
       findOne: jest.fn(),
-      save: jest.fn(async (session: FossSession): Promise<FossSession> => session),
+      save: jest.fn(
+        async (session: FossSession): Promise<FossSession> => session,
+      ),
     };
 
     repository = new FossSessionRepository(
