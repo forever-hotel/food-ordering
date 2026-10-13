@@ -11,6 +11,28 @@ features and are not implemented yet.
 - `backend/` - NestJS 12 application using TypeScript
 - `docker-compose.yml` - optional local PostgreSQL 16 and RabbitMQ 3 services
 
+## Quick Start
+
+For a local development setup, start the supporting services once with Docker:
+
+```bash
+docker compose up -d
+```
+
+Then open two terminals and run the backend and frontend separately:
+
+```bash
+cd backend
+npm install
+npm run start:dev
+```
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
 ## Prerequisites
 
 - Node.js 20 or later
