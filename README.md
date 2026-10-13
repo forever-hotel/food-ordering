@@ -111,6 +111,44 @@ npm run start:dev
 
 When the backend port is changed, update `NEXT_PUBLIC_API_URL` to match it.
 
+## Booking and Room Verification (Development Mock)
+
+FOSS uses a `BookingProvider` abstraction to verify a booking and its
+associated room before guest authentication. While the authoritative hotel
+Booking and Room services are under development, FOSS uses an in-memory mock
+provider for local development and tests.
+
+The mock provider is disabled when `NODE_ENV=production`.
+
+### Mock Bookings
+
+| Room | Booking status |
+| ---- | -------------- |
+| 101  | `CHECKED_IN`   |
+| 102  | `RESERVED`     |
+| 103  | `CANCELLED`    |
+| 104  | `CHECKED_OUT`  |
+
+### Verification Rules
+
+A booking is accepted only when all of the following conditions are met:
+
+- The booking exists.
+- Its returned ID matches the requested ID.
+- Its status is `CHECKED_IN`.
+- Its room number matches the requested room.
+- The current time is within the permitted stay period.
+
+### Future Real Integration
+
+When the authoritative hotel service is ready, replace
+`MockBookingProvider` with an adapter that implements `BookingProvider`.
+Confirm the final API contract, booking status values, authentication
+requirements, and timeout handling as part of that integration.
+
+> **Important:** Mock verification is for local development and tests only. It
+> is not production authentication.
+
 ## Database Development
 
 The backend uses PostgreSQL with TypeORM.
