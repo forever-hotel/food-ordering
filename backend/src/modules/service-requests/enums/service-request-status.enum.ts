@@ -1,0 +1,6 @@
+export enum ServiceRequestStatus {
+  SUBMITTED = 'SUBMITTED',
+  ASSIGNED = 'ASSIGNED',
+  IN_PROGRESS = 'IN_PROGRESS',
+  COMPLETED = 'COMPLETED',
+}
