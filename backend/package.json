@@ -60,8 +60,10 @@
     "typescript": "^6.0.2"
   },
   "overrides": {
-    "multer": "2.3.0",
-    "undici": "6.28.1",
-    "tmp": "0.2.7"
+    "multer": "2.5.0",
+    "undici": "6.29.1",
+    "tmp": "0.2.7",
+    "body-parser": "2.4.0",
+    "fast-uri": "3.1.9"
   }
 }
