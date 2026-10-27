@@ -1,17 +1,7 @@
 name: FOSS CI
 
 on:
-  push:
-    branches:
-      - main
-      - develop
-      - "feature/**"
-      - "fix/**"
-
-  pull_request:
-    branches:
-      - main
-      - develop
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -45,17 +35,18 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
 
       - name: Set up Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: "24"
-          cache: npm
-          cache-dependency-path: backend/package-lock.json
+          package-manager-cache: false
 
       - name: Install backend dependencies
-        run: npm ci
+        run: npm ci --ignore-scripts --no-fund
 
       - name: Run database migrations
         run: npm run migration:run
@@ -85,17 +76,18 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
 
       - name: Set up Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: "24"
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          package-manager-cache: false
 
       - name: Install frontend dependencies
-        run: npm ci
+        run: npm ci --ignore-scripts --no-fund
 
       - name: Run frontend lint
         run: npm run lint
@@ -110,16 +102,18 @@ jobs:
     name: Dependency Security Scan
     runs-on: ubuntu-latest
 
-    if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
 
       - name: Set up Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: "24"
+          package-manager-cache: false
 
       - name: Audit backend dependencies
         working-directory: backend
