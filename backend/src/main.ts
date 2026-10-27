@@ -8,9 +8,6 @@ async function bootstrap() {
     origin: process.env.FRONTEND_URL || 'http://localhost:3000',
   });
 
-  await app.listen(
-    process.env.PORT ?? 3001,
-    process.env.HOST || '::',
-  );
+  await app.listen(process.env.PORT ?? 3001, process.env.HOST || '::');
 }
 bootstrap();
