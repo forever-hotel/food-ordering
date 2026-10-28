@@ -33,4 +33,17 @@ export abstract class BookingProvider {
     bookingId: string,
     roomNumber: string,
   ): Promise<BookingRecord>;
+
+  /**
+   * Optional simulation hook to simulate FDS checkout on the underlying provider.
+   */
+  checkoutBooking?(bookingId: string): Promise<BookingRecord | null>;
+
+  /**
+   * Optional simulation hook to simulate FDS room reassignment on the underlying provider.
+   */
+  reassignRoom?(
+    bookingId: string,
+    newRoomNumber: string,
+  ): Promise<BookingRecord | null>;
 }

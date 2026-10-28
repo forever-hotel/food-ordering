@@ -17,6 +17,11 @@ describe('GuestSessionsController', () => {
     logout: jest.MockedFunction<
       (token: string) => Promise<{ success: boolean; message: string }>
     >;
+    handleFdsCheckoutEvent: jest.MockedFunction<(event: any) => Promise<any>>;
+    handleFdsRoomReassignEvent: jest.MockedFunction<
+      (event: any) => Promise<any>
+    >;
+    getProcessedEvent: jest.MockedFunction<(eventId: string) => any>;
   };
   let mockQrTokenService: {
     getDemoTokens: jest.MockedFunction<() => Record<string, string>>;
@@ -26,6 +31,9 @@ describe('GuestSessionsController', () => {
     mockGuestSessionsService = {
       authenticateWithQr: jest.fn<() => Promise<GuestSessionResponseDto>>(),
       logout: jest.fn<() => Promise<{ success: boolean; message: string }>>(),
+      handleFdsCheckoutEvent: jest.fn<() => Promise<any>>(),
+      handleFdsRoomReassignEvent: jest.fn<() => Promise<any>>(),
+      getProcessedEvent: jest.fn<() => any>(),
     };
 
     mockQrTokenService = {
@@ -166,6 +174,92 @@ describe('GuestSessionsController', () => {
       expect(result.tokens).toEqual({
         '101-checked-in': 'demo-qr-token-101',
       });
+    });
+  });
+
+  describe('handleCheckoutEvent', () => {
+    it('delegates valid checkout event to guestSessionsService', async () => {
+      const checkoutEvent = {
+        eventId: 'evt-checkout-1',
+        eventType: 'fds.guest.checkout' as const,
+        bookingId: 'book-101',
+        roomNumber: '101',
+        checkoutTime: '2026-10-28T12:00:00Z',
+      };
+
+      mockGuestSessionsService.handleFdsCheckoutEvent.mockResolvedValue({
+        success: true,
+        processed: true,
+        message: 'Revoked',
+        sessionRevoked: true,
+      });
+
+      const result = await controller.handleCheckoutEvent(checkoutEvent);
+      expect(
+        mockGuestSessionsService.handleFdsCheckoutEvent,
+      ).toHaveBeenCalledWith(checkoutEvent);
+      expect(result.sessionRevoked).toBe(true);
+    });
+
+    it('rejects checkout event when missing eventId or bookingId', async () => {
+      await expect(controller.handleCheckoutEvent(null as any)).rejects.toThrow(
+        BadRequestException,
+      );
+
+      await expect(
+        controller.handleCheckoutEvent({ eventId: '' } as any),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('handleRoomReassignEvent', () => {
+    it('delegates valid room reassign event to guestSessionsService', async () => {
+      const reassignEvent = {
+        eventId: 'evt-reassign-1',
+        eventType: 'fds.room.reassigned' as const,
+        bookingId: 'book-101',
+        previousRoomNumber: '101',
+        newRoomNumber: '105',
+        reassignedAt: '2026-10-28T12:00:00Z',
+      };
+
+      mockGuestSessionsService.handleFdsRoomReassignEvent.mockResolvedValue({
+        success: true,
+        processed: true,
+        message: 'Reassigned',
+        sessionRevoked: true,
+      });
+
+      const result = await controller.handleRoomReassignEvent(reassignEvent);
+      expect(
+        mockGuestSessionsService.handleFdsRoomReassignEvent,
+      ).toHaveBeenCalledWith(reassignEvent);
+      expect(result.sessionRevoked).toBe(true);
+    });
+
+    it('rejects room reassign event when required fields are missing', async () => {
+      await expect(
+        controller.handleRoomReassignEvent({
+          eventId: 'evt-1',
+          bookingId: 'book-1',
+          previousRoomNumber: '101',
+        } as any),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('getProcessedEvent', () => {
+    it('delegates event lookup to guestSessionsService', () => {
+      mockGuestSessionsService.getProcessedEvent.mockReturnValue({
+        processed: true,
+        event: { eventType: 'fds.guest.checkout' },
+      });
+
+      const result = controller.getProcessedEvent('evt-1');
+      expect(mockGuestSessionsService.getProcessedEvent).toHaveBeenCalledWith(
+        'evt-1',
+      );
+      expect(result.processed).toBe(true);
     });
   });
 });

@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
+import { InternalServiceGuard } from '../../common/auth/internal-service.guard.js';
 import { RoomOwnershipGuard } from '../../common/auth/room-ownership.guard.js';
 import { BookingInternalModule } from '../../integrations/internal-services/booking/booking-internal.module.js';
 import { FossSession } from './entities/foss-session.entity.js';
@@ -24,6 +25,7 @@ import { QrTokenService } from './services/qr-token.service.js';
     GuestSessionsService,
     GuestAuthGuard,
     RoomOwnershipGuard,
+    InternalServiceGuard,
   ],
   exports: [
     FossSessionRepository,
@@ -31,6 +33,7 @@ import { QrTokenService } from './services/qr-token.service.js';
     QrTokenService,
     GuestAuthGuard,
     RoomOwnershipGuard,
+    InternalServiceGuard,
     BookingInternalModule,
   ],
 })

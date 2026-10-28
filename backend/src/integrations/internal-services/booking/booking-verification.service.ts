@@ -69,4 +69,34 @@ export class BookingVerificationService {
       verifiedAt: new Date().toISOString(),
     };
   }
+
+  /**
+   * Simulates FDS checkout on the underlying provider (if supported, e.g. MockBookingAdapter).
+   */
+  async simulateCheckout(bookingId: string): Promise<boolean> {
+    if (typeof this.bookingProvider.checkoutBooking === 'function') {
+      const updated = await this.bookingProvider.checkoutBooking(
+        bookingId.trim(),
+      );
+      return updated !== null;
+    }
+    return false;
+  }
+
+  /**
+   * Simulates FDS room reassignment on the underlying provider (if supported, e.g. MockBookingAdapter).
+   */
+  async simulateRoomReassign(
+    bookingId: string,
+    newRoomNumber: string,
+  ): Promise<boolean> {
+    if (typeof this.bookingProvider.reassignRoom === 'function') {
+      const updated = await this.bookingProvider.reassignRoom(
+        bookingId.trim(),
+        newRoomNumber.trim(),
+      );
+      return updated !== null;
+    }
+    return false;
+  }
 }

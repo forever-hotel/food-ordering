@@ -12,8 +12,14 @@ import {
 } from '@nestjs/common';
 import type { Request } from 'express';
 
+import { InternalServiceGuard } from '../../common/auth/internal-service.guard.js';
 import { RoomOwnershipGuard } from '../../common/auth/room-ownership.guard.js';
 import { CurrentGuest } from './decorators/current-guest.decorator.js';
+import {
+  FdsCheckoutEventDto,
+  FdsEventResponseDto,
+  FdsRoomReassignEventDto,
+} from './dto/fds-events.dto.js';
 import { GuestSessionResponseDto } from './dto/guest-session-response.dto.js';
 import { VerifyQrDto } from './dto/verify-qr.dto.js';
 import { GuestAuthGuard } from './guards/guest-auth.guard.js';
@@ -116,5 +122,58 @@ export class GuestSessionsController {
     return {
       tokens: this.qrTokenService.getDemoTokens(),
     };
+  }
+
+  /**
+   * Internal webhook / demo endpoint to process FDS checkout events.
+   * Revokes the guest's active session and prevents subsequent access.
+   */
+  @Post('internal/events/checkout')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(InternalServiceGuard)
+  async handleCheckoutEvent(
+    @Body() body: FdsCheckoutEventDto,
+  ): Promise<FdsEventResponseDto> {
+    if (!body || typeof body !== 'object' || !body.eventId || !body.bookingId) {
+      throw new BadRequestException('eventId and bookingId are required.');
+    }
+    return this.guestSessionsService.handleFdsCheckoutEvent(body);
+  }
+
+  /**
+   * Internal webhook / demo endpoint to process FDS room reassignment events.
+   * Revokes previous room session to prevent cross-room access without re-verification.
+   */
+  @Post('internal/events/room-reassign')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(InternalServiceGuard)
+  async handleRoomReassignEvent(
+    @Body() body: FdsRoomReassignEventDto,
+  ): Promise<FdsEventResponseDto> {
+    if (
+      !body ||
+      typeof body !== 'object' ||
+      !body.eventId ||
+      !body.bookingId ||
+      !body.previousRoomNumber ||
+      !body.newRoomNumber
+    ) {
+      throw new BadRequestException(
+        'eventId, bookingId, previousRoomNumber, and newRoomNumber are required.',
+      );
+    }
+    return this.guestSessionsService.handleFdsRoomReassignEvent(body);
+  }
+
+  /**
+   * Internal lookup endpoint to verify processed event status by eventId.
+   */
+  @Get('internal/events/:eventId')
+  @UseGuards(InternalServiceGuard)
+  getProcessedEvent(@Param('eventId') eventId: string): {
+    processed: boolean;
+    event?: any;
+  } {
+    return this.guestSessionsService.getProcessedEvent(eventId);
   }
 }
