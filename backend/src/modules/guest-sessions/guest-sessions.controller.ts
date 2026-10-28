@@ -1,0 +1,84 @@
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
+import type { Request } from 'express';
+
+import { CurrentGuest } from './decorators/current-guest.decorator.js';
+import { GuestSessionResponseDto } from './dto/guest-session-response.dto.js';
+import { VerifyQrDto } from './dto/verify-qr.dto.js';
+import { GuestAuthGuard } from './guards/guest-auth.guard.js';
+import type { GuestContext } from './interfaces/guest-context.interface.js';
+import { GuestSessionsService } from './services/guest-sessions.service.js';
+import { QrTokenService } from './services/qr-token.service.js';
+
+interface AuthenticatedRequest extends Request {
+  guest: GuestContext;
+  sessionToken: string;
+}
+
+@Controller('guest-sessions')
+export class GuestSessionsController {
+  constructor(
+    private readonly guestSessionsService: GuestSessionsService,
+    private readonly qrTokenService: QrTokenService,
+  ) {}
+
+  /**
+   * Redeems a cryptographically signed QR code to establish a guest session.
+   */
+  @Post('qr')
+  @HttpCode(HttpStatus.OK)
+  async authenticateWithQr(
+    @Body() body: VerifyQrDto,
+  ): Promise<GuestSessionResponseDto> {
+    if (!body || typeof body !== 'object' || !body.qrToken) {
+      throw new BadRequestException('Request body with qrToken is required.');
+    }
+
+    return this.guestSessionsService.authenticateWithQr(body.qrToken);
+  }
+
+  /**
+   * Retrieves the current authenticated guest's active session and stay context.
+   */
+  @Get('me')
+  @UseGuards(GuestAuthGuard)
+  getMe(
+    @CurrentGuest() guest: GuestContext,
+  ): GuestContext & { active: boolean } {
+    return {
+      ...guest,
+      active: true,
+    };
+  }
+
+  /**
+   * Logs out the current guest session, invalidating the session token.
+   */
+  @Post('logout')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(GuestAuthGuard)
+  async logout(
+    @Req() req: AuthenticatedRequest,
+  ): Promise<{ success: boolean; message: string }> {
+    return this.guestSessionsService.logout(req.sessionToken);
+  }
+
+  /**
+   * Helper endpoint providing pre-signed QR tokens for demo rooms.
+   */
+  @Get('demo-tokens')
+  getDemoTokens(): { tokens: Record<string, string> } {
+    return {
+      tokens: this.qrTokenService.getDemoTokens(),
+    };
+  }
+}
