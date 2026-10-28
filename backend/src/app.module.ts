@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 import { DatabaseModule } from './database/database.module.js';
+import { HealthModule } from './health/health.module.js';
 import { BookingInternalModule } from './integrations/internal-services/booking/booking-internal.module.js';
 import { GuestSessionsModule } from './modules/guest-sessions/guest-sessions.module.js';
 
@@ -14,6 +15,7 @@ import { GuestSessionsModule } from './modules/guest-sessions/guest-sessions.mod
     DatabaseModule,
     GuestSessionsModule,
     BookingInternalModule,
+    HealthModule,
   ],
   controllers: [AppController],
   providers: [AppService],
