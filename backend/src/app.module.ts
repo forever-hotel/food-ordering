@@ -5,6 +5,9 @@ import { AppService } from './app.service.js';
 import { DatabaseModule } from './database/database.module.js';
 import { HealthModule } from './health/health.module.js';
 import { BookingInternalModule } from './integrations/internal-services/booking/booking-internal.module.js';
+import { KmsInternalModule } from './integrations/internal-services/kms/kms-internal.module.js';
+import { MadInternalModule } from './integrations/internal-services/mad/mad-internal.module.js';
+import { WkmsInternalModule } from './integrations/internal-services/wkms/wkms-internal.module.js';
 import { GuestSessionsModule } from './modules/guest-sessions/guest-sessions.module.js';
 
 @Module({
@@ -15,6 +18,9 @@ import { GuestSessionsModule } from './modules/guest-sessions/guest-sessions.mod
     DatabaseModule,
     GuestSessionsModule,
     BookingInternalModule,
+    KmsInternalModule,
+    WkmsInternalModule,
+    MadInternalModule,
     HealthModule,
   ],
   controllers: [AppController],
