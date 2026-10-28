@@ -66,4 +66,45 @@ describe('BookingVerificationService', () => {
       expect(result.verifiedAt).toBeDefined();
     });
   });
+
+  describe('simulateCheckout', () => {
+    it('calls checkoutBooking on provider if supported', async () => {
+      (mockProvider as any).checkoutBooking = jest.fn().mockResolvedValue({
+        bookingId: 'b-101',
+        status: BookingStatus.CHECKED_OUT,
+      });
+
+      const result = await service.simulateCheckout('b-101');
+      expect(result).toBe(true);
+      expect((mockProvider as any).checkoutBooking).toHaveBeenCalledWith(
+        'b-101',
+      );
+    });
+
+    it('returns false if checkoutBooking is not implemented on provider', async () => {
+      const result = await service.simulateCheckout('b-101');
+      expect(result).toBe(false);
+    });
+  });
+
+  describe('simulateRoomReassign', () => {
+    it('calls reassignRoom on provider if supported', async () => {
+      (mockProvider as any).reassignRoom = jest.fn().mockResolvedValue({
+        bookingId: 'b-101',
+        roomNumber: '105',
+      });
+
+      const result = await service.simulateRoomReassign('b-101', '105');
+      expect(result).toBe(true);
+      expect((mockProvider as any).reassignRoom).toHaveBeenCalledWith(
+        'b-101',
+        '105',
+      );
+    });
+
+    it('returns false if reassignRoom is not implemented on provider', async () => {
+      const result = await service.simulateRoomReassign('b-101', '105');
+      expect(result).toBe(false);
+    });
+  });
 });

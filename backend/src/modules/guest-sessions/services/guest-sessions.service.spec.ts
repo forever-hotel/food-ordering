@@ -31,6 +31,12 @@ describe('GuestSessionsService', () => {
     verifyStay: jest.MockedFunction<
       (bookingId: string, room: string) => Promise<BookingVerificationResultDto>
     >;
+    simulateCheckout: jest.MockedFunction<
+      (bookingId: string) => Promise<boolean>
+    >;
+    simulateRoomReassign: jest.MockedFunction<
+      (bookingId: string, newRoom: string) => Promise<boolean>
+    >;
   };
   let mockConfigService: {
     get: jest.MockedFunction<(key: string) => string | null>;
@@ -77,6 +83,12 @@ describe('GuestSessionsService', () => {
       verifyStay: jest
         .fn<() => Promise<BookingVerificationResultDto>>()
         .mockResolvedValue(validStay),
+      simulateCheckout: jest
+        .fn<(bookingId: string) => Promise<boolean>>()
+        .mockResolvedValue(true),
+      simulateRoomReassign: jest
+        .fn<(bookingId: string, newRoom: string) => Promise<boolean>>()
+        .mockResolvedValue(true),
     };
 
     mockConfigService = {
@@ -299,6 +311,168 @@ describe('GuestSessionsService', () => {
 
       const result = await service.logout('unknown-token');
       expect(result.success).toBe(true);
+    });
+  });
+
+  describe('handleFdsCheckoutEvent', () => {
+    it('revokes active session upon receiving valid FDS checkout event (AC1)', async () => {
+      const session = new FossSession();
+      session.sessionId = 'sess-checkout-test';
+      session.bookingId = 'b-101';
+      session.roomNumber = '101';
+      session.isActive = true;
+      session.expiresAt = new Date('2026-10-30T10:00:00Z');
+
+      mockSessionRepository.findByBookingId.mockResolvedValue(session);
+
+      const result = await service.handleFdsCheckoutEvent({
+        eventId: 'evt-checkout-100',
+        eventType: 'fds.guest.checkout',
+        bookingId: 'b-101',
+        roomNumber: '101',
+        checkoutTime: '2026-10-28T12:00:00Z',
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.processed).toBe(true);
+      expect(result.sessionRevoked).toBe(true);
+      expect(session.isActive).toBe(false);
+      expect(mockSessionRepository.save).toHaveBeenCalledWith(session);
+      expect(
+        mockBookingVerificationService.simulateCheckout,
+      ).toHaveBeenCalledWith('b-101');
+    });
+
+    it('processes duplicate checkout event idempotently without re-execution (AC2)', async () => {
+      const session = new FossSession();
+      session.sessionId = 'sess-dup-test';
+      session.bookingId = 'b-101';
+      session.isActive = true;
+      session.expiresAt = new Date('2026-10-30T10:00:00Z');
+
+      mockSessionRepository.findByBookingId.mockResolvedValue(session);
+
+      const event = {
+        eventId: 'evt-checkout-dup',
+        eventType: 'fds.guest.checkout' as const,
+        bookingId: 'b-101',
+        roomNumber: '101',
+        checkoutTime: '2026-10-28T12:00:00Z',
+      };
+
+      const firstCall = await service.handleFdsCheckoutEvent(event);
+      expect(firstCall.processed).toBe(true);
+      expect(firstCall.duplicate).toBeUndefined();
+
+      // Second call with same eventId
+      const secondCall = await service.handleFdsCheckoutEvent(event);
+      expect(secondCall.duplicate).toBe(true);
+      expect(secondCall.message).toContain('idempotently');
+    });
+
+    it('handles checkout event when no active session exists', async () => {
+      mockSessionRepository.findByBookingId.mockResolvedValue(null);
+
+      const result = await service.handleFdsCheckoutEvent({
+        eventId: 'evt-no-session',
+        eventType: 'fds.guest.checkout',
+        bookingId: 'b-999',
+        roomNumber: '999',
+        checkoutTime: '2026-10-28T12:00:00Z',
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.sessionRevoked).toBe(false);
+    });
+
+    it('throws BadRequestException when event or required fields are missing', async () => {
+      await expect(service.handleFdsCheckoutEvent(null as any)).rejects.toThrow(
+        BadRequestException,
+      );
+
+      await expect(
+        service.handleFdsCheckoutEvent({ eventId: '', bookingId: '' } as any),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('handleFdsRoomReassignEvent', () => {
+    it('invalidates previous room session upon room reassignment event (AC1)', async () => {
+      const session = new FossSession();
+      session.sessionId = 'sess-reassign-test';
+      session.bookingId = 'b-101';
+      session.roomNumber = '101';
+      session.isActive = true;
+
+      mockSessionRepository.findByBookingId.mockResolvedValue(session);
+
+      const result = await service.handleFdsRoomReassignEvent({
+        eventId: 'evt-reassign-100',
+        eventType: 'fds.room.reassigned',
+        bookingId: 'b-101',
+        previousRoomNumber: '101',
+        newRoomNumber: '105',
+        reassignedAt: '2026-10-28T12:00:00Z',
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.sessionRevoked).toBe(true);
+      expect(session.isActive).toBe(false);
+      expect(mockSessionRepository.save).toHaveBeenCalledWith(session);
+      expect(
+        mockBookingVerificationService.simulateRoomReassign,
+      ).toHaveBeenCalledWith('b-101', '105');
+    });
+
+    it('processes duplicate room reassignment event idempotently (AC2)', async () => {
+      mockSessionRepository.findByBookingId.mockResolvedValue(null);
+
+      const event = {
+        eventId: 'evt-reassign-dup',
+        eventType: 'fds.room.reassigned' as const,
+        bookingId: 'b-101',
+        previousRoomNumber: '101',
+        newRoomNumber: '105',
+        reassignedAt: '2026-10-28T12:00:00Z',
+      };
+
+      await service.handleFdsRoomReassignEvent(event);
+      const secondCall = await service.handleFdsRoomReassignEvent(event);
+
+      expect(secondCall.duplicate).toBe(true);
+    });
+
+    it('throws BadRequestException when room reassignment fields are missing', async () => {
+      await expect(
+        service.handleFdsRoomReassignEvent({ eventId: 'evt-1' } as any),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('getProcessedEvent', () => {
+    it('returns processed event info when found', async () => {
+      const event = {
+        eventId: 'evt-lookup-test',
+        eventType: 'fds.guest.checkout' as const,
+        bookingId: 'b-101',
+        roomNumber: '101',
+        checkoutTime: '2026-10-28T12:00:00Z',
+      };
+
+      await service.handleFdsCheckoutEvent(event);
+
+      const lookup = service.getProcessedEvent('evt-lookup-test');
+      expect(lookup.processed).toBe(true);
+      expect(lookup.event?.eventType).toBe('fds.guest.checkout');
+    });
+
+    it('returns { processed: false } when event is not found', () => {
+      const lookup = service.getProcessedEvent('non-existent-evt');
+      expect(lookup.processed).toBe(false);
+    });
+
+    it('throws BadRequestException when eventId is empty', () => {
+      expect(() => service.getProcessedEvent('')).toThrow(BadRequestException);
     });
   });
 });

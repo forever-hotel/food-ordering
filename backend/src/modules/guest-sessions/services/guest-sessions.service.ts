@@ -11,6 +11,11 @@ import { ConfigService } from '@nestjs/config';
 
 import { BookingVerificationResultDto } from '../../../integrations/internal-services/booking/dto/booking-verification-result.dto.js';
 import { BookingVerificationService } from '../../../integrations/internal-services/booking/booking-verification.service.js';
+import {
+  FdsCheckoutEventDto,
+  FdsEventResponseDto,
+  FdsRoomReassignEventDto,
+} from '../dto/fds-events.dto.js';
 import { GuestSessionResponseDto } from '../dto/guest-session-response.dto.js';
 import { FossSession } from '../entities/foss-session.entity.js';
 import { FossSessionRepository } from '../repositories/foss-session.repository.js';
@@ -21,6 +26,10 @@ export class GuestSessionsService {
   private readonly logger = new Logger(GuestSessionsService.name);
   private readonly sessionTtlHours: number;
   private readonly clock: () => Date;
+  private readonly processedEventIds = new Map<
+    string,
+    { eventType: string; processedAt: Date; result: FdsEventResponseDto }
+  >();
 
   constructor(
     private readonly fossSessionRepository: FossSessionRepository,
@@ -208,6 +217,198 @@ export class GuestSessionsService {
     return {
       success: true,
       message: 'Logged out successfully.',
+    };
+  }
+
+  /**
+   * Idempotently processes an FDS checkout event, revoking the associated guest session.
+   * Conforms to DDP-125 AC1 & AC2: immediate access denial and duplicate event protection.
+   */
+  async handleFdsCheckoutEvent(
+    event: FdsCheckoutEventDto,
+  ): Promise<FdsEventResponseDto> {
+    if (
+      !event ||
+      typeof event !== 'object' ||
+      !event.eventId ||
+      !event.bookingId
+    ) {
+      throw new BadRequestException('eventId and bookingId are required.');
+    }
+
+    // AC2: Duplicate event handling (idempotency)
+    const existing = this.processedEventIds.get(event.eventId);
+    if (existing) {
+      this.logger.log(
+        `Duplicate FDS checkout event [${event.eventId}] ignored idempotently.`,
+      );
+      return {
+        ...existing.result,
+        duplicate: true,
+        message: 'Event already processed idempotently.',
+      };
+    }
+
+    const cleanBookingId = event.bookingId.trim();
+    const session =
+      await this.fossSessionRepository.findByBookingId(cleanBookingId);
+
+    let sessionRevoked = false;
+    let sessionId: string | undefined;
+
+    const now = this.clock();
+
+    if (session && session.isActive) {
+      session.isActive = false;
+      session.updatedAt = now;
+      session.expiresAt = new Date(
+        Math.min(new Date(session.expiresAt).getTime(), now.getTime()),
+      );
+      await this.fossSessionRepository.save(session);
+      sessionRevoked = true;
+      sessionId = session.sessionId;
+
+      this.logger.warn(
+        `[FdsEventConsumer] Session [${session.sessionId}] for booking [${session.bookingId}] and room [${session.roomNumber}] revoked due to FDS checkout event [${event.eventId}]`,
+      );
+    } else if (session) {
+      sessionId = session.sessionId;
+      this.logger.log(
+        `Checkout event [${event.eventId}]: session [${session.sessionId}] was already inactive.`,
+      );
+    }
+
+    // Simulate checkout on mock provider if active
+    await this.bookingVerificationService.simulateCheckout(cleanBookingId);
+
+    const result: FdsEventResponseDto = {
+      success: true,
+      processed: true,
+      message: sessionRevoked
+        ? `Session [${sessionId}] revoked successfully following FDS checkout.`
+        : `Checkout event processed; no active session found for booking [${cleanBookingId}].`,
+      bookingId: cleanBookingId,
+      sessionRevoked,
+      sessionId,
+    };
+
+    this.processedEventIds.set(event.eventId, {
+      eventType: event.eventType || 'fds.guest.checkout',
+      processedAt: now,
+      result,
+    });
+
+    return result;
+  }
+
+  /**
+   * Idempotently processes an FDS room reassignment event.
+   * Invalidates existing session for the previous room so that the guest must
+   * establish a fresh room-scoped session for the new room.
+   */
+  async handleFdsRoomReassignEvent(
+    event: FdsRoomReassignEventDto,
+  ): Promise<FdsEventResponseDto> {
+    if (
+      !event ||
+      typeof event !== 'object' ||
+      !event.eventId ||
+      !event.bookingId ||
+      !event.previousRoomNumber ||
+      !event.newRoomNumber
+    ) {
+      throw new BadRequestException(
+        'eventId, bookingId, previousRoomNumber, and newRoomNumber are required.',
+      );
+    }
+
+    // AC2: Duplicate event handling
+    const existing = this.processedEventIds.get(event.eventId);
+    if (existing) {
+      this.logger.log(
+        `Duplicate FDS room reassign event [${event.eventId}] ignored idempotently.`,
+      );
+      return {
+        ...existing.result,
+        duplicate: true,
+        message: 'Event already processed idempotently.',
+      };
+    }
+
+    const cleanBookingId = event.bookingId.trim();
+    const session =
+      await this.fossSessionRepository.findByBookingId(cleanBookingId);
+
+    let sessionRevoked = false;
+    let sessionId: string | undefined;
+
+    const now = this.clock();
+
+    if (session && session.isActive) {
+      session.isActive = false;
+      session.updatedAt = now;
+      await this.fossSessionRepository.save(session);
+      sessionRevoked = true;
+      sessionId = session.sessionId;
+
+      this.logger.warn(
+        `[FdsEventConsumer] Old session [${session.sessionId}] for booking [${session.bookingId}] revoked on room reassignment from [${event.previousRoomNumber}] to [${event.newRoomNumber}] (Event [${event.eventId}])`,
+      );
+    }
+
+    // Simulate room reassignment on mock provider if active
+    await this.bookingVerificationService.simulateRoomReassign(
+      cleanBookingId,
+      event.newRoomNumber.trim(),
+    );
+
+    const result: FdsEventResponseDto = {
+      success: true,
+      processed: true,
+      message: sessionRevoked
+        ? `Old session for room [${event.previousRoomNumber}] invalidated. Fresh authentication required for room [${event.newRoomNumber}].`
+        : `Room reassigned to [${event.newRoomNumber}]; no active session required invalidation.`,
+      bookingId: cleanBookingId,
+      sessionRevoked,
+      sessionId,
+    };
+
+    this.processedEventIds.set(event.eventId, {
+      eventType: event.eventType || 'fds.room.reassigned',
+      processedAt: now,
+      result,
+    });
+
+    return result;
+  }
+
+  /**
+   * Retrieves status for a processed FDS event by eventId.
+   */
+  getProcessedEvent(eventId: string): {
+    processed: boolean;
+    event?: {
+      eventType: string;
+      processedAt: string;
+      result: FdsEventResponseDto;
+    };
+  } {
+    if (!eventId || typeof eventId !== 'string') {
+      throw new BadRequestException('eventId must be a non-empty string.');
+    }
+
+    const entry = this.processedEventIds.get(eventId.trim());
+    if (!entry) {
+      return { processed: false };
+    }
+
+    return {
+      processed: true,
+      event: {
+        eventType: entry.eventType,
+        processedAt: entry.processedAt.toISOString(),
+        result: entry.result,
+      },
     };
   }
 }

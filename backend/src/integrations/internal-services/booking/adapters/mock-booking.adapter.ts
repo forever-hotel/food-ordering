@@ -64,13 +64,22 @@ export const MOCK_BOOKING_FIXTURES: Record<string, BookingRecord> = {
 @Injectable()
 export class MockBookingAdapter implements BookingProvider {
   private readonly fixtures: Map<string, BookingRecord>;
+  private readonly initialFixtures: Record<string, BookingRecord>;
 
   constructor(
     private readonly clock: () => Date = () => new Date(),
     customFixtures?: Record<string, BookingRecord>,
   ) {
-    const seed = customFixtures ?? MOCK_BOOKING_FIXTURES;
-    this.fixtures = new Map(Object.entries(seed));
+    this.initialFixtures = customFixtures ?? MOCK_BOOKING_FIXTURES;
+    this.fixtures = new Map();
+    this.reset();
+  }
+
+  reset(): void {
+    this.fixtures.clear();
+    for (const [key, value] of Object.entries(this.initialFixtures)) {
+      this.fixtures.set(key, { ...value });
+    }
   }
 
   async getBookingById(bookingId: string): Promise<BookingRecord | null> {
@@ -131,6 +140,28 @@ export class MockBookingAdapter implements BookingProvider {
       );
     }
 
+    return { ...record };
+  }
+
+  async checkoutBooking(bookingId: string): Promise<BookingRecord | null> {
+    const record = this.fixtures.get(bookingId);
+    if (!record) {
+      return null;
+    }
+    record.status = BookingStatus.CHECKED_OUT;
+    record.stayEnd = this.clock();
+    return { ...record };
+  }
+
+  async reassignRoom(
+    bookingId: string,
+    newRoomNumber: string,
+  ): Promise<BookingRecord | null> {
+    const record = this.fixtures.get(bookingId);
+    if (!record) {
+      return null;
+    }
+    record.roomNumber = newRoomNumber;
     return { ...record };
   }
 }

@@ -158,5 +158,23 @@ describe('MockBookingAdapter', () => {
       expect(record).not.toBeNull();
       expect(record?.roomNumber).toBe('101');
     });
+
+    it('simulates checkout by marking booking CHECKED_OUT', async () => {
+      const updated = await adapter.checkoutBooking('booking-101');
+      expect(updated).not.toBeNull();
+      expect(updated?.status).toBe(BookingStatus.CHECKED_OUT);
+
+      const notFound = await adapter.checkoutBooking('non-existent');
+      expect(notFound).toBeNull();
+    });
+
+    it('simulates room reassignment by updating roomNumber', async () => {
+      const updated = await adapter.reassignRoom('booking-101', '109');
+      expect(updated).not.toBeNull();
+      expect(updated?.roomNumber).toBe('109');
+
+      const notFound = await adapter.reassignRoom('non-existent', '109');
+      expect(notFound).toBeNull();
+    });
   });
 });
