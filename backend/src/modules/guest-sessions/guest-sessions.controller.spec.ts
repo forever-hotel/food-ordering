@@ -119,6 +119,46 @@ describe('GuestSessionsController', () => {
     });
   });
 
+  describe('verifyRoomAccess', () => {
+    it('returns room access authorization details', () => {
+      const guest: GuestContext = {
+        sessionId: 'sess-101',
+        bookingId: 'book-101',
+        guestId: 'sess-101',
+        roomNumber: '101',
+        role: 'GUEST',
+      };
+
+      const result = controller.verifyRoomAccess('101', guest);
+
+      expect(result).toEqual({
+        authorized: true,
+        roomNumber: '101',
+        sessionId: 'sess-101',
+      });
+    });
+  });
+
+  describe('verifyBookingAccess', () => {
+    it('returns booking access authorization details', () => {
+      const guest: GuestContext = {
+        sessionId: 'sess-101',
+        bookingId: 'book-101',
+        guestId: 'sess-101',
+        roomNumber: '101',
+        role: 'GUEST',
+      };
+
+      const result = controller.verifyBookingAccess('book-101', guest);
+
+      expect(result).toEqual({
+        authorized: true,
+        bookingId: 'book-101',
+        sessionId: 'sess-101',
+      });
+    });
+  });
+
   describe('getDemoTokens', () => {
     it('returns demo tokens from qrTokenService', () => {
       const result = controller.getDemoTokens();

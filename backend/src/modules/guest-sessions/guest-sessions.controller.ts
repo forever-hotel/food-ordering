@@ -5,12 +5,14 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Param,
   Post,
   Req,
   UseGuards,
 } from '@nestjs/common';
 import type { Request } from 'express';
 
+import { RoomOwnershipGuard } from '../../common/auth/room-ownership.guard.js';
 import { CurrentGuest } from './decorators/current-guest.decorator.js';
 import { GuestSessionResponseDto } from './dto/guest-session-response.dto.js';
 import { VerifyQrDto } from './dto/verify-qr.dto.js';
@@ -57,6 +59,40 @@ export class GuestSessionsController {
     return {
       ...guest,
       active: true,
+    };
+  }
+
+  /**
+   * Verifies access to room-scoped resources.
+   * Enforces server-side room ownership: rejects cross-room access with 403 Forbidden.
+   */
+  @Get('rooms/:roomNumber')
+  @UseGuards(GuestAuthGuard, RoomOwnershipGuard)
+  verifyRoomAccess(
+    @Param('roomNumber') roomNumber: string,
+    @CurrentGuest() guest: GuestContext,
+  ): { authorized: boolean; roomNumber: string; sessionId: string } {
+    return {
+      authorized: true,
+      roomNumber: guest.roomNumber,
+      sessionId: guest.sessionId,
+    };
+  }
+
+  /**
+   * Verifies access to booking-scoped resources.
+   * Enforces server-side booking ownership: rejects cross-booking access with 403 Forbidden.
+   */
+  @Get('bookings/:bookingId')
+  @UseGuards(GuestAuthGuard, RoomOwnershipGuard)
+  verifyBookingAccess(
+    @Param('bookingId') bookingId: string,
+    @CurrentGuest() guest: GuestContext,
+  ): { authorized: boolean; bookingId: string; sessionId: string } {
+    return {
+      authorized: true,
+      bookingId: guest.bookingId,
+      sessionId: guest.sessionId,
     };
   }
 
