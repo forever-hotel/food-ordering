@@ -4,9 +4,12 @@ import { KmsOrderResultDto } from '../dto/kms-order-result.dto.js';
 
 export const KMS_PROVIDER = Symbol('KMS_PROVIDER');
 
-export interface KmsProvider {
-  getMenuCatalog(mealPeriod?: MealPeriod): Promise<KmsMenuCatalogDto>;
-  createOrder(order: KmsCreateOrderDto): Promise<KmsOrderResultDto>;
-  getOrder(orderId: string): Promise<KmsOrderResultDto | null>;
-  cancelOrder(orderId: string, reason?: string): Promise<KmsOrderResultDto>;
+export abstract class KmsProvider {
+  abstract getMenuCatalog(mealPeriod?: MealPeriod): Promise<KmsMenuCatalogDto>;
+  abstract createOrder(order: KmsCreateOrderDto): Promise<KmsOrderResultDto>;
+  abstract getOrder(orderId: string): Promise<KmsOrderResultDto | null>;
+  abstract cancelOrder(
+    orderId: string,
+    reason?: string,
+  ): Promise<KmsOrderResultDto>;
 }

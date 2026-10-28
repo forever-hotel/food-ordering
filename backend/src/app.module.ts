@@ -9,6 +9,7 @@ import { KmsInternalModule } from './integrations/internal-services/kms/kms-inte
 import { MadInternalModule } from './integrations/internal-services/mad/mad-internal.module.js';
 import { WkmsInternalModule } from './integrations/internal-services/wkms/wkms-internal.module.js';
 import { GuestSessionsModule } from './modules/guest-sessions/guest-sessions.module.js';
+import { MenuModule } from './modules/menu/menu.module.js';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { GuestSessionsModule } from './modules/guest-sessions/guest-sessions.mod
     WkmsInternalModule,
     MadInternalModule,
     HealthModule,
+    MenuModule,
   ],
   controllers: [AppController],
   providers: [AppService],
