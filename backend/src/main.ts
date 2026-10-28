@@ -1,6 +1,10 @@
+import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+
 import { AppModule } from './app.module.js';
+import { HttpExceptionFilter } from './common/filters/http-exception.filter.js';
+import { correlationMiddleware } from './common/middleware/correlation.middleware.js';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -8,6 +12,24 @@ async function bootstrap() {
   app.enableCors({
     origin: process.env.FRONTEND_URL || 'http://localhost:3000',
   });
+
+  // Global request correlation ID injection
+  app.use(correlationMiddleware);
+
+  // Global standardized error filter with correlation and sanitization
+  app.useGlobalFilters(new HttpExceptionFilter());
+
+  // Strict global DTO validation with non-whitelisted property rejection
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+    }),
+  );
+
+  // Enable graceful shutdown hooks
+  app.enableShutdownHooks();
 
   const config = new DocumentBuilder()
     .setTitle('Forever Hotel - Food Ordering & Services System (FOSS) API')
@@ -34,6 +56,16 @@ async function bootstrap() {
         in: 'header',
       },
       'bearer',
+    )
+    .addApiKey(
+      {
+        type: 'apiKey',
+        name: 'x-internal-service-key',
+        in: 'header',
+        description:
+          'Service authentication key for internal FDS/hotel webhooks',
+      },
+      'internal-service-key',
     )
     .build();
 
