@@ -23,6 +23,7 @@ async function bootstrap() {
       'integrations',
       'Internal hotel service integrations (Booking/FDS verification)',
     )
+    .addTag('health', 'System liveness and database readiness health probes')
     .addBearerAuth(
       {
         type: 'http',
