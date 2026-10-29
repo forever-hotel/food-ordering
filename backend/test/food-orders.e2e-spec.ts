@@ -21,7 +21,7 @@ import { FossDemoOrderRepository } from '../src/modules/food-orders/repositories
 import { HotelClockService } from '../src/modules/menu/services/hotel-clock.service.js';
 import { MealWindowService } from '../src/modules/menu/services/meal-window.service.js';
 
-describe('Food Orders Atomicity & Idempotency (e2e)', () => {
+describe('Food Orders Atomicity, Idempotency & 10-Minute Cancellation (e2e)', () => {
   let app: INestApplication;
   let mockKms: MockKmsAdapter;
   let clockService: HotelClockService;
@@ -149,8 +149,8 @@ describe('Food Orders Atomicity & Idempotency (e2e)', () => {
     await app.close();
   });
 
-  describe('TC-DDP-129-AC1: Successful Order Placement Workflow (Final Design Fig 34 & 35)', () => {
-    it('places food order atomically with authoritative pricing, room scope, and ETA', async () => {
+  describe('TC-DDP-129: Core Order Placement, Atomicity & Idempotency', () => {
+    it('TC-DDP-129-AC1: places food order atomically with authoritative pricing, room scope, and ETA', async () => {
       const response = await request(app.getHttpServer())
         .post('/food-orders')
         .set('Authorization', `Bearer ${activeTokenRoom101}`)
@@ -158,7 +158,7 @@ describe('Food Orders Atomicity & Idempotency (e2e)', () => {
         .send({
           items: [
             {
-              menuItemId: 'menu-item-001', // Truffle Mushroom Arancini (14.50)
+              menuItemId: 'menu-item-001', // Truffle Mushroom Arancini (18.00)
               quantity: 2,
               specialNotes: 'Extra crispy',
             },
@@ -179,6 +179,7 @@ describe('Food Orders Atomicity & Idempotency (e2e)', () => {
       expect(response.body.items[0].quantity).toBe(2);
       expect(response.body.allergyNotes).toBe('No peanuts please');
       expect(response.body.idempotencyKey).toBe('idemp-flow-ac1-001');
+      expect(response.body.canCancel).toBe(true);
 
       // Verify order can be retrieved by ID
       const orderId = response.body.orderId;
@@ -201,10 +202,8 @@ describe('Food Orders Atomicity & Idempotency (e2e)', () => {
         true,
       );
     });
-  });
 
-  describe('TC-DDP-129-AC2: Negative / Error Cases & Fail-Closed Protection', () => {
-    it('rejects unauthenticated requests with 401 Unauthorized', async () => {
+    it('TC-DDP-129-AC2: rejects unauthenticated requests with 401 Unauthorized', async () => {
       const response = await request(app.getHttpServer())
         .post('/food-orders')
         .send({
@@ -218,7 +217,7 @@ describe('Food Orders Atomicity & Idempotency (e2e)', () => {
       );
     });
 
-    it('rejects missing idempotency key with 400 Bad Request', async () => {
+    it('TC-DDP-129-AC2: rejects missing idempotency key with 400 Bad Request', async () => {
       const response = await request(app.getHttpServer())
         .post('/food-orders')
         .set('Authorization', `Bearer ${activeTokenRoom101}`)
@@ -230,7 +229,7 @@ describe('Food Orders Atomicity & Idempotency (e2e)', () => {
       expect(response.body.message).toContain('Idempotency key is required');
     });
 
-    it('rejects non-existent menu item with 400 Bad Request', async () => {
+    it('TC-DDP-129-AC2: rejects non-existent menu item with 400 Bad Request', async () => {
       const response = await request(app.getHttpServer())
         .post('/food-orders')
         .set('Authorization', `Bearer ${activeTokenRoom101}`)
@@ -245,7 +244,7 @@ describe('Food Orders Atomicity & Idempotency (e2e)', () => {
       );
     });
 
-    it('rejects sold-out item with 409 Conflict', async () => {
+    it('TC-DDP-129-AC2: rejects sold-out item with 409 Conflict', async () => {
       // menu-item-007 (Seasonal Lobster Tail) is fixture available: false
       const response = await request(app.getHttpServer())
         .post('/food-orders')
@@ -261,7 +260,7 @@ describe('Food Orders Atomicity & Idempotency (e2e)', () => {
       );
     });
 
-    it('rejects order for meal window that has passed cutoff with 400 Bad Request', async () => {
+    it('TC-DDP-129-AC2: rejects order for meal window that has passed cutoff with 400 Bad Request', async () => {
       // At 13:00 Colombo, Breakfast cutoff (10:30:00) has passed
       // menu-item-004 is Classic Eggs Benedict (BREAKFAST)
       const response = await request(app.getHttpServer())
@@ -276,7 +275,7 @@ describe('Food Orders Atomicity & Idempotency (e2e)', () => {
       expect(response.body.message).toContain('cutoff has passed');
     });
 
-    it('rejects invalid quantity (< 1 or > 20) with 400 Bad Request', async () => {
+    it('TC-DDP-129-AC2: rejects invalid quantity (< 1 or > 20) with 400 Bad Request', async () => {
       const responseUnder = await request(app.getHttpServer())
         .post('/food-orders')
         .set('Authorization', `Bearer ${activeTokenRoom101}`)
@@ -298,7 +297,7 @@ describe('Food Orders Atomicity & Idempotency (e2e)', () => {
       expect(responseOver.status).toBe(400);
     });
 
-    it('fails closed with 503 error when upstream KMS is unreachable', async () => {
+    it('TC-DDP-129-AC2: fails closed with 503 error when upstream KMS is unreachable', async () => {
       mockKms.setSimulateDown(true);
 
       const response = await request(app.getHttpServer())
@@ -314,10 +313,8 @@ describe('Food Orders Atomicity & Idempotency (e2e)', () => {
       expect(response.status).toBe(503);
       expect(response.body.error).toBe('Upstream Service Unavailable');
     });
-  });
 
-  describe('TC-DDP-129-AC3: Boundary, Concurrency & Idempotency', () => {
-    it('returns exact same order on duplicate submission with same idempotency key', async () => {
+    it('TC-DDP-129-AC3: returns exact same order on duplicate submission with same idempotency key', async () => {
       const idempotencyKey = 'idemp-duplicate-test-999';
 
       const firstResponse = await request(app.getHttpServer())
@@ -347,7 +344,7 @@ describe('Food Orders Atomicity & Idempotency (e2e)', () => {
       );
     });
 
-    it('rejects reuse of an idempotency key across different rooms with 403 Forbidden', async () => {
+    it('TC-DDP-129-AC3: rejects reuse of an idempotency key across different rooms with 403 Forbidden', async () => {
       const sharedKey = 'idemp-cross-room-attempt';
 
       const room101Response = await request(app.getHttpServer())
@@ -375,7 +372,7 @@ describe('Food Orders Atomicity & Idempotency (e2e)', () => {
       );
     });
 
-    it('calculates total with decimal-safe money rounding', async () => {
+    it('TC-DDP-129-AC3: calculates total with decimal-safe money rounding', async () => {
       // 3 items of 18.00 = 54.00
       const response = await request(app.getHttpServer())
         .post('/food-orders')
@@ -388,10 +385,8 @@ describe('Food Orders Atomicity & Idempotency (e2e)', () => {
       expect(response.status).toBe(201);
       expect(response.body.totalAmount).toBe(54.0);
     });
-  });
 
-  describe('TC-DDP-129-AC4: Cross-Room Security & Isolation', () => {
-    it('forbids room 102 from reading an order placed by room 101', async () => {
+    it('TC-DDP-129-AC4: forbids room 102 from reading an order placed by room 101', async () => {
       const orderResponse = await request(app.getHttpServer())
         .post('/food-orders')
         .set('Authorization', `Bearer ${activeTokenRoom101}`)
@@ -411,6 +406,233 @@ describe('Food Orders Atomicity & Idempotency (e2e)', () => {
       expect(readAttempt.status).toBe(403);
       expect(readAttempt.body.message).toContain(
         'permission to view orders from another room',
+      );
+    });
+  });
+
+  describe('TC-DDP-130: Order Tracking, Stay History & 10-Minute Cancellation', () => {
+    it('TC-DDP-130-AC1: cancels eligible submitted order within 10 minutes and updates timeline', async () => {
+      // Place new order
+      const placeResponse = await request(app.getHttpServer())
+        .post('/food-orders')
+        .set('Authorization', `Bearer ${activeTokenRoom101}`)
+        .set('Idempotency-Key', 'idemp-cancel-test-001')
+        .send({
+          items: [{ menuItemId: 'menu-item-001', quantity: 1 }],
+          allergyNote: 'Vegetarian',
+        });
+
+      expect(placeResponse.status).toBe(201);
+      const orderId = placeResponse.body.orderId;
+      expect(placeResponse.body.canCancel).toBe(true);
+      expect(placeResponse.body.timeline).toHaveLength(4);
+
+      // Cancel the order within 10 minutes
+      const cancelResponse = await request(app.getHttpServer())
+        .post(`/food-orders/${orderId}/cancel`)
+        .set('Authorization', `Bearer ${activeTokenRoom101}`)
+        .send({ reason: 'Guest changed mind' });
+
+      expect(cancelResponse.status).toBe(200);
+      expect(cancelResponse.body.status).toBe('CANCELLED');
+      expect(cancelResponse.body.canCancel).toBe(false);
+      expect(cancelResponse.body.secondsRemainingToCancel).toBe(0);
+
+      // Verify tracking reflection
+      const trackResponse = await request(app.getHttpServer())
+        .get(`/food-orders/${orderId}`)
+        .set('Authorization', `Bearer ${activeTokenRoom101}`);
+
+      expect(trackResponse.status).toBe(200);
+      expect(trackResponse.body.status).toBe('CANCELLED');
+      expect(trackResponse.body.timeline).toBeDefined();
+      expect(
+        trackResponse.body.timeline?.some((t: any) => t.status === 'CANCELLED'),
+      ).toBe(true);
+    });
+
+    it('TC-DDP-130-AC2: rejects cancellation when 10-minute window has expired with 409 Conflict', async () => {
+      // Place order at 13:00 Colombo (07:30 UTC)
+      clockService.setFixedTime(new Date('2026-10-28T07:30:00.000Z'));
+
+      const placeResponse = await request(app.getHttpServer())
+        .post('/food-orders')
+        .set('Authorization', `Bearer ${activeTokenRoom101}`)
+        .set('Idempotency-Key', 'idemp-cancel-expired-001')
+        .send({
+          items: [{ menuItemId: 'menu-item-001', quantity: 1 }],
+        });
+
+      expect(placeResponse.status).toBe(201);
+      const orderId = placeResponse.body.orderId;
+
+      // Advance clock 11 minutes forward (13:11 Colombo = 07:41 UTC)
+      clockService.setFixedTime(new Date('2026-10-28T07:41:00.000Z'));
+
+      const cancelResponse = await request(app.getHttpServer())
+        .post(`/food-orders/${orderId}/cancel`)
+        .set('Authorization', `Bearer ${activeTokenRoom101}`)
+        .send({ reason: 'Late cancellation attempt' });
+
+      expect(cancelResponse.status).toBe(409);
+      expect(cancelResponse.body.message).toContain(
+        'Cancellation window has expired',
+      );
+    });
+
+    it('TC-DDP-130-AC2: rejects cancellation when kitchen preparation has already begun with 409 Conflict', async () => {
+      // Reset clock to 13:00
+      clockService.setFixedTime(new Date('2026-10-28T07:30:00.000Z'));
+
+      const placeResponse = await request(app.getHttpServer())
+        .post('/food-orders')
+        .set('Authorization', `Bearer ${activeTokenRoom101}`)
+        .set('Idempotency-Key', 'idemp-prep-cancel-001')
+        .send({
+          items: [{ menuItemId: 'menu-item-001', quantity: 1 }],
+        });
+
+      const orderId = placeResponse.body.orderId;
+
+      // Advance status to IN_PREPARATION via demo endpoint
+      const advanceResponse = await request(app.getHttpServer())
+        .post(`/food-orders/${orderId}/status`)
+        .set('Authorization', `Bearer ${activeTokenRoom101}`)
+        .send({ status: 'IN_PREPARATION' });
+
+      expect(advanceResponse.status).toBe(200);
+      expect(advanceResponse.body.status).toBe('IN_PREPARATION');
+
+      // Attempt to cancel while in preparation (within 2 minutes)
+      clockService.setFixedTime(new Date('2026-10-28T07:32:00.000Z'));
+
+      const cancelResponse = await request(app.getHttpServer())
+        .post(`/food-orders/${orderId}/cancel`)
+        .set('Authorization', `Bearer ${activeTokenRoom101}`)
+        .send({ reason: 'Cancel while preparing' });
+
+      expect(cancelResponse.status).toBe(409);
+      expect(cancelResponse.body.message).toContain(
+        'kitchen preparation has already begun',
+      );
+    });
+
+    it('TC-DDP-130-AC3: precision boundary test (9m59s allowed vs 10m00s cutoff)', async () => {
+      // Placed at 07:30:00 UTC
+      clockService.setFixedTime(new Date('2026-10-28T07:30:00.000Z'));
+
+      const orderValidResponse = await request(app.getHttpServer())
+        .post('/food-orders')
+        .set('Authorization', `Bearer ${activeTokenRoom101}`)
+        .set('Idempotency-Key', 'idemp-boundary-9m59s')
+        .send({
+          items: [{ menuItemId: 'menu-item-001', quantity: 1 }],
+        });
+
+      const validOrderId = orderValidResponse.body.orderId;
+
+      // At exactly 9 minutes 59 seconds (07:39:59 UTC = 599s)
+      clockService.setFixedTime(new Date('2026-10-28T07:39:59.000Z'));
+
+      const cancelValid = await request(app.getHttpServer())
+        .post(`/food-orders/${validOrderId}/cancel`)
+        .set('Authorization', `Bearer ${activeTokenRoom101}`);
+
+      expect(cancelValid.status).toBe(200);
+      expect(cancelValid.body.status).toBe('CANCELLED');
+
+      // Placed at 07:30:00 UTC
+      clockService.setFixedTime(new Date('2026-10-28T07:30:00.000Z'));
+
+      const orderCutoffResponse = await request(app.getHttpServer())
+        .post('/food-orders')
+        .set('Authorization', `Bearer ${activeTokenRoom101}`)
+        .set('Idempotency-Key', 'idemp-boundary-10m00s')
+        .send({
+          items: [{ menuItemId: 'menu-item-001', quantity: 1 }],
+        });
+
+      const cutoffOrderId = orderCutoffResponse.body.orderId;
+
+      // At exactly 10 minutes 00 seconds (07:40:00 UTC = 600s)
+      clockService.setFixedTime(new Date('2026-10-28T07:40:00.000Z'));
+
+      const cancelCutoff = await request(app.getHttpServer())
+        .post(`/food-orders/${cutoffOrderId}/cancel`)
+        .set('Authorization', `Bearer ${activeTokenRoom101}`);
+
+      expect(cancelCutoff.status).toBe(409);
+      expect(cancelCutoff.body.message).toContain(
+        'Cancellation window has expired',
+      );
+    });
+
+    it('TC-DDP-130-AC4: status progression lifecycle in DEMO_MODE updates ETA and timeline', async () => {
+      clockService.setFixedTime(new Date('2026-10-28T07:30:00.000Z'));
+
+      const placeResponse = await request(app.getHttpServer())
+        .post('/food-orders')
+        .set('Authorization', `Bearer ${activeTokenRoom101}`)
+        .set('Idempotency-Key', 'idemp-timeline-progression-001')
+        .send({
+          items: [{ menuItemId: 'menu-item-001', quantity: 1 }],
+        });
+
+      const orderId = placeResponse.body.orderId;
+
+      // 1. Advance to READY (ETA should be 5 mins)
+      const readyResponse = await request(app.getHttpServer())
+        .post(`/food-orders/${orderId}/status`)
+        .set('Authorization', `Bearer ${activeTokenRoom101}`)
+        .send({ status: 'READY' });
+
+      expect(readyResponse.status).toBe(200);
+      expect(readyResponse.body.status).toBe('READY');
+      expect(readyResponse.body.estimatedDeliveryMinutes).toBe(5);
+
+      // 2. Advance to DELIVERED (ETA should be 0 mins)
+      const deliveredResponse = await request(app.getHttpServer())
+        .post(`/food-orders/${orderId}/status`)
+        .set('Authorization', `Bearer ${activeTokenRoom101}`)
+        .send({ status: 'DELIVERED' });
+
+      expect(deliveredResponse.status).toBe(200);
+      expect(deliveredResponse.body.status).toBe('DELIVERED');
+      expect(deliveredResponse.body.estimatedDeliveryMinutes).toBe(0);
+      expect(deliveredResponse.body.canCancel).toBe(false);
+
+      const readyStep = deliveredResponse.body.timeline?.find(
+        (t: any) => t.status === 'READY',
+      );
+      const deliveredStep = deliveredResponse.body.timeline?.find(
+        (t: any) => t.status === 'DELIVERED',
+      );
+
+      expect(readyStep?.completed).toBe(true);
+      expect(deliveredStep?.current).toBe(true);
+    });
+
+    it('TC-DDP-130-AC4: forbids Room 102 from cancelling Room 101 order', async () => {
+      clockService.setFixedTime(new Date('2026-10-28T07:30:00.000Z'));
+
+      const placeResponse = await request(app.getHttpServer())
+        .post('/food-orders')
+        .set('Authorization', `Bearer ${activeTokenRoom101}`)
+        .set('Idempotency-Key', 'idemp-room-isolation-cancel')
+        .send({
+          items: [{ menuItemId: 'menu-item-001', quantity: 1 }],
+        });
+
+      const orderId = placeResponse.body.orderId;
+
+      // Room 102 tries to cancel
+      const unauthorizedCancel = await request(app.getHttpServer())
+        .post(`/food-orders/${orderId}/cancel`)
+        .set('Authorization', `Bearer ${activeTokenRoom102}`);
+
+      expect(unauthorizedCancel.status).toBe(403);
+      expect(unauthorizedCancel.body.message).toContain(
+        'permission to cancel orders from another room',
       );
     });
   });
