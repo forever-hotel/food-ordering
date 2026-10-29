@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { Repository } from 'typeorm';
 import { FossServiceRequest } from '../entities/foss-service-request.entity.js';
+import { ServiceRequestStatus } from '../enums/service-request-status.enum.js';
 import { FossServiceRequestRepository } from './foss-service-request.repository.js';
 
 describe('FossServiceRequestRepository', () => {
@@ -49,6 +50,33 @@ describe('FossServiceRequestRepository', () => {
     expect(typeormRepo.find).toHaveBeenCalledWith({
       where: { bookingId: 'booking-101', roomNumber: '101' },
       order: { createdAt: 'DESC' },
+      take: 50,
+      skip: 0,
+    });
+  });
+
+  it('finds requests with status, category filters and pagination', async () => {
+    const entity = new FossServiceRequest();
+    entity.requestId = 'req-102';
+    typeormRepo.find.mockResolvedValue([entity]);
+
+    const result = await repository.findByBookingAndRoom('booking-101', '101', {
+      status: ServiceRequestStatus.SUBMITTED,
+      requestType: 'EXTRA_TOWELS',
+      limit: 10,
+      offset: 5,
+    });
+    expect(result).toEqual([entity]);
+    expect(typeormRepo.find).toHaveBeenCalledWith({
+      where: {
+        bookingId: 'booking-101',
+        roomNumber: '101',
+        status: ServiceRequestStatus.SUBMITTED,
+        requestType: 'EXTRA_TOWELS',
+      },
+      order: { createdAt: 'DESC' },
+      take: 10,
+      skip: 5,
     });
   });
 
