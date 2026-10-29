@@ -30,9 +30,9 @@ describe('FossComplaintRepository', () => {
 
   beforeEach(() => {
     typeOrmRepo = {
-      save: jest.fn<any>().mockResolvedValue(mockComplaint),
-      findOne: jest.fn<any>().mockResolvedValue(mockComplaint),
-      find: jest.fn<any>().mockResolvedValue([mockComplaint]),
+      save: (jest.fn() as any).mockResolvedValue(mockComplaint),
+      findOne: (jest.fn() as any).mockResolvedValue(mockComplaint),
+      find: (jest.fn() as any).mockResolvedValue([mockComplaint]),
     } as unknown as jest.Mocked<Repository<FossComplaint>>;
 
     repository = new FossComplaintRepository(typeOrmRepo);

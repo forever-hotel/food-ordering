@@ -42,18 +42,20 @@ describe('ServiceRequestsController', () => {
 
   beforeEach(() => {
     service = {
-      createServiceRequest: jest.fn<any>().mockResolvedValue(sampleResponse),
-      getGuestServiceRequests: jest
-        .fn<any>()
-        .mockResolvedValue([sampleResponse]),
-      getGuestServiceRequestById: jest
-        .fn<any>()
-        .mockResolvedValue(sampleResponse),
-      advanceServiceRequestStatus: jest.fn<any>().mockResolvedValue({
+      createServiceRequest: (jest.fn() as any).mockResolvedValue(
+        sampleResponse,
+      ),
+      getGuestServiceRequests: (jest.fn() as any).mockResolvedValue([
+        sampleResponse,
+      ]),
+      getGuestServiceRequestById: (jest.fn() as any).mockResolvedValue(
+        sampleResponse,
+      ),
+      advanceServiceRequestStatus: (jest.fn() as any).mockResolvedValue({
         ...sampleResponse,
         status: ServiceRequestStatus.ASSIGNED,
       }),
-      handleWkmsStatusEvent: jest.fn<any>().mockResolvedValue({
+      handleWkmsStatusEvent: (jest.fn() as any).mockResolvedValue({
         processed: true,
         message: 'Status updated successfully.',
         request: sampleResponse,

@@ -15,9 +15,10 @@ describe('ComplaintsController', () => {
   const mockGuest: GuestContext = {
     sessionId: 'session-uuid-101',
     bookingId: '550e8400-e29b-41d4-a716-446655440000',
+    guestId: 'guest-101',
     roomNumber: '101',
     guestName: 'Jane Doe',
-    stayStatus: 'CHECKED_IN',
+    role: 'GUEST',
   };
 
   const mockResponse: ComplaintResponseDto = {
@@ -39,9 +40,9 @@ describe('ComplaintsController', () => {
 
   beforeEach(() => {
     service = {
-      fileComplaint: jest.fn<any>().mockResolvedValue(mockResponse),
-      getComplaints: jest.fn<any>().mockResolvedValue([mockResponse]),
-      getComplaintById: jest.fn<any>().mockResolvedValue(mockResponse),
+      fileComplaint: (jest.fn() as any).mockResolvedValue(mockResponse),
+      getComplaints: (jest.fn() as any).mockResolvedValue([mockResponse]),
+      getComplaintById: (jest.fn() as any).mockResolvedValue(mockResponse),
     } as unknown as jest.Mocked<ComplaintsService>;
 
     controller = new ComplaintsController(service);

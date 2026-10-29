@@ -27,9 +27,10 @@ describe('ComplaintsService', () => {
   const mockGuest: GuestContext = {
     sessionId: 'session-uuid-101',
     bookingId: '550e8400-e29b-41d4-a716-446655440000',
+    guestId: 'guest-101',
     roomNumber: '101',
     guestName: 'John Smith',
-    stayStatus: 'CHECKED_IN',
+    role: 'GUEST',
   };
 
   const existingComplaint: FossComplaint = {
@@ -52,16 +53,18 @@ describe('ComplaintsService', () => {
 
   beforeEach(() => {
     complaintRepo = {
-      save: jest.fn<any>().mockImplementation((c) => Promise.resolve(c)),
-      findById: jest.fn<any>().mockResolvedValue(null),
-      findByIdempotencyKey: jest.fn<any>().mockResolvedValue(null),
-      findByBookingAndRoom: jest
-        .fn<any>()
-        .mockResolvedValue([existingComplaint]),
+      save: (jest.fn() as any).mockImplementation((c: FossComplaint) =>
+        Promise.resolve(c),
+      ),
+      findById: (jest.fn() as any).mockResolvedValue(null),
+      findByIdempotencyKey: (jest.fn() as any).mockResolvedValue(null),
+      findByBookingAndRoom: (jest.fn() as any).mockResolvedValue([
+        existingComplaint,
+      ]),
     } as unknown as jest.Mocked<FossComplaintRepository>;
 
     madProvider = {
-      fileComplaint: jest.fn<any>().mockResolvedValue({
+      fileComplaint: (jest.fn() as any).mockResolvedValue({
         complaintId: 'CMP-20261029-A1B2C3',
         roomNumber: '101',
         bookingId: mockGuest.bookingId,
@@ -76,12 +79,12 @@ describe('ComplaintsService', () => {
         updatedAt: '2026-10-29T20:00:00.000Z',
         version: '1.0',
       }),
-      getComplaint: jest.fn<any>(),
-      resolveComplaint: jest.fn<any>(),
+      getComplaint: jest.fn() as any,
+      resolveComplaint: jest.fn() as any,
     } as unknown as jest.Mocked<MadComplaintProvider>;
 
     orderRepo = {
-      findById: jest.fn<any>().mockResolvedValue({
+      findById: (jest.fn() as any).mockResolvedValue({
         orderId: 'order-101-001',
         bookingId: mockGuest.bookingId,
         roomNumber: mockGuest.roomNumber,
@@ -89,7 +92,7 @@ describe('ComplaintsService', () => {
     } as unknown as jest.Mocked<FossDemoOrderRepository>;
 
     serviceRequestRepo = {
-      findById: jest.fn<any>().mockResolvedValue({
+      findById: (jest.fn() as any).mockResolvedValue({
         requestId: 'req-101-001',
         bookingId: mockGuest.bookingId,
         roomNumber: mockGuest.roomNumber,
@@ -97,11 +100,11 @@ describe('ComplaintsService', () => {
     } as unknown as jest.Mocked<FossServiceRequestRepository>;
 
     configService = {
-      get: jest.fn<any>().mockReturnValue('true'),
+      get: (jest.fn() as any).mockReturnValue('true'),
     } as unknown as jest.Mocked<ConfigService>;
 
     realtimeService = {
-      emitToStay: jest.fn<any>(),
+      emitToStay: jest.fn() as any,
     } as unknown as jest.Mocked<RealtimeService>;
 
     service = new ComplaintsService(
@@ -127,7 +130,7 @@ describe('ComplaintsService', () => {
       });
 
       expect(complaintRepo.save).toHaveBeenCalledTimes(1);
-      const saved = complaintRepo.save.mock.calls[0][0];
+      const saved = (complaintRepo.save as any).mock.calls[0][0];
       expect(saved.complaintId).toMatch(/^CMP-\d{8}-[A-F0-9]{6}$/);
       expect(saved.subject).toBe('Spoiled dessert delivered');
       expect(saved.description).toContain('[REDACTED_CARD]');
@@ -149,7 +152,7 @@ describe('ComplaintsService', () => {
     });
 
     it('returns existing complaint when duplicate idempotency key is replayed', async () => {
-      complaintRepo.findByIdempotencyKey.mockResolvedValueOnce(
+      (complaintRepo.findByIdempotencyKey as any).mockResolvedValueOnce(
         existingComplaint,
       );
 
@@ -170,17 +173,17 @@ describe('ComplaintsService', () => {
     });
 
     it('rejects complaint referencing foreign food order belonging to another room', async () => {
-      orderRepo.findById.mockResolvedValueOnce({
+      (orderRepo.findById as any).mockResolvedValueOnce({
         orderId: 'order-foreign-999',
         bookingId: 'foreign-booking-uuid',
         roomNumber: '999',
-      } as any);
+      });
 
       await expect(
         service.fileComplaint(mockGuest, {
           category: ComplaintCategory.FOOD,
           severity: ComplaintSeverity.LOW,
-          subject: 'Foreign order reference test',
+          subject: 'Foreign order test',
           description: 'Testing cross-room isolation for orders.',
           relatedOrderId: 'order-foreign-999',
         }),
@@ -188,7 +191,7 @@ describe('ComplaintsService', () => {
     });
 
     it('rejects complaint referencing non-existent food order', async () => {
-      orderRepo.findById.mockResolvedValueOnce(null);
+      (orderRepo.findById as any).mockResolvedValueOnce(null);
 
       await expect(
         service.fileComplaint(mockGuest, {
@@ -202,11 +205,11 @@ describe('ComplaintsService', () => {
     });
 
     it('rejects complaint referencing foreign service request belonging to another room', async () => {
-      serviceRequestRepo.findById.mockResolvedValueOnce({
+      (serviceRequestRepo.findById as any).mockResolvedValueOnce({
         requestId: 'req-foreign-999',
         bookingId: 'foreign-booking-uuid',
         roomNumber: '999',
-      } as any);
+      });
 
       await expect(
         service.fileComplaint(mockGuest, {
@@ -220,7 +223,7 @@ describe('ComplaintsService', () => {
     });
 
     it('persists complaint safely in Neon even when MAD upstream is unavailable', async () => {
-      madProvider.fileComplaint.mockRejectedValueOnce(
+      (madProvider.fileComplaint as any).mockRejectedValueOnce(
         new UpstreamServiceUnavailableException(
           'MAD',
           'MAD triage gateway is unreachable.',
@@ -242,7 +245,7 @@ describe('ComplaintsService', () => {
 
   describe('getComplaintById', () => {
     it('returns complaint when owned by guest stay', async () => {
-      complaintRepo.findById.mockResolvedValueOnce(existingComplaint);
+      (complaintRepo.findById as any).mockResolvedValueOnce(existingComplaint);
 
       const result = await service.getComplaintById(
         mockGuest,
@@ -252,7 +255,7 @@ describe('ComplaintsService', () => {
     });
 
     it('throws NotFoundException when complaint does not exist', async () => {
-      complaintRepo.findById.mockResolvedValueOnce(null);
+      (complaintRepo.findById as any).mockResolvedValueOnce(null);
 
       await expect(
         service.getComplaintById(mockGuest, 'CMP-UNKNOWN'),
@@ -260,7 +263,7 @@ describe('ComplaintsService', () => {
     });
 
     it('throws NotFoundException when complaint belongs to another room', async () => {
-      complaintRepo.findById.mockResolvedValueOnce({
+      (complaintRepo.findById as any).mockResolvedValueOnce({
         ...existingComplaint,
         roomNumber: '102',
       });
