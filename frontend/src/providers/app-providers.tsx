@@ -5,11 +5,14 @@ import type { PropsWithChildren } from 'react';
 
 import { appTheme } from '@/config/theme';
 import { AuthProvider } from '@/lib/auth/auth-context';
+import { NavigationProvider } from '@/lib/navigation/navigation-context';
 
 export function AppProviders({ children }: PropsWithChildren) {
   return (
     <ConfigProvider theme={appTheme}>
-      <AuthProvider>{children}</AuthProvider>
+      <AuthProvider>
+        <NavigationProvider>{children}</NavigationProvider>
+      </AuthProvider>
     </ConfigProvider>
   );
 }
