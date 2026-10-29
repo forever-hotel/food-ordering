@@ -7,7 +7,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import { ServiceRequestStatus } from '../enums/service-request-status.enum.js';
-import { TaskPriority } from '../../../integrations/internal-services/wkms/dto/wkms-task.dto.js';
+import { TaskPriority } from '../../../integrations/internal-services/wkms/enums/task-priority.enum.js';
 
 @Entity('foss_service_requests')
 export class FossServiceRequest {

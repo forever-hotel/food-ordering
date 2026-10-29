@@ -2,21 +2,10 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import { ContractVersion } from '../../../contracts/contract-version.enum.js';
 
-export enum TaskType {
-  EXTRA_TOWELS = 'EXTRA_TOWELS',
-  ROOM_CLEANING = 'ROOM_CLEANING',
-  TOILETRIES = 'TOILETRIES',
-  MAINTENANCE = 'MAINTENANCE',
-  LUGGAGE_ASSISTANCE = 'LUGGAGE_ASSISTANCE',
-  OTHER = 'OTHER',
-}
+import { TaskPriority } from '../enums/task-priority.enum.js';
+import { TaskType } from '../enums/task-type.enum.js';
 
-export enum TaskPriority {
-  LOW = 'LOW',
-  NORMAL = 'NORMAL',
-  HIGH = 'HIGH',
-  URGENT = 'URGENT',
-}
+export { TaskPriority, TaskType };
 
 export class WkmsCreateTaskDto {
   @ApiPropertyOptional({ example: 'task-uuid-101' })
