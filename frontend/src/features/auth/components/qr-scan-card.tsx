@@ -47,7 +47,7 @@ export function QrScanCard() {
               showIcon
               closable
               onClose={clearError}
-              message={isExpired ? 'Session Expired' : 'Authentication Failed'}
+              title={isExpired ? 'Session Expired' : 'Authentication Failed'}
               description={error}
               className="text-xs"
             />

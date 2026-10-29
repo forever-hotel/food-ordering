@@ -27,7 +27,7 @@ export function AlertNotice({
         showIcon
         closable={!!onClose}
         onClose={onClose}
-        message={title}
+        title={title}
         description={
           <div className="flex flex-col gap-2 mt-0.5">
             <span className="text-xs leading-relaxed">{message}</span>

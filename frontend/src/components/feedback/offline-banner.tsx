@@ -1,29 +1,38 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useSyncExternalStore } from 'react';
 import { Alert } from 'antd';
 
+function subscribeOnline(callback: () => void) {
+  window.addEventListener('online', callback);
+  window.addEventListener('offline', callback);
+  return () => {
+    window.removeEventListener('online', callback);
+    window.removeEventListener('offline', callback);
+  };
+}
+
+function getOnlineSnapshot(): boolean {
+  return typeof navigator !== 'undefined' ? navigator.onLine : true;
+}
+
+function getServerOnlineSnapshot(): boolean {
+  return true;
+}
+
 export function OfflineBanner() {
-  const [isOffline, setIsOffline] = useState<boolean>(() => {
-    if (typeof navigator !== 'undefined') {
-      return !navigator.onLine;
-    }
-    return false;
-  });
+  const isOnline = useSyncExternalStore(
+    subscribeOnline,
+    getOnlineSnapshot,
+    getServerOnlineSnapshot,
+  );
+  const isOffline = !isOnline;
   const [justReconnected, setJustReconnected] = useState(false);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
-    const handleOffline = () => {
-      setIsOffline(true);
-      setJustReconnected(false);
-    };
-
     const handleOnline = () => {
-      setIsOffline(false);
       setJustReconnected(true);
       if (reconnectTimer) clearTimeout(reconnectTimer);
       reconnectTimer = setTimeout(() => {
@@ -31,12 +40,10 @@ export function OfflineBanner() {
       }, 4000);
     };
 
-    window.addEventListener('offline', handleOffline);
     window.addEventListener('online', handleOnline);
 
     return () => {
       if (reconnectTimer) clearTimeout(reconnectTimer);
-      window.removeEventListener('offline', handleOffline);
       window.removeEventListener('online', handleOnline);
     };
   }, []);
@@ -53,7 +60,7 @@ export function OfflineBanner() {
           showIcon
           banner
           className="!rounded-xl !border-amber-200 !bg-amber-50 text-xs font-medium text-amber-900 shadow-sm"
-          message="You are currently offline"
+          title="You are currently offline"
           description="Check your internet connection. In-room dining and service requests will resume once reconnected."
         />
       </div>
@@ -72,7 +79,7 @@ export function OfflineBanner() {
           showIcon
           banner
           className="!rounded-xl !border-emerald-200 !bg-emerald-50 text-xs font-medium text-emerald-900 shadow-sm"
-          message="Back online"
+          title="Back online"
           description="Connection restored. Ready to order and request services."
         />
       </div>

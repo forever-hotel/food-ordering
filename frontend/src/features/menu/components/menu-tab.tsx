@@ -110,7 +110,7 @@ export function MenuTab() {
       <Alert
         type="warning"
         showIcon
-        message={
+        title={
           <span className="text-xs font-medium text-amber-900">
             Lunch orders close at <strong className="font-bold">14:30</strong> — 2h 16m left
           </span>
