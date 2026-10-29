@@ -17,8 +17,10 @@ describe('ServiceRequestsController', () => {
   const sampleGuest: GuestContext = {
     sessionId: 'session-uuid-101',
     bookingId: 'booking-uuid-101',
+    guestId: 'guest-uuid-101',
     roomNumber: '101',
     guestName: 'Jane Doe',
+    role: 'GUEST',
   };
 
   const sampleResponse: ServiceRequestResponseDto = {
@@ -40,14 +42,18 @@ describe('ServiceRequestsController', () => {
 
   beforeEach(() => {
     service = {
-      createServiceRequest: jest.fn().mockResolvedValue(sampleResponse),
-      getGuestServiceRequests: jest.fn().mockResolvedValue([sampleResponse]),
-      getGuestServiceRequestById: jest.fn().mockResolvedValue(sampleResponse),
-      advanceServiceRequestStatus: jest.fn().mockResolvedValue({
+      createServiceRequest: jest.fn<any>().mockResolvedValue(sampleResponse),
+      getGuestServiceRequests: jest
+        .fn<any>()
+        .mockResolvedValue([sampleResponse]),
+      getGuestServiceRequestById: jest
+        .fn<any>()
+        .mockResolvedValue(sampleResponse),
+      advanceServiceRequestStatus: jest.fn<any>().mockResolvedValue({
         ...sampleResponse,
         status: ServiceRequestStatus.ASSIGNED,
       }),
-      handleWkmsStatusEvent: jest.fn().mockResolvedValue({
+      handleWkmsStatusEvent: jest.fn<any>().mockResolvedValue({
         processed: true,
         message: 'Status updated successfully.',
         request: sampleResponse,

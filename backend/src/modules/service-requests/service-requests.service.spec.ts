@@ -29,8 +29,10 @@ describe('ServiceRequestsService', () => {
   const sampleGuest: GuestContext = {
     sessionId: 'session-uuid-101',
     bookingId: 'booking-uuid-101',
+    guestId: 'guest-uuid-101',
     roomNumber: '101',
     guestName: 'Jane Doe',
+    role: 'GUEST',
   };
 
   const validDto: CreateServiceRequestDto = {
@@ -42,17 +44,17 @@ describe('ServiceRequestsService', () => {
 
   beforeEach(() => {
     mockRequestRepository = {
-      save: jest.fn().mockImplementation(async (entity) => entity),
-      findById: jest.fn(),
-      findByTaskId: jest.fn(),
-      findByBookingAndRoom: jest.fn(),
-      findByIdempotencyKey: jest.fn(),
+      save: jest.fn<any>().mockImplementation(async (entity: any) => entity),
+      findById: jest.fn<any>(),
+      findByTaskId: jest.fn<any>(),
+      findByBookingAndRoom: jest.fn<any>(),
+      findByIdempotencyKey: jest.fn<any>(),
     } as unknown as jest.Mocked<FossServiceRequestRepository>;
 
     mockWkms = new MockWkmsAdapter();
 
     mockConfigService = {
-      get: jest.fn().mockImplementation((key: string) => {
+      get: jest.fn<any>().mockImplementation((key?: string) => {
         if (key === 'DEMO_MODE') return 'true';
         if (key === 'MOCK_EXTERNAL_SERVICES') return 'true';
         return undefined;
@@ -456,9 +458,7 @@ describe('ServiceRequestsService', () => {
 
     it('throws NotFoundException when event references non-existent request', async () => {
       mockRequestRepository.findById.mockResolvedValue(null);
-      mockRequestRepository.findByTaskId = jest
-        .fn()
-        .mockResolvedValue(null) as any;
+      mockRequestRepository.findByTaskId.mockResolvedValue(null);
 
       const event: WkmsTaskStatusUpdatedEventDto = {
         eventId: '550e8400-e29b-41d4-a716-446655440001',

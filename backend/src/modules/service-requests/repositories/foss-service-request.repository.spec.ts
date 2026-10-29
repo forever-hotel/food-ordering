@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { Repository } from 'typeorm';
 import { FossServiceRequest } from '../entities/foss-service-request.entity.js';
+import { ServiceRequestStatus } from '../enums/service-request-status.enum.js';
 import { FossServiceRequestRepository } from './foss-service-request.repository.js';
 
 describe('FossServiceRequestRepository', () => {
@@ -60,7 +61,7 @@ describe('FossServiceRequestRepository', () => {
     typeormRepo.find.mockResolvedValue([entity]);
 
     const result = await repository.findByBookingAndRoom('booking-101', '101', {
-      status: 'SUBMITTED' as any,
+      status: ServiceRequestStatus.SUBMITTED,
       requestType: 'EXTRA_TOWELS',
       limit: 10,
       offset: 5,
@@ -70,7 +71,7 @@ describe('FossServiceRequestRepository', () => {
       where: {
         bookingId: 'booking-101',
         roomNumber: '101',
-        status: 'SUBMITTED',
+        status: ServiceRequestStatus.SUBMITTED,
         requestType: 'EXTRA_TOWELS',
       },
       order: { createdAt: 'DESC' },
