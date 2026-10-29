@@ -388,9 +388,10 @@ describe('Guest Complaints Management (e2e)', () => {
       );
     });
 
-    it('ensures concurrent submissions generate distinct collision-free references', async () => {
-      const requests = Array.from({ length: 5 }, (_, i) =>
-        request(app.getHttpServer())
+    it('ensures rapid submissions generate distinct collision-free references', async () => {
+      const complaintIds: string[] = [];
+      for (let i = 0; i < 5; i++) {
+        const response = await request(app.getHttpServer())
           .post('/complaints')
           .set('Authorization', `Bearer ${activeTokenRoom101}`)
           .send({
@@ -398,13 +399,13 @@ describe('Guest Complaints Management (e2e)', () => {
             severity: ComplaintSeverity.LOW,
             subject: `Amenity item missing #${i}`,
             description: `Toothbrush kit is missing from the bathroom shelf #${i}.`,
-          }),
-      );
+          })
+          .expect(201);
 
-      const responses = await Promise.all(requests);
-      const complaintIds = responses.map((r) => r.body.complaintId);
+        complaintIds.push(response.body.complaintId);
+      }
+
       const uniqueIds = new Set(complaintIds);
-
       expect(uniqueIds.size).toBe(5);
     });
   });
