@@ -112,6 +112,14 @@ export class MockWkmsAdapter implements WkmsProvider {
     return { ...task };
   }
 
+  public async transitionTaskStatus(
+    taskId: string,
+    newStatus: ServiceRequestStatus,
+    assignedStaff?: string,
+  ): Promise<WkmsTaskResultDto> {
+    return this.transitionStatus(taskId, newStatus, assignedStaff);
+  }
+
   public transitionStatus(
     taskId: string,
     newStatus: ServiceRequestStatus,

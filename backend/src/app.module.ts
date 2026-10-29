@@ -11,6 +11,7 @@ import { WkmsInternalModule } from './integrations/internal-services/wkms/wkms-i
 import { GuestSessionsModule } from './modules/guest-sessions/guest-sessions.module.js';
 import { MenuModule } from './modules/menu/menu.module.js';
 import { FoodOrdersModule } from './modules/food-orders/food-orders.module.js';
+import { ServiceRequestsModule } from './modules/service-requests/service-requests.module.js';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { FoodOrdersModule } from './modules/food-orders/food-orders.module.js';
     HealthModule,
     MenuModule,
     FoodOrdersModule,
+    ServiceRequestsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
