@@ -1,3 +1,4 @@
+import { ServiceRequestStatus } from '../../../../modules/service-requests/enums/service-request-status.enum.js';
 import { WkmsCreateTaskDto } from '../dto/wkms-task.dto.js';
 import { WkmsTaskResultDto } from '../dto/wkms-task-result.dto.js';
 
@@ -9,5 +10,10 @@ export abstract class WkmsProvider {
   abstract cancelTask(
     taskId: string,
     reason?: string,
+  ): Promise<WkmsTaskResultDto>;
+  abstract transitionTaskStatus(
+    taskId: string,
+    newStatus: ServiceRequestStatus,
+    assignedStaff?: string,
   ): Promise<WkmsTaskResultDto>;
 }

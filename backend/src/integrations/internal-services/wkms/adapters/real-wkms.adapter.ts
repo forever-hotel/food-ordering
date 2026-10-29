@@ -42,6 +42,19 @@ export class RealWkmsAdapter implements WkmsProvider {
     );
   }
 
+  public async transitionTaskStatus(
+    taskId: string,
+    newStatus: string,
+    assignedStaff?: string,
+  ): Promise<WkmsTaskResultDto> {
+    this.assertConfigured();
+    return this.executeHttpCall<WkmsTaskResultDto>(
+      `/api/v1/tasks/${encodeURIComponent(taskId)}/status`,
+      'PATCH',
+      { status: newStatus, assignedStaff },
+    );
+  }
+
   private assertConfigured(): void {
     if (!this.baseUrl || this.baseUrl.trim() === '') {
       this.logger.error(
