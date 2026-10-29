@@ -78,4 +78,27 @@ describe('FossComplaintRepository', () => {
     });
     expect(results).toEqual([mockComplaint]);
   });
+
+  it('finds complaints with category and severity filters', async () => {
+    const results = await repository.findByBookingAndRoom(
+      '550e8400-e29b-41d4-a716-446655440000',
+      '101',
+      {
+        category: ComplaintCategory.FOOD,
+        severity: ComplaintSeverity.MEDIUM,
+      },
+    );
+    expect(typeOrmRepo.find).toHaveBeenCalledWith({
+      where: {
+        bookingId: '550e8400-e29b-41d4-a716-446655440000',
+        roomNumber: '101',
+        category: ComplaintCategory.FOOD,
+        severity: ComplaintSeverity.MEDIUM,
+      },
+      order: { createdAt: 'DESC' },
+      take: 50,
+      skip: 0,
+    });
+    expect(results).toEqual([mockComplaint]);
+  });
 });
