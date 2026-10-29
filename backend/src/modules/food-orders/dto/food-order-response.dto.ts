@@ -8,7 +8,7 @@ export class FoodOrderItemResponseDto {
   @ApiProperty({ example: 'Truffle Mushroom Arancini' })
   name!: string;
 
-  @ApiProperty({ example: 14.5 })
+  @ApiProperty({ example: 18.0 })
   unitPrice!: number;
 
   @ApiProperty({ example: 2 })
@@ -16,6 +16,23 @@ export class FoodOrderItemResponseDto {
 
   @ApiPropertyOptional({ example: 'Extra crispy' })
   specialNotes?: string;
+}
+
+export class OrderTimelineStepDto {
+  @ApiProperty({ enum: FoodOrderStatus, example: FoodOrderStatus.PLACED })
+  status!: FoodOrderStatus;
+
+  @ApiProperty({ example: 'Order Placed' })
+  label!: string;
+
+  @ApiProperty({ example: true })
+  completed!: boolean;
+
+  @ApiProperty({ example: true })
+  current!: boolean;
+
+  @ApiPropertyOptional({ example: '2026-10-29T12:00:00.000Z' })
+  timestamp?: string;
 }
 
 export class FoodOrderResponseDto {
@@ -31,7 +48,7 @@ export class FoodOrderResponseDto {
   @ApiProperty({ enum: FoodOrderStatus, example: FoodOrderStatus.PLACED })
   status!: FoodOrderStatus;
 
-  @ApiProperty({ example: 29.0 })
+  @ApiProperty({ example: 36.0 })
   totalAmount!: number;
 
   @ApiProperty({ type: [FoodOrderItemResponseDto] })
@@ -54,4 +71,28 @@ export class FoodOrderResponseDto {
 
   @ApiProperty({ example: 'idemp-550e8400-e29b-41d4-a716-446655440000' })
   idempotencyKey!: string;
+
+  @ApiPropertyOptional({
+    example: true,
+    description: 'Whether the order can currently be cancelled by the guest',
+  })
+  canCancel?: boolean;
+
+  @ApiPropertyOptional({
+    example: '2026-10-29T12:10:00.000Z',
+    description: 'Timestamp when the 10-minute cancellation window closes',
+  })
+  cancellationCutoffTime?: string;
+
+  @ApiPropertyOptional({
+    example: 420,
+    description: 'Seconds remaining before the cancellation window closes',
+  })
+  secondsRemainingToCancel?: number;
+
+  @ApiPropertyOptional({
+    type: [OrderTimelineStepDto],
+    description: 'Status lifecycle timeline tracking progress',
+  })
+  timeline?: OrderTimelineStepDto[];
 }

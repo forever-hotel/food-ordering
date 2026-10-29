@@ -1,3 +1,4 @@
+import { FoodOrderStatus } from '../../../../modules/food-orders/enums/food-order-status.enum.js';
 import { KmsMenuCatalogDto, MealPeriod } from '../dto/kms-menu.dto.js';
 import { KmsCreateOrderDto } from '../dto/kms-order.dto.js';
 import { KmsOrderResultDto } from '../dto/kms-order-result.dto.js';
@@ -11,5 +12,9 @@ export abstract class KmsProvider {
   abstract cancelOrder(
     orderId: string,
     reason?: string,
+  ): Promise<KmsOrderResultDto>;
+  abstract transitionOrderStatus(
+    orderId: string,
+    newStatus: FoodOrderStatus,
   ): Promise<KmsOrderResultDto>;
 }

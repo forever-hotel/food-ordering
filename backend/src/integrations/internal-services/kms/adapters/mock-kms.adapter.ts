@@ -122,6 +122,12 @@ export class MockKmsAdapter implements KmsProvider {
       throw new Error(`Order [${orderId}] not found in KMS.`);
     }
 
+    if (order.status === FoodOrderStatus.IN_PREPARATION) {
+      throw new Error(
+        `Order [${orderId}] cannot be cancelled because kitchen preparation has already begun.`,
+      );
+    }
+
     if (order.status === FoodOrderStatus.DELIVERED) {
       throw new Error(
         `Order [${orderId}] cannot be cancelled because it has already been delivered.`,
@@ -136,6 +142,13 @@ export class MockKmsAdapter implements KmsProvider {
       `Mock KMS order cancelled: [${orderId}]${reason ? ` Reason: ${reason}` : ''}`,
     );
     return { ...order };
+  }
+
+  public async transitionOrderStatus(
+    orderId: string,
+    newStatus: FoodOrderStatus,
+  ): Promise<KmsOrderResultDto> {
+    return this.transitionStatus(orderId, newStatus);
   }
 
   public transitionStatus(

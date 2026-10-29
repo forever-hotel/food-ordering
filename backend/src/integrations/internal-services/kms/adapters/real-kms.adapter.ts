@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { UpstreamServiceUnavailableException } from '../../../contracts/upstream-integration.exception.js';
+import { FoodOrderStatus } from '../../../../modules/food-orders/enums/food-order-status.enum.js';
 import { KmsMenuCatalogDto, MealPeriod } from '../dto/kms-menu.dto.js';
 import { KmsCreateOrderDto } from '../dto/kms-order.dto.js';
 import { KmsOrderResultDto } from '../dto/kms-order-result.dto.js';
@@ -52,6 +53,18 @@ export class RealKmsAdapter implements KmsProvider {
       `/api/v1/orders/${encodeURIComponent(orderId)}/cancel`,
       'POST',
       { reason },
+    );
+  }
+
+  public async transitionOrderStatus(
+    orderId: string,
+    newStatus: FoodOrderStatus,
+  ): Promise<KmsOrderResultDto> {
+    this.assertConfigured();
+    return this.executeHttpCall<KmsOrderResultDto>(
+      `/api/v1/orders/${encodeURIComponent(orderId)}/status`,
+      'PATCH',
+      { status: newStatus },
     );
   }
 
