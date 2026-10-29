@@ -6,6 +6,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ContractVersion } from '../../integrations/contracts/contract-version.enum.js';
@@ -18,6 +19,8 @@ import {
   KmsProvider,
   KMS_PROVIDER,
 } from '../../integrations/internal-services/kms/interfaces/kms-provider.interface.js';
+import { RealtimeEventType } from '../../realtime/enums/realtime-event-type.enum.js';
+import { RealtimeService } from '../../realtime/realtime.service.js';
 import type { GuestContext } from '../guest-sessions/interfaces/guest-context.interface.js';
 import { HotelClockService } from '../menu/services/hotel-clock.service.js';
 import { MealWindowService } from '../menu/services/meal-window.service.js';
@@ -43,6 +46,8 @@ export class FoodOrdersService {
     private readonly clockService: HotelClockService,
     private readonly orderRepository: FossDemoOrderRepository,
     private readonly configService: ConfigService,
+    @Optional()
+    private readonly realtimeService?: RealtimeService,
   ) {}
 
   /**
@@ -222,7 +227,14 @@ export class FoodOrdersService {
       throw err;
     }
 
-    return this.mapToResponse(demoOrder);
+    const response = this.mapToResponse(demoOrder);
+    this.realtimeService?.emitToStay(
+      guest.bookingId,
+      guest.roomNumber,
+      RealtimeEventType.FOOD_ORDER_STATUS_UPDATED,
+      response,
+    );
+    return response;
   }
 
   /**
@@ -345,7 +357,14 @@ export class FoodOrdersService {
     order.updatedAt = now;
     await this.orderRepository.save(order);
 
-    return this.mapToResponse(order, now);
+    const response = this.mapToResponse(order, now);
+    this.realtimeService?.emitToStay(
+      guest.bookingId,
+      guest.roomNumber,
+      RealtimeEventType.FOOD_ORDER_STATUS_UPDATED,
+      response,
+    );
+    return response;
   }
 
   /**
@@ -390,7 +409,14 @@ export class FoodOrdersService {
     }
 
     await this.orderRepository.save(order);
-    return this.mapToResponse(order, now);
+    const response = this.mapToResponse(order, now);
+    this.realtimeService?.emitToStay(
+      guest.bookingId,
+      guest.roomNumber,
+      RealtimeEventType.FOOD_ORDER_STATUS_UPDATED,
+      response,
+    );
+    return response;
   }
 
   private mapToResponse(

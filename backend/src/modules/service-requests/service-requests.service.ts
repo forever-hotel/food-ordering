@@ -5,6 +5,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { UpstreamServiceUnavailableException } from '../../integrations/contracts/upstream-integration.exception.js';
@@ -16,6 +17,8 @@ import {
   WKMS_PROVIDER,
   WkmsProvider,
 } from '../../integrations/internal-services/wkms/interfaces/wkms-provider.interface.js';
+import { RealtimeEventType } from '../../realtime/enums/realtime-event-type.enum.js';
+import { RealtimeService } from '../../realtime/realtime.service.js';
 import type { GuestContext } from '../guest-sessions/interfaces/guest-context.interface.js';
 import { CreateServiceRequestDto } from './dto/create-service-request.dto.js';
 import { GetServiceRequestsQueryDto } from './dto/get-service-requests-query.dto.js';
@@ -45,6 +48,8 @@ export class ServiceRequestsService {
     @Inject(WKMS_PROVIDER)
     private readonly wkmsProvider: WkmsProvider,
     private readonly configService: ConfigService,
+    @Optional()
+    private readonly realtimeService?: RealtimeService,
   ) {}
 
   /**
@@ -145,7 +150,14 @@ export class ServiceRequestsService {
       throw err;
     }
 
-    return this.mapToResponse(entity);
+    const response = this.mapToResponse(entity);
+    this.realtimeService?.emitToStay(
+      guest.bookingId,
+      guest.roomNumber,
+      RealtimeEventType.SERVICE_REQUEST_STATUS_UPDATED,
+      response,
+    );
+    return response;
   }
 
   /**
@@ -249,7 +261,14 @@ export class ServiceRequestsService {
     }
 
     await this.requestRepository.save(request);
-    return this.mapToResponse(request);
+    const response = this.mapToResponse(request);
+    this.realtimeService?.emitToStay(
+      guest.bookingId,
+      guest.roomNumber,
+      RealtimeEventType.SERVICE_REQUEST_STATUS_UPDATED,
+      response,
+    );
+    return response;
   }
 
   /**
@@ -351,10 +370,19 @@ export class ServiceRequestsService {
       `WKMS event [${event.eventId}] applied: request [${request.requestId}] status transitioned to [${request.status}].`,
     );
 
+    const response = this.mapToResponse(request);
+    this.realtimeService?.emitToStay(
+      request.bookingId,
+      request.roomNumber,
+      RealtimeEventType.SERVICE_REQUEST_STATUS_UPDATED,
+      response,
+      event.eventId,
+    );
+
     return {
       processed: true,
       message: 'Service request status updated successfully from WKMS event.',
-      request: this.mapToResponse(request),
+      request: response,
     };
   }
 

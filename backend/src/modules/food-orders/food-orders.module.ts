@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { KmsInternalModule } from '../../integrations/internal-services/kms/kms-internal.module.js';
+import { RealtimeModule } from '../../realtime/realtime.module.js';
 import { GuestSessionsModule } from '../guest-sessions/guest-sessions.module.js';
 import { MenuModule } from '../menu/menu.module.js';
 import { FossDemoOrderItem } from './entities/foss-demo-order-item.entity.js';
@@ -15,6 +16,7 @@ import { FossDemoOrderRepository } from './repositories/foss-demo-order.reposito
     KmsInternalModule,
     GuestSessionsModule,
     MenuModule,
+    RealtimeModule,
   ],
   controllers: [FoodOrdersController],
   providers: [FossDemoOrderRepository, FoodOrdersService],
