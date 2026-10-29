@@ -2,6 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { FossComplaint } from '../entities/foss-complaint.entity.js';
+import { ComplaintCategory } from '../enums/complaint-category.enum.js';
+import { ComplaintSeverity } from '../enums/complaint-severity.enum.js';
 import { ComplaintStatus } from '../enums/complaint-status.enum.js';
 
 @Injectable()
@@ -34,6 +36,8 @@ export class FossComplaintRepository {
     roomNumber: string,
     filters?: {
       status?: ComplaintStatus;
+      category?: ComplaintCategory;
+      severity?: ComplaintSeverity;
       limit?: number;
       offset?: number;
     },
@@ -41,6 +45,12 @@ export class FossComplaintRepository {
     const where: any = { bookingId, roomNumber };
     if (filters?.status) {
       where.status = filters.status;
+    }
+    if (filters?.category) {
+      where.category = filters.category;
+    }
+    if (filters?.severity) {
+      where.severity = filters.severity;
     }
 
     return this.repository.find({

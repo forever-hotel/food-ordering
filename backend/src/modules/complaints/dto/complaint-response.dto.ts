@@ -3,6 +3,39 @@ import { ComplaintCategory } from '../enums/complaint-category.enum.js';
 import { ComplaintSeverity } from '../enums/complaint-severity.enum.js';
 import { ComplaintStatus } from '../enums/complaint-status.enum.js';
 
+export class ComplaintTimelineStepDto {
+  @ApiProperty({
+    enum: ComplaintStatus,
+    example: ComplaintStatus.SUBMITTED,
+    description: 'Status corresponding to this timeline milestone',
+  })
+  status!: ComplaintStatus;
+
+  @ApiProperty({
+    example: 'Complaint Submitted',
+    description: 'Human-readable label for the milestone',
+  })
+  label!: string;
+
+  @ApiProperty({
+    example: true,
+    description: 'Whether this stage has been completed',
+  })
+  completed!: boolean;
+
+  @ApiProperty({
+    example: true,
+    description: 'Whether this stage is currently active',
+  })
+  current!: boolean;
+
+  @ApiPropertyOptional({
+    example: '2026-10-29T20:00:00.000Z',
+    description: 'Timestamp when this milestone was reached',
+  })
+  timestamp?: string;
+}
+
 export class ComplaintResponseDto {
   @ApiProperty({
     example: 'CMP-20261029-A1B2C3',
@@ -91,4 +124,10 @@ export class ComplaintResponseDto {
     description: 'Timestamp when the complaint was last updated',
   })
   updatedAt!: string;
+
+  @ApiProperty({
+    type: [ComplaintTimelineStepDto],
+    description: 'Progression timeline for the complaint lifecycle',
+  })
+  timeline!: ComplaintTimelineStepDto[];
 }

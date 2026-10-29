@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { UpstreamServiceUnavailableException } from '../../integrations/contracts/upstream-integration.exception.js';
 import { MadComplaintProvider } from '../../integrations/internal-services/mad/interfaces/mad-complaint-provider.interface.js';
@@ -244,7 +248,7 @@ describe('ComplaintsService', () => {
   });
 
   describe('getComplaintById', () => {
-    it('returns complaint when owned by guest stay', async () => {
+    it('returns complaint when owned by guest stay with complete timeline', async () => {
       (complaintRepo.findById as any).mockResolvedValueOnce(existingComplaint);
 
       const result = await service.getComplaintById(
@@ -252,6 +256,30 @@ describe('ComplaintsService', () => {
         'CMP-20261029-A1B2C3',
       );
       expect(result.complaintId).toBe(existingComplaint.complaintId);
+      expect(result.timeline).toBeDefined();
+      expect(result.timeline.length).toBeGreaterThanOrEqual(3);
+      expect(result.timeline[0].status).toBe(ComplaintStatus.SUBMITTED);
+      expect(result.timeline[0].current).toBe(true);
+      expect(result.timeline[0].completed).toBe(true);
+    });
+
+    it('builds timeline correctly for ESCALATED status', async () => {
+      (complaintRepo.findById as any).mockResolvedValueOnce({
+        ...existingComplaint,
+        status: ComplaintStatus.ESCALATED,
+      });
+
+      const result = await service.getComplaintById(
+        mockGuest,
+        'CMP-20261029-A1B2C3',
+      );
+      expect(result.status).toBe(ComplaintStatus.ESCALATED);
+      const escalatedStep = result.timeline.find(
+        (t) => t.status === ComplaintStatus.ESCALATED,
+      );
+      expect(escalatedStep).toBeDefined();
+      expect(escalatedStep?.current).toBe(true);
+      expect(escalatedStep?.completed).toBe(true);
     });
 
     it('throws NotFoundException when complaint does not exist', async () => {
@@ -275,14 +303,223 @@ describe('ComplaintsService', () => {
   });
 
   describe('getComplaints', () => {
-    it('returns all complaints for current stay', async () => {
+    it('returns all complaints for current stay without filters', async () => {
       const results = await service.getComplaints(mockGuest);
       expect(complaintRepo.findByBookingAndRoom).toHaveBeenCalledWith(
         mockGuest.bookingId,
         mockGuest.roomNumber,
+        undefined,
       );
       expect(results).toHaveLength(1);
       expect(results[0].complaintId).toBe(existingComplaint.complaintId);
+    });
+
+    it('passes query filters to repository findByBookingAndRoom', async () => {
+      const query = {
+        status: ComplaintStatus.SUBMITTED,
+        category: ComplaintCategory.FOOD,
+        severity: ComplaintSeverity.MEDIUM,
+        limit: 10,
+        offset: 5,
+      };
+
+      await service.getComplaints(mockGuest, query);
+      expect(complaintRepo.findByBookingAndRoom).toHaveBeenCalledWith(
+        mockGuest.bookingId,
+        mockGuest.roomNumber,
+        query,
+      );
+    });
+  });
+
+  describe('advanceComplaintStatus', () => {
+    it('advances complaint status successfully and emits real-time event', async () => {
+      (complaintRepo.findById as any).mockResolvedValueOnce({
+        ...existingComplaint,
+        status: ComplaintStatus.SUBMITTED,
+      });
+
+      const result = await service.advanceComplaintStatus(
+        mockGuest,
+        existingComplaint.complaintId,
+        {
+          status: ComplaintStatus.UNDER_INVESTIGATION,
+          assignedManager: 'Duty Manager Alan',
+          resolutionNotes: 'Inspection scheduled',
+        },
+      );
+
+      expect(complaintRepo.save).toHaveBeenCalledTimes(1);
+      expect(result.status).toBe(ComplaintStatus.UNDER_INVESTIGATION);
+      expect(result.assignedManager).toBe('Duty Manager Alan');
+      expect(result.resolutionNotes).toBe('Inspection scheduled');
+      expect(realtimeService.emitToStay).toHaveBeenCalledWith(
+        mockGuest.bookingId,
+        mockGuest.roomNumber,
+        RealtimeEventType.COMPLAINT_STATUS_UPDATED,
+        expect.objectContaining({
+          status: ComplaintStatus.UNDER_INVESTIGATION,
+        }),
+      );
+    });
+
+    it('rejects regression from RESOLVED to SUBMITTED', async () => {
+      (complaintRepo.findById as any).mockResolvedValueOnce({
+        ...existingComplaint,
+        status: ComplaintStatus.RESOLVED,
+      });
+
+      await expect(
+        service.advanceComplaintStatus(
+          mockGuest,
+          existingComplaint.complaintId,
+          {
+            status: ComplaintStatus.SUBMITTED,
+          },
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('throws NotFoundException when complaint does not exist', async () => {
+      (complaintRepo.findById as any).mockResolvedValueOnce(null);
+
+      await expect(
+        service.advanceComplaintStatus(mockGuest, 'NON-EXISTENT', {
+          status: ComplaintStatus.UNDER_INVESTIGATION,
+        }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('throws NotFoundException when complaint belongs to another room', async () => {
+      (complaintRepo.findById as any).mockResolvedValueOnce({
+        ...existingComplaint,
+        roomNumber: '999',
+      });
+
+      await expect(
+        service.advanceComplaintStatus(
+          mockGuest,
+          existingComplaint.complaintId,
+          {
+            status: ComplaintStatus.UNDER_INVESTIGATION,
+          },
+        ),
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('handleMadStatusEvent', () => {
+    const validEvent = {
+      eventId: '990e8400-e29b-41d4-a716-446655440001',
+      complaintId: existingComplaint.complaintId,
+      roomNumber: '101',
+      status: ComplaintStatus.UNDER_INVESTIGATION,
+      assignedManager: 'Manager Michael',
+      resolutionNotes: 'Under review by housekeeping',
+      occurredAt: '2026-10-29T21:00:00.000Z',
+    };
+
+    it('applies status update from MAD event and emits realtime update', async () => {
+      (complaintRepo.findById as any).mockResolvedValueOnce({
+        ...existingComplaint,
+        status: ComplaintStatus.SUBMITTED,
+        updatedAt: new Date('2026-10-29T20:00:00.000Z'),
+      });
+
+      const res = await service.handleMadStatusEvent(validEvent);
+
+      expect(res.processed).toBe(true);
+      expect(res.complaint?.status).toBe(ComplaintStatus.UNDER_INVESTIGATION);
+      expect(complaintRepo.save).toHaveBeenCalledTimes(1);
+      expect(realtimeService.emitToStay).toHaveBeenCalledWith(
+        mockGuest.bookingId,
+        mockGuest.roomNumber,
+        RealtimeEventType.COMPLAINT_STATUS_UPDATED,
+        expect.objectContaining({
+          status: ComplaintStatus.UNDER_INVESTIGATION,
+        }),
+        validEvent.eventId,
+      );
+    });
+
+    it('deduplicates duplicate event ID without persisting twice', async () => {
+      (complaintRepo.findById as any).mockResolvedValueOnce({
+        ...existingComplaint,
+        status: ComplaintStatus.SUBMITTED,
+      });
+
+      // First run processes
+      await service.handleMadStatusEvent(validEvent);
+
+      // Second run with same eventId returns duplicate
+      const duplicateRes = await service.handleMadStatusEvent(validEvent);
+
+      expect(duplicateRes.processed).toBe(true);
+      expect(duplicateRes.duplicate).toBe(true);
+      expect(complaintRepo.save).toHaveBeenCalledTimes(1); // not called again
+    });
+
+    it('throws NotFoundException if target complaint does not exist', async () => {
+      (complaintRepo.findById as any).mockResolvedValueOnce(null);
+
+      await expect(
+        service.handleMadStatusEvent({
+          ...validEvent,
+          eventId: '990e8400-e29b-41d4-a716-446655440099',
+        }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('throws ForbiddenException if event roomNumber does not match complaint room', async () => {
+      (complaintRepo.findById as any).mockResolvedValueOnce({
+        ...existingComplaint,
+        roomNumber: '101',
+      });
+
+      await expect(
+        service.handleMadStatusEvent({
+          ...validEvent,
+          eventId: '990e8400-e29b-41d4-a716-446655440098',
+          roomNumber: '102',
+        }),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('discards stale MAD event older than resolved complaint updatedAt', async () => {
+      (complaintRepo.findById as any).mockResolvedValueOnce({
+        ...existingComplaint,
+        status: ComplaintStatus.RESOLVED,
+        updatedAt: new Date('2026-10-29T22:00:00.000Z'),
+      });
+
+      const res = await service.handleMadStatusEvent({
+        ...validEvent,
+        eventId: '990e8400-e29b-41d4-a716-446655440097',
+        occurredAt: '2026-10-29T19:00:00.000Z', // older
+      });
+
+      expect(res.processed).toBe(false);
+      expect(res.message).toContain('Stale MAD event discarded');
+      expect(complaintRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('discards out-of-order event attempting to regress RESOLVED to SUBMITTED', async () => {
+      (complaintRepo.findById as any).mockResolvedValueOnce({
+        ...existingComplaint,
+        status: ComplaintStatus.RESOLVED,
+        updatedAt: new Date('2026-10-29T20:00:00.000Z'),
+      });
+
+      const res = await service.handleMadStatusEvent({
+        ...validEvent,
+        eventId: '990e8400-e29b-41d4-a716-446655440096',
+        status: ComplaintStatus.SUBMITTED,
+        occurredAt: '2026-10-29T21:00:00.000Z',
+      });
+
+      expect(res.processed).toBe(false);
+      expect(res.message).toContain('Out-of-order MAD event discarded');
+      expect(complaintRepo.save).not.toHaveBeenCalled();
     });
   });
 });
