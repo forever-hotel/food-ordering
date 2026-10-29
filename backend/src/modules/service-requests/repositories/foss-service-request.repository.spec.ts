@@ -49,6 +49,33 @@ describe('FossServiceRequestRepository', () => {
     expect(typeormRepo.find).toHaveBeenCalledWith({
       where: { bookingId: 'booking-101', roomNumber: '101' },
       order: { createdAt: 'DESC' },
+      take: 50,
+      skip: 0,
+    });
+  });
+
+  it('finds requests with status, category filters and pagination', async () => {
+    const entity = new FossServiceRequest();
+    entity.requestId = 'req-102';
+    typeormRepo.find.mockResolvedValue([entity]);
+
+    const result = await repository.findByBookingAndRoom('booking-101', '101', {
+      status: 'SUBMITTED' as any,
+      requestType: 'EXTRA_TOWELS',
+      limit: 10,
+      offset: 5,
+    });
+    expect(result).toEqual([entity]);
+    expect(typeormRepo.find).toHaveBeenCalledWith({
+      where: {
+        bookingId: 'booking-101',
+        roomNumber: '101',
+        status: 'SUBMITTED',
+        requestType: 'EXTRA_TOWELS',
+      },
+      order: { createdAt: 'DESC' },
+      take: 10,
+      skip: 5,
     });
   });
 

@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { UpstreamServiceUnavailableException } from '../../integrations/contracts/upstream-integration.exception.js';
 import { MockWkmsAdapter } from '../../integrations/internal-services/wkms/adapters/mock-wkms.adapter.js';
@@ -9,6 +13,8 @@ import {
 } from '../../integrations/internal-services/wkms/dto/wkms-task.dto.js';
 import type { GuestContext } from '../guest-sessions/interfaces/guest-context.interface.js';
 import { CreateServiceRequestDto } from './dto/create-service-request.dto.js';
+import { GetServiceRequestsQueryDto } from './dto/get-service-requests-query.dto.js';
+import { WkmsTaskStatusUpdatedEventDto } from './dto/wkms-status-event.dto.js';
 import { FossServiceRequest } from './entities/foss-service-request.entity.js';
 import { ServiceRequestStatus } from './enums/service-request-status.enum.js';
 import { FossServiceRequestRepository } from './repositories/foss-service-request.repository.js';
@@ -38,6 +44,7 @@ describe('ServiceRequestsService', () => {
     mockRequestRepository = {
       save: jest.fn().mockImplementation(async (entity) => entity),
       findById: jest.fn(),
+      findByTaskId: jest.fn(),
       findByBookingAndRoom: jest.fn(),
       findByIdempotencyKey: jest.fn(),
     } as unknown as jest.Mocked<FossServiceRequestRepository>;
@@ -220,6 +227,30 @@ describe('ServiceRequestsService', () => {
       const result = await service.getGuestServiceRequests(sampleGuest);
       expect(result).toHaveLength(1);
       expect(result[0]?.requestId).toBe('req-1');
+      expect(mockRequestRepository.findByBookingAndRoom).toHaveBeenCalledWith(
+        sampleGuest.bookingId,
+        sampleGuest.roomNumber,
+        undefined,
+      );
+    });
+
+    it('passes status and type filter parameters to repository', async () => {
+      mockRequestRepository.findByBookingAndRoom.mockResolvedValue([]);
+
+      const query: GetServiceRequestsQueryDto = {
+        status: ServiceRequestStatus.SUBMITTED,
+        requestType: TaskType.EXTRA_TOWELS,
+        limit: 10,
+        offset: 5,
+      };
+
+      await service.getGuestServiceRequests(sampleGuest, query);
+
+      expect(mockRequestRepository.findByBookingAndRoom).toHaveBeenCalledWith(
+        sampleGuest.bookingId,
+        sampleGuest.roomNumber,
+        query,
+      );
     });
   });
 
@@ -260,6 +291,29 @@ describe('ServiceRequestsService', () => {
       expect(result.status).toBe(ServiceRequestStatus.ASSIGNED);
       expect(result.assignedStaff).toBe('Staff Housekeeping #14');
       expect(mockRequestRepository.save).toHaveBeenCalled();
+    });
+
+    it('rejects illegal status regression with 409 ConflictException', async () => {
+      const req = new FossServiceRequest();
+      req.requestId = 'req-demo-regression';
+      req.taskId = 'task-demo-regression';
+      req.bookingId = sampleGuest.bookingId;
+      req.roomNumber = sampleGuest.roomNumber;
+      req.requestType = TaskType.ROOM_CLEANING;
+      req.status = ServiceRequestStatus.IN_PROGRESS;
+      req.priority = TaskPriority.NORMAL;
+      req.createdAt = new Date();
+      req.updatedAt = new Date();
+
+      mockRequestRepository.findById.mockResolvedValue(req);
+
+      await expect(
+        service.advanceServiceRequestStatus(
+          sampleGuest,
+          'req-demo-regression',
+          ServiceRequestStatus.SUBMITTED,
+        ),
+      ).rejects.toThrow(ConflictException);
     });
 
     it('resets estimated completion minutes to 0 when status reaches COMPLETED', async () => {
@@ -337,6 +391,160 @@ describe('ServiceRequestsService', () => {
           ServiceRequestStatus.ASSIGNED,
         ),
       ).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  describe('handleWkmsStatusEvent()', () => {
+    it('applies WKMS status event and updates request lifecycle successfully', async () => {
+      const req = new FossServiceRequest();
+      req.requestId = 'req-wkms-001';
+      req.taskId = 'task-wkms-001';
+      req.bookingId = sampleGuest.bookingId;
+      req.roomNumber = '101';
+      req.requestType = TaskType.ROOM_CLEANING;
+      req.status = ServiceRequestStatus.SUBMITTED;
+      req.priority = TaskPriority.NORMAL;
+      req.createdAt = new Date('2026-10-28T07:00:00.000Z');
+      req.updatedAt = new Date('2026-10-28T07:00:00.000Z');
+
+      mockRequestRepository.findById.mockResolvedValue(req);
+
+      const event: WkmsTaskStatusUpdatedEventDto = {
+        eventId: '550e8400-e29b-41d4-a716-446655440000',
+        requestId: 'req-wkms-001',
+        roomNumber: '101',
+        status: ServiceRequestStatus.ASSIGNED,
+        assignedStaff: 'Staff #42',
+        occurredAt: '2026-10-28T07:05:00.000Z',
+      };
+
+      const result = await service.handleWkmsStatusEvent(event);
+
+      expect(result.processed).toBe(true);
+      expect(result.request?.status).toBe(ServiceRequestStatus.ASSIGNED);
+      expect(result.request?.assignedStaff).toBe('Staff #42');
+      expect(mockRequestRepository.save).toHaveBeenCalled();
+    });
+
+    it('deduplicates duplicate eventId without mutating entity again', async () => {
+      const req = new FossServiceRequest();
+      req.requestId = 'req-wkms-dedup';
+      req.roomNumber = '101';
+      req.bookingId = sampleGuest.bookingId;
+      req.status = ServiceRequestStatus.SUBMITTED;
+      req.updatedAt = new Date('2026-10-28T07:00:00.000Z');
+
+      mockRequestRepository.findById.mockResolvedValue(req);
+
+      const event: WkmsTaskStatusUpdatedEventDto = {
+        eventId: '550e8400-e29b-41d4-a716-446655440099',
+        requestId: 'req-wkms-dedup',
+        roomNumber: '101',
+        status: ServiceRequestStatus.ASSIGNED,
+        occurredAt: '2026-10-28T07:05:00.000Z',
+      };
+
+      // First call processes it
+      await service.handleWkmsStatusEvent(event);
+
+      // Second call with same eventId
+      const result = await service.handleWkmsStatusEvent(event);
+
+      expect(result.processed).toBe(true);
+      expect(result.message).toContain('already processed');
+    });
+
+    it('throws NotFoundException when event references non-existent request', async () => {
+      mockRequestRepository.findById.mockResolvedValue(null);
+      mockRequestRepository.findByTaskId = jest
+        .fn()
+        .mockResolvedValue(null) as any;
+
+      const event: WkmsTaskStatusUpdatedEventDto = {
+        eventId: '550e8400-e29b-41d4-a716-446655440001',
+        requestId: 'req-unknown',
+        roomNumber: '101',
+        status: ServiceRequestStatus.ASSIGNED,
+        occurredAt: '2026-10-28T07:10:00.000Z',
+      };
+
+      await expect(service.handleWkmsStatusEvent(event)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('throws ForbiddenException when event roomNumber mismatches request room', async () => {
+      const req = new FossServiceRequest();
+      req.requestId = 'req-wkms-002';
+      req.roomNumber = '101';
+      req.bookingId = 'booking-101';
+      req.status = ServiceRequestStatus.SUBMITTED;
+      req.updatedAt = new Date();
+
+      mockRequestRepository.findById.mockResolvedValue(req);
+
+      const event: WkmsTaskStatusUpdatedEventDto = {
+        eventId: '550e8400-e29b-41d4-a716-446655440002',
+        requestId: 'req-wkms-002',
+        roomNumber: '999', // Mismatch!
+        status: ServiceRequestStatus.ASSIGNED,
+        occurredAt: new Date().toISOString(),
+      };
+
+      await expect(service.handleWkmsStatusEvent(event)).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it('discards stale events where occurredAt is older than request updatedAt', async () => {
+      const req = new FossServiceRequest();
+      req.requestId = 'req-wkms-stale';
+      req.roomNumber = '101';
+      req.bookingId = 'booking-101';
+      req.status = ServiceRequestStatus.IN_PROGRESS;
+      req.createdAt = new Date('2026-10-28T07:00:00.000Z');
+      req.updatedAt = new Date('2026-10-28T07:30:00.000Z');
+
+      mockRequestRepository.findById.mockResolvedValue(req);
+
+      const staleEvent: WkmsTaskStatusUpdatedEventDto = {
+        eventId: '550e8400-e29b-41d4-a716-446655440003',
+        requestId: 'req-wkms-stale',
+        roomNumber: '101',
+        status: ServiceRequestStatus.IN_PROGRESS,
+        occurredAt: '2026-10-28T07:15:00.000Z', // older than 07:30:00!
+      };
+
+      const result = await service.handleWkmsStatusEvent(staleEvent);
+
+      expect(result.processed).toBe(false);
+      expect(result.message).toContain('Stale event discarded');
+    });
+
+    it('discards out-of-order status regression events without rolling back newer status', async () => {
+      const req = new FossServiceRequest();
+      req.requestId = 'req-wkms-completed';
+      req.roomNumber = '101';
+      req.bookingId = 'booking-101';
+      req.status = ServiceRequestStatus.COMPLETED;
+      req.createdAt = new Date('2026-10-28T07:00:00.000Z');
+      req.updatedAt = new Date('2026-10-28T07:30:00.000Z');
+
+      mockRequestRepository.findById.mockResolvedValue(req);
+
+      const regressionEvent: WkmsTaskStatusUpdatedEventDto = {
+        eventId: '550e8400-e29b-41d4-a716-446655440004',
+        requestId: 'req-wkms-completed',
+        roomNumber: '101',
+        status: ServiceRequestStatus.IN_PROGRESS, // COMPLETED -> IN_PROGRESS regression!
+        occurredAt: '2026-10-28T07:35:00.000Z',
+      };
+
+      const result = await service.handleWkmsStatusEvent(regressionEvent);
+
+      expect(result.processed).toBe(false);
+      expect(result.message).toContain('Out-of-order status regression');
+      expect(result.request?.status).toBe(ServiceRequestStatus.COMPLETED);
     });
   });
 });

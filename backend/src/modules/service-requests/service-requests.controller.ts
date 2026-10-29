@@ -7,6 +7,7 @@ import {
   HttpStatus,
   Param,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -17,17 +18,18 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { InternalServiceGuard } from '../../common/auth/internal-service.guard.js';
 import { CurrentGuest } from '../guest-sessions/decorators/current-guest.decorator.js';
 import { GuestAuthGuard } from '../guest-sessions/guards/guest-auth.guard.js';
 import type { GuestContext } from '../guest-sessions/interfaces/guest-context.interface.js';
 import { AdvanceServiceRequestStatusDto } from './dto/advance-service-request-status.dto.js';
 import { CreateServiceRequestDto } from './dto/create-service-request.dto.js';
+import { GetServiceRequestsQueryDto } from './dto/get-service-requests-query.dto.js';
 import { ServiceRequestResponseDto } from './dto/service-request-response.dto.js';
+import { WkmsTaskStatusUpdatedEventDto } from './dto/wkms-status-event.dto.js';
 import { ServiceRequestsService } from './service-requests.service.js';
 
 @ApiTags('Service Requests')
-@ApiBearerAuth()
-@UseGuards(GuestAuthGuard)
 @Controller('service-requests')
 export class ServiceRequestsController {
   constructor(
@@ -36,6 +38,8 @@ export class ServiceRequestsController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
+  @ApiBearerAuth()
+  @UseGuards(GuestAuthGuard)
   @ApiOperation({
     summary: 'Submit a room-bound service request',
     description:
@@ -81,10 +85,12 @@ export class ServiceRequestsController {
   }
 
   @Get()
+  @ApiBearerAuth()
+  @UseGuards(GuestAuthGuard)
   @ApiOperation({
     summary: 'Retrieve all service requests for the current stay',
     description:
-      'Returns a list of all service requests submitted by the authenticated guest during their active stay.',
+      'Returns a list of all service requests submitted by the authenticated guest during their active stay, with optional status and type filtering.',
   })
   @ApiResponse({
     status: 200,
@@ -97,11 +103,14 @@ export class ServiceRequestsController {
   })
   public async getGuestServiceRequests(
     @CurrentGuest() guest: GuestContext,
+    @Query() query?: GetServiceRequestsQueryDto,
   ): Promise<ServiceRequestResponseDto[]> {
-    return this.serviceRequestsService.getGuestServiceRequests(guest);
+    return this.serviceRequestsService.getGuestServiceRequests(guest, query);
   }
 
   @Get(':id')
+  @ApiBearerAuth()
+  @UseGuards(GuestAuthGuard)
   @ApiOperation({
     summary: 'Track a specific service request by ID',
     description:
@@ -138,6 +147,8 @@ export class ServiceRequestsController {
 
   @Post(':id/status')
   @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth()
+  @UseGuards(GuestAuthGuard)
   @ApiOperation({
     summary: 'Advance service request status (DEMO_MODE only)',
     description:
@@ -162,6 +173,10 @@ export class ServiceRequestsController {
     status: 404,
     description: 'Service request not found',
   })
+  @ApiResponse({
+    status: 409,
+    description: 'Conflict - illegal status regression attempted',
+  })
   public async advanceServiceRequestStatus(
     @CurrentGuest() guest: GuestContext,
     @Param('id') id: string,
@@ -173,5 +188,50 @@ export class ServiceRequestsController {
       dto.status,
       dto.assignedStaff,
     );
+  }
+
+  @Post('internal/events/status-updated')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(InternalServiceGuard)
+  @ApiOperation({
+    summary: 'Internal webhook to consume WKMS task status events',
+    description:
+      'Consumes signed worker task status updates from WKMS, deduplicating events and advancing request lifecycle.',
+  })
+  @ApiHeader({
+    name: 'x-internal-service-key',
+    required: false,
+    description: 'Internal service shared key',
+  })
+  @ApiHeader({
+    name: 'x-fds-signature',
+    required: false,
+    description: 'Alternative signature header for internal webhooks',
+  })
+  @ApiResponse({
+    status: 200,
+    description:
+      'WKMS task status event processed successfully or deduplicated',
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized - missing or invalid internal service key',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - invalid credentials or room number mismatch',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Service request not found',
+  })
+  public async handleWkmsStatusEvent(
+    @Body() body: WkmsTaskStatusUpdatedEventDto,
+  ): Promise<{
+    processed: boolean;
+    message: string;
+    request?: ServiceRequestResponseDto;
+  }> {
+    return this.serviceRequestsService.handleWkmsStatusEvent(body);
   }
 }

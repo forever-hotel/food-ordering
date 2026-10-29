@@ -3,6 +3,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { FossServiceRequest } from '../entities/foss-service-request.entity.js';
 
+import { ServiceRequestStatus } from '../enums/service-request-status.enum.js';
+
 @Injectable()
 export class FossServiceRequestRepository {
   constructor(
@@ -23,10 +25,26 @@ export class FossServiceRequestRepository {
   public async findByBookingAndRoom(
     bookingId: string,
     roomNumber: string,
+    filters?: {
+      status?: ServiceRequestStatus;
+      requestType?: string;
+      limit?: number;
+      offset?: number;
+    },
   ): Promise<FossServiceRequest[]> {
+    const where: any = { bookingId, roomNumber };
+    if (filters?.status) {
+      where.status = filters.status;
+    }
+    if (filters?.requestType) {
+      where.requestType = filters.requestType;
+    }
+
     return this.repository.find({
-      where: { bookingId, roomNumber },
+      where,
       order: { createdAt: 'DESC' },
+      take: filters?.limit ?? 50,
+      skip: filters?.offset ?? 0,
     });
   }
 
@@ -35,6 +53,14 @@ export class FossServiceRequestRepository {
   ): Promise<FossServiceRequest | null> {
     return this.repository.findOne({
       where: { idempotencyKey },
+    });
+  }
+
+  public async findByTaskId(
+    taskId: string,
+  ): Promise<FossServiceRequest | null> {
+    return this.repository.findOne({
+      where: { taskId },
     });
   }
 }

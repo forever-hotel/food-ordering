@@ -1,4 +1,5 @@
 import {
+  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
@@ -17,17 +18,27 @@ import {
 } from '../../integrations/internal-services/wkms/interfaces/wkms-provider.interface.js';
 import type { GuestContext } from '../guest-sessions/interfaces/guest-context.interface.js';
 import { CreateServiceRequestDto } from './dto/create-service-request.dto.js';
+import { GetServiceRequestsQueryDto } from './dto/get-service-requests-query.dto.js';
 import {
   ServiceRequestResponseDto,
   ServiceRequestTimelineStepDto,
 } from './dto/service-request-response.dto.js';
+import { WkmsTaskStatusUpdatedEventDto } from './dto/wkms-status-event.dto.js';
 import { FossServiceRequest } from './entities/foss-service-request.entity.js';
 import { ServiceRequestStatus } from './enums/service-request-status.enum.js';
 import { FossServiceRequestRepository } from './repositories/foss-service-request.repository.js';
 
+const STATUS_HIERARCHY: Record<ServiceRequestStatus, number> = {
+  [ServiceRequestStatus.SUBMITTED]: 0,
+  [ServiceRequestStatus.ASSIGNED]: 1,
+  [ServiceRequestStatus.IN_PROGRESS]: 2,
+  [ServiceRequestStatus.COMPLETED]: 3,
+};
+
 @Injectable()
 export class ServiceRequestsService {
   private readonly logger = new Logger(ServiceRequestsService.name);
+  private readonly processedEventIds = new Set<string>();
 
   constructor(
     private readonly requestRepository: FossServiceRequestRepository,
@@ -164,20 +175,23 @@ export class ServiceRequestsService {
   }
 
   /**
-   * Retrieves all service requests for the current authenticated guest stay.
+   * Retrieves all service requests for the current authenticated guest stay with optional filtering.
    */
   public async getGuestServiceRequests(
     guest: GuestContext,
+    query?: GetServiceRequestsQueryDto,
   ): Promise<ServiceRequestResponseDto[]> {
     const requests = await this.requestRepository.findByBookingAndRoom(
       guest.bookingId,
       guest.roomNumber,
+      query,
     );
     return requests.map((req) => this.mapToResponse(req));
   }
 
   /**
    * Deterministic status advance utility gated by DEMO_MODE for demonstration rehearsal flows.
+   * Rejects illegal status regressions with ConflictException (409).
    */
   public async advanceServiceRequestStatus(
     guest: GuestContext,
@@ -208,6 +222,15 @@ export class ServiceRequestsService {
       );
     }
 
+    const currentIndex = STATUS_HIERARCHY[request.status];
+    const newIndex = STATUS_HIERARCHY[newStatus];
+
+    if (newIndex < currentIndex) {
+      throw new ConflictException(
+        `Illegal status regression: cannot advance service request [${requestId}] from [${request.status}] to [${newStatus}].`,
+      );
+    }
+
     if (request.taskId) {
       await this.wkmsProvider.transitionTaskStatus(
         request.taskId,
@@ -227,6 +250,112 @@ export class ServiceRequestsService {
 
     await this.requestRepository.save(request);
     return this.mapToResponse(request);
+  }
+
+  /**
+   * Consumes signed task status events from WKMS.
+   * Deduplicates event IDs, guards against room spoofing, discards stale/out-of-order events,
+   * and advances request lifecycle.
+   */
+  public async handleWkmsStatusEvent(
+    event: WkmsTaskStatusUpdatedEventDto,
+  ): Promise<{
+    processed: boolean;
+    message: string;
+    request?: ServiceRequestResponseDto;
+  }> {
+    if (this.processedEventIds.has(event.eventId)) {
+      this.logger.log(
+        `Duplicate WKMS event [${event.eventId}] discarded: event already processed.`,
+      );
+      return {
+        processed: true,
+        message: 'Duplicate event already processed.',
+      };
+    }
+
+    let request = await this.requestRepository.findById(event.requestId);
+    if (!request) {
+      request = await this.requestRepository.findByTaskId(event.requestId);
+    }
+
+    if (!request) {
+      this.logger.warn(
+        `WKMS event [${event.eventId}] rejected: Service request [${event.requestId}] not found.`,
+      );
+      throw new NotFoundException(
+        `Service request with ID [${event.requestId}] was not found.`,
+      );
+    }
+
+    if (event.roomNumber && request.roomNumber !== event.roomNumber) {
+      this.logger.warn(
+        `WKMS event [${event.eventId}] forbidden: room mismatch (event room [${event.roomNumber}] vs request room [${request.roomNumber}]).`,
+      );
+      throw new ForbiddenException(
+        'Event roomNumber does not match service request roomNumber.',
+      );
+    }
+
+    // Stale event detection based on occurredAt vs updatedAt
+    if (event.occurredAt && request.updatedAt) {
+      const eventTime = new Date(event.occurredAt).getTime();
+      const requestUpdateTime = new Date(request.updatedAt).getTime();
+      if (
+        !isNaN(eventTime) &&
+        !isNaN(requestUpdateTime) &&
+        eventTime < requestUpdateTime
+      ) {
+        this.logger.warn(
+          `Stale WKMS event [${event.eventId}] discarded: event occurredAt [${event.occurredAt}] is older than current request updatedAt [${request.updatedAt.toISOString()}].`,
+        );
+        this.processedEventIds.add(event.eventId);
+        return {
+          processed: false,
+          message: 'Stale event discarded without updating state.',
+          request: this.mapToResponse(request),
+        };
+      }
+    }
+
+    // State regression guard: cannot roll back newer status
+    const currentIndex = STATUS_HIERARCHY[request.status];
+    const newIndex = STATUS_HIERARCHY[event.status];
+
+    if (newIndex < currentIndex) {
+      this.logger.warn(
+        `Out-of-order WKMS event [${event.eventId}] discarded: cannot regress status from [${request.status}] to [${event.status}].`,
+      );
+      this.processedEventIds.add(event.eventId);
+      return {
+        processed: false,
+        message: 'Out-of-order status regression event discarded.',
+        request: this.mapToResponse(request),
+      };
+    }
+
+    // Update state
+    request.status = event.status;
+    request.updatedAt = new Date();
+    if (event.assignedStaff) {
+      request.assignedStaff = event.assignedStaff;
+    }
+    if (event.status === ServiceRequestStatus.COMPLETED) {
+      request.estimatedCompletionMinutes = 0;
+    }
+
+    await this.requestRepository.save(request);
+    this.processedEventIds.add(event.eventId);
+
+    this.logger.log(
+      `WKMS event [${event.eventId}] applied: request [${request.requestId}] status transitioned to [${request.status}].`,
+    );
+
+    return {
+      processed: true,
+      message: 'Service request status updated successfully from WKMS event.',
+      request: this.mapToResponse(request),
+    };
   }
 
   private mapToResponse(

@@ -3,7 +3,9 @@ import { TaskType } from '../../integrations/internal-services/wkms/dto/wkms-tas
 import type { GuestContext } from '../guest-sessions/interfaces/guest-context.interface.js';
 import { AdvanceServiceRequestStatusDto } from './dto/advance-service-request-status.dto.js';
 import { CreateServiceRequestDto } from './dto/create-service-request.dto.js';
+import { GetServiceRequestsQueryDto } from './dto/get-service-requests-query.dto.js';
 import { ServiceRequestResponseDto } from './dto/service-request-response.dto.js';
+import { WkmsTaskStatusUpdatedEventDto } from './dto/wkms-status-event.dto.js';
 import { ServiceRequestStatus } from './enums/service-request-status.enum.js';
 import { ServiceRequestsController } from './service-requests.controller.js';
 import { ServiceRequestsService } from './service-requests.service.js';
@@ -45,6 +47,11 @@ describe('ServiceRequestsController', () => {
         ...sampleResponse,
         status: ServiceRequestStatus.ASSIGNED,
       }),
+      handleWkmsStatusEvent: jest.fn().mockResolvedValue({
+        processed: true,
+        message: 'Status updated successfully.',
+        request: sampleResponse,
+      }),
     } as unknown as jest.Mocked<ServiceRequestsService>;
 
     controller = new ServiceRequestsController(service);
@@ -73,11 +80,33 @@ describe('ServiceRequestsController', () => {
   });
 
   describe('getGuestServiceRequests()', () => {
-    it('delegates fetching stay service requests to ServiceRequestsService', async () => {
+    it('delegates fetching stay service requests to ServiceRequestsService without query', async () => {
       const result = await controller.getGuestServiceRequests(sampleGuest);
 
       expect(result).toEqual([sampleResponse]);
-      expect(service.getGuestServiceRequests).toHaveBeenCalledWith(sampleGuest);
+      expect(service.getGuestServiceRequests).toHaveBeenCalledWith(
+        sampleGuest,
+        undefined,
+      );
+    });
+
+    it('delegates fetching stay service requests with query filters', async () => {
+      const query: GetServiceRequestsQueryDto = {
+        status: ServiceRequestStatus.SUBMITTED,
+        limit: 10,
+        offset: 0,
+      };
+
+      const result = await controller.getGuestServiceRequests(
+        sampleGuest,
+        query,
+      );
+
+      expect(result).toEqual([sampleResponse]);
+      expect(service.getGuestServiceRequests).toHaveBeenCalledWith(
+        sampleGuest,
+        query,
+      );
     });
   });
 
@@ -116,6 +145,24 @@ describe('ServiceRequestsController', () => {
         ServiceRequestStatus.ASSIGNED,
         'Housekeeper #12',
       );
+    });
+  });
+
+  describe('handleWkmsStatusEvent()', () => {
+    it('delegates WKMS webhook event processing to ServiceRequestsService', async () => {
+      const event: WkmsTaskStatusUpdatedEventDto = {
+        eventId: '550e8400-e29b-41d4-a716-446655440000',
+        requestId: 'req-101',
+        roomNumber: '101',
+        status: ServiceRequestStatus.IN_PROGRESS,
+        assignedStaff: 'Housekeeper #12',
+        occurredAt: '2026-10-28T07:20:00.000Z',
+      };
+
+      const result = await controller.handleWkmsStatusEvent(event);
+
+      expect(result.processed).toBe(true);
+      expect(service.handleWkmsStatusEvent).toHaveBeenCalledWith(event);
     });
   });
 });
