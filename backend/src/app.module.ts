@@ -12,6 +12,7 @@ import { GuestSessionsModule } from './modules/guest-sessions/guest-sessions.mod
 import { MenuModule } from './modules/menu/menu.module.js';
 import { FoodOrdersModule } from './modules/food-orders/food-orders.module.js';
 import { ServiceRequestsModule } from './modules/service-requests/service-requests.module.js';
+import { ComplaintsModule } from './modules/complaints/complaints.module.js';
 import { RealtimeModule } from './realtime/realtime.module.js';
 
 @Module({
@@ -29,6 +30,7 @@ import { RealtimeModule } from './realtime/realtime.module.js';
     MenuModule,
     FoodOrdersModule,
     ServiceRequestsModule,
+    ComplaintsModule,
     RealtimeModule,
   ],
   controllers: [AppController],
