@@ -159,9 +159,7 @@ export function QrScannerModal({ open, onClose, onScan, demoTokens = {} }: QrSca
             <Alert
               type={cameraState === 'denied' ? 'warning' : 'info'}
               showIcon
-              title={
-                cameraState === 'denied' ? 'Camera Permission Required' : 'Camera Unavailable'
-              }
+              title={cameraState === 'denied' ? 'Camera Permission Required' : 'Camera Unavailable'}
               description={
                 <div className="space-y-2 mt-1">
                   <Paragraph className="!mb-1 text-sm">{errorMessage}</Paragraph>

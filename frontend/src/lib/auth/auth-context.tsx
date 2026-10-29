@@ -54,11 +54,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const initialToken = useSyncExternalStore(
-    subscribeStorage,
-    getStoredToken,
-    getServerStoredToken,
-  );
+  const initialToken = useSyncExternalStore(subscribeStorage, getStoredToken, getServerStoredToken);
   const [explicitToken, setExplicitToken] = useState<string | null>(null);
   const [status, setStatus] = useState<AuthStatus>('idle');
   const [guest, setGuest] = useState<GuestContext | null>(null);
