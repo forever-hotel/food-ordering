@@ -12,6 +12,7 @@ import { AlertNotice } from '../../../components/feedback/alert-notice.tsx';
 import { EmptyState } from '../../../components/feedback/empty-state.tsx';
 import { MenuItemCard } from './menu-item-card.tsx';
 import { MenuItemDetail } from './menu-item-detail.tsx';
+import { CartView } from '../../cart/components/cart-view.tsx';
 
 type CategoryKey = 'Breakfast' | 'Lunch' | 'Dinner' | 'Tea';
 
@@ -25,7 +26,14 @@ const CATEGORIES: { key: CategoryKey; label: string }[] = [
 export function MenuTab() {
   const { sessionToken, guest } = useAuth();
   const { setPageHeader, resetHeaderForTab } = useNavigation();
-  const { totalCount, totalAmount, addItem } = useCart();
+  const {
+    totalCount,
+    totalAmount,
+    addItem,
+    isCartOpen,
+    setIsCartOpen,
+    items: cartItems,
+  } = useCart();
 
   const [catalog, setCatalog] = useState<GuestMenuResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -90,7 +98,21 @@ export function MenuTab() {
 
   const handleBackToMenu = () => {
     setSelectedItem(null);
+    setIsCartOpen(false);
     resetHeaderForTab('menu', guest?.roomNumber, guest?.guestName);
+  };
+
+  const handleOpenCart = () => {
+    setIsCartOpen(true);
+    setSelectedItem(null);
+    setPageHeader({
+      title: 'Your Cart',
+      subtitle: `${totalCount} ${totalCount === 1 ? 'item' : 'items'} · Room ${
+        guest?.roomNumber || '103'
+      }`,
+      showBackButton: true,
+      onBack: handleBackToMenu,
+    });
   };
 
   const handleQuickAdd = (item: GuestMenuItem) => {
@@ -102,6 +124,23 @@ export function MenuTab() {
     }
   };
 
+  // If viewing cart screen (Figure 34)
+  if (isCartOpen) {
+    return (
+      <CartView
+        onBack={handleBackToMenu}
+        onPlaceOrder={() => {
+          message.success(
+            `Order ready to submit for Room ${
+              guest?.roomNumber || '103'
+            } (${cartItems.length} items, ${formatLkrPrice(totalAmount)}).`,
+          );
+        }}
+      />
+    );
+  }
+
+  // If viewing item detail screen (Figure 33)
   if (selectedItem) {
     return <MenuItemDetail item={selectedItem} onBack={handleBackToMenu} />;
   }
@@ -222,11 +261,7 @@ export function MenuTab() {
               block
               size="large"
               aria-label={`View Cart with ${totalCount} items, total ${formatLkrPrice(totalAmount)}`}
-              onClick={() => {
-                message.info(
-                  `Cart contains ${totalCount} items (${formatLkrPrice(totalAmount)}). Cart screen ready for checkout.`,
-                );
-              }}
+              onClick={handleOpenCart}
               className="!h-12 !rounded-2xl !bg-[#1D3557] hover:!bg-[#162A45] active:scale-[0.99] !font-bold text-sm shadow-lg flex items-center justify-between px-5 transition-transform"
             >
               <div className="flex items-center gap-2">
