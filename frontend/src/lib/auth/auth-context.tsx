@@ -1,6 +1,13 @@
 'use client';
 
-import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 
 import {
   fetchCurrentSession,
@@ -11,6 +18,25 @@ import {
 import type { AuthStatus, GuestContext, GuestSessionResponse } from '../../types/guest-session';
 
 const SESSION_STORAGE_KEY = 'foss_guest_session_token';
+
+function subscribeStorage(callback: () => void) {
+  window.addEventListener('storage', callback);
+  return () => window.removeEventListener('storage', callback);
+}
+
+function getStoredToken(): string | null {
+  try {
+    return typeof window !== 'undefined'
+      ? window.sessionStorage.getItem(SESSION_STORAGE_KEY)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function getServerStoredToken(): string | null {
+  return null;
+}
 
 interface AuthContextType {
   status: AuthStatus;
@@ -28,25 +54,15 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [sessionToken, setSessionToken] = useState<string | null>(() => {
-    if (typeof window !== 'undefined') {
-      return window.sessionStorage.getItem(SESSION_STORAGE_KEY);
-    }
-    return null;
-  });
-
-  const [status, setStatus] = useState<AuthStatus>(() => {
-    if (typeof window !== 'undefined') {
-      const token = window.sessionStorage.getItem(SESSION_STORAGE_KEY);
-      if (token) return 'loading';
-    }
-    return 'idle';
-  });
-
+  const initialToken = useSyncExternalStore(subscribeStorage, getStoredToken, getServerStoredToken);
+  const [explicitToken, setExplicitToken] = useState<string | null>(null);
+  const [status, setStatus] = useState<AuthStatus>('idle');
   const [guest, setGuest] = useState<GuestContext | null>(null);
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [demoTokens, setDemoTokens] = useState<Record<string, string>>({});
+
+  const sessionToken = explicitToken ?? initialToken;
 
   // Load demo tokens in background
   useEffect(() => {
@@ -72,7 +88,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (typeof window !== 'undefined') {
           window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
         }
-        setSessionToken(null);
+        setExplicitToken(null);
         setGuest(null);
         setStatus('expired');
         setError(err instanceof Error ? err.message : 'Session expired or invalidated.');
@@ -85,7 +101,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     try {
       const response: GuestSessionResponse = await redeemQrToken(qrToken);
-      setSessionToken(response.sessionToken);
+      setExplicitToken(response.sessionToken);
       setExpiresAt(response.expiresAt);
       setGuest({
         ...response.guest,
@@ -120,7 +136,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
     }
 
-    setSessionToken(null);
+    setExplicitToken(null);
     setGuest(null);
     setExpiresAt(null);
     setError(null);
@@ -145,17 +161,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (typeof window !== 'undefined') {
         window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
       }
-      setSessionToken(null);
+      setExplicitToken(null);
       setGuest(null);
       setStatus('expired');
       setError('Your stay session has expired or been checked out.');
     }
   }, [sessionToken]);
 
+  const computedStatus = sessionToken && !guest && status === 'idle' ? 'loading' : status;
+
   return (
     <AuthContext.Provider
       value={{
-        status,
+        status: computedStatus,
         sessionToken,
         guest,
         expiresAt,

@@ -121,7 +121,7 @@ export function QrScannerModal({ open, onClose, onScan, demoTokens = {} }: QrSca
       footer={null}
       title="Scan Room QR Code"
       centered
-      destroyOnClose
+      destroyOnHidden
       width={420}
     >
       <div className="flex flex-col items-center py-2">
@@ -159,9 +159,7 @@ export function QrScannerModal({ open, onClose, onScan, demoTokens = {} }: QrSca
             <Alert
               type={cameraState === 'denied' ? 'warning' : 'info'}
               showIcon
-              message={
-                cameraState === 'denied' ? 'Camera Permission Required' : 'Camera Unavailable'
-              }
+              title={cameraState === 'denied' ? 'Camera Permission Required' : 'Camera Unavailable'}
               description={
                 <div className="space-y-2 mt-1">
                   <Paragraph className="!mb-1 text-sm">{errorMessage}</Paragraph>
