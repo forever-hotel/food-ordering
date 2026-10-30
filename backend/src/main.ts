@@ -74,6 +74,6 @@ async function bootstrap() {
     customSiteTitle: 'Forever Hotel FOSS API Documentation',
   });
 
-  await app.listen(process.env.PORT ?? 3001, process.env.HOST || '::');
+  await app.listen(process.env.PORT ?? 4300, process.env.HOST || '::');
 }
 bootstrap();
