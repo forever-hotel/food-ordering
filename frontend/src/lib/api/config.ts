@@ -10,7 +10,6 @@
  *
  * Fallback defaults to local backend port 4300 matching backend/src/main.ts.
  */
-const API_URL =
-  process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4300';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4300';
 
 export default API_URL;
