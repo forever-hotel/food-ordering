@@ -26,14 +26,7 @@ const CATEGORIES: { key: CategoryKey; label: string }[] = [
 export function MenuTab() {
   const { sessionToken, guest } = useAuth();
   const { setPageHeader, resetHeaderForTab } = useNavigation();
-  const {
-    totalCount,
-    totalAmount,
-    addItem,
-    isCartOpen,
-    setIsCartOpen,
-    items: cartItems,
-  } = useCart();
+  const { totalCount, totalAmount, addItem, isCartOpen, setIsCartOpen } = useCart();
 
   const [catalog, setCatalog] = useState<GuestMenuResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -124,17 +117,17 @@ export function MenuTab() {
     }
   };
 
-  // If viewing cart screen (Figure 34)
+  // If viewing cart screen (Figure 34 & Figure 35 Confirmation)
   if (isCartOpen) {
     return (
       <CartView
         onBack={handleBackToMenu}
-        onPlaceOrder={() => {
-          message.success(
-            `Order ready to submit for Room ${
-              guest?.roomNumber || '103'
-            } (${cartItems.length} items, ${formatLkrPrice(totalAmount)}).`,
-          );
+        onPlaceOrder={(order) => {
+          setPageHeader({
+            title: 'Order Confirmed',
+            subtitle: `Order #${order.orderId} · Room ${order.roomNumber || guest?.roomNumber || '103'}`,
+            showBackButton: false,
+          });
         }}
       />
     );
