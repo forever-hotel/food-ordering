@@ -14,6 +14,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **CIT-01 / DDP-151:** GitHub Actions CI workflow enhancements in `.github/workflows/ci.yml` adding push triggers on `develop` and `main` plus automated Docker multi-stage build verification.
 - **CIT-01 / DDP-151:** Staging deployment, smoke test verification, and rollback runbook (`docs/release/RELEASE_RUNBOOK.md`).
 - **CIT-01 / DDP-153:** Port standardization to 4300 across backend default port fallback, compose networking, and environment examples to align with API Gateway.
+- **CIT-01 / DDP-153 / Issue #87:** Implemented configurable FOSS ingress prefix normalization middleware (`backend/src/common/middleware/ingress-prefix.middleware.ts`) mounted in `backend/src/main.ts` to seamlessly support unmodified API Gateway route forwarding (`rewritePrefix: "/foss"`).
+- **CIT-01 / DDP-153 / Issue #87:** Added comprehensive e2e test suite (`backend/test/gateway-prefix-compatibility.e2e-spec.ts`) verifying direct and `/foss/*` requests, health probes, guest QR auth, room ownership guards, internal webhooks, query parameter preservation, invalid prefixes, realtime SSE/poll, and Swagger UI.
+- **CIT-01 / DDP-153 / Issue #87:** Updated `frontend/src/lib/api/config.ts` fallback URL to `http://localhost:4300` and documented direct vs Gateway integration modes.
 - **CIT-01 / DDP-164:** Shared infrastructure and broker topology specification (`docs/infra/SHARED_INFRA_TOPOLOGY.md`).
 
 ### Changed
