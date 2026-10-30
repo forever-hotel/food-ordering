@@ -1,29 +1,45 @@
 'use client';
 
-import React from 'react';
+import React, { useRef, useState } from 'react';
 import { Button, Card, Input, Typography } from 'antd';
 import type { CartItem } from '../../../types/menu.ts';
+import type { CreateFoodOrderPayload, FoodOrderResponse } from '../../../types/orders.ts';
 import { formatLkrPrice } from '../../../lib/api/menu.ts';
+import { generateIdempotencyKey, placeFoodOrder } from '../../../lib/api/orders.ts';
+import { useAuth } from '../../../lib/auth/auth-context.tsx';
+import { useNavigation } from '../../../lib/navigation/navigation-context.tsx';
 import { useCart } from '../../../lib/cart/cart-context.tsx';
+import { AlertNotice } from '../../../components/feedback/alert-notice.tsx';
+import { OrderConfirmation } from '../../orders/components/order-confirmation.tsx';
 
 const { Title, Paragraph, Text } = Typography;
 const { TextArea } = Input;
 
 interface CartViewProps {
   onBack: () => void;
-  onPlaceOrder?: () => void;
+  onPlaceOrder?: (order: FoodOrderResponse) => void;
 }
 
 export function CartView({ onBack, onPlaceOrder }: CartViewProps) {
+  const { sessionToken } = useAuth();
+  const { setActiveTab } = useNavigation();
   const {
     items,
     allergyNote,
     setAllergyNote,
     updateQuantity,
     removeItem,
+    clearCart,
     totalCount,
     totalAmount,
   } = useCart();
+
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [confirmedOrder, setConfirmedOrder] = useState<FoodOrderResponse | null>(null);
+
+  // Single idempotency key retained across retries for the same checkout intent
+  const idempotencyKeyRef = useRef<string>(generateIdempotencyKey());
 
   const handleIncrement = (cartItem: CartItem) => {
     const portionCap = cartItem.item.portionCap || 3;
@@ -39,6 +55,61 @@ export function CartView({ onBack, onPlaceOrder }: CartViewProps) {
       removeItem(cartItem.id);
     }
   };
+
+  const handleSubmitOrder = async () => {
+    if (submitting || items.length === 0) return;
+
+    setSubmitting(true);
+    setError(null);
+
+    const payload: CreateFoodOrderPayload = {
+      items: items.map((cartItem) => ({
+        menuItemId: cartItem.item.id,
+        quantity: cartItem.quantity,
+        specialNotes: cartItem.specialNotes,
+      })),
+      allergyNote: allergyNote.trim() || undefined,
+      idempotencyKey: idempotencyKeyRef.current,
+    };
+
+    try {
+      const order = await placeFoodOrder(
+        sessionToken || 'demo-token',
+        payload,
+        idempotencyKeyRef.current,
+      );
+
+      // Confirmed success: clear cart from session and present Figure 35 Confirmation
+      clearCart();
+      setConfirmedOrder(order);
+      if (onPlaceOrder) {
+        onPlaceOrder(order);
+      }
+    } catch (err: unknown) {
+      // Failure keeps cart items and maintains idempotencyKey for retry
+      const errorMsg =
+        err instanceof Error
+          ? err.message
+          : 'Unable to place order due to a network issue. Please retry.';
+      setError(errorMsg);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // If order was confirmed, show Figure 35 Confirmation Screen
+  if (confirmedOrder) {
+    return (
+      <OrderConfirmation
+        order={confirmedOrder}
+        onTrackStatus={() => {
+          setActiveTab('orders');
+          onBack();
+        }}
+        onBackToMenu={onBack}
+      />
+    );
+  }
 
   return (
     <div
@@ -64,6 +135,17 @@ export function CartView({ onBack, onPlaceOrder }: CartViewProps) {
           {totalCount} {totalCount === 1 ? 'item' : 'items'} in cart
         </span>
       </div>
+
+      {/* Submission Error Banner with Idempotent Retry */}
+      {error && (
+        <AlertNotice
+          type="error"
+          title="Order Placement Failed"
+          message={error}
+          onRetry={handleSubmitOrder}
+          className="mb-2"
+        />
+      )}
 
       {/* Cart Items List */}
       <Card
@@ -114,8 +196,9 @@ export function CartView({ onBack, onPlaceOrder }: CartViewProps) {
                   <button
                     type="button"
                     aria-label={`Decrease quantity of ${cartItem.item.name}`}
+                    disabled={submitting}
                     onClick={() => handleDecrement(cartItem)}
-                    className="touch-target w-8 h-8 rounded-xl bg-white text-slate-800 shadow-xs hover:bg-slate-100 active:scale-95 flex items-center justify-center font-bold text-base transition-all"
+                    className="touch-target w-8 h-8 rounded-xl bg-white text-slate-800 shadow-xs hover:bg-slate-100 active:scale-95 flex items-center justify-center font-bold text-base transition-all disabled:opacity-50"
                   >
                     −
                   </button>
@@ -127,10 +210,10 @@ export function CartView({ onBack, onPlaceOrder }: CartViewProps) {
                   <button
                     type="button"
                     aria-label={`Increase quantity of ${cartItem.item.name}`}
-                    disabled={cartItem.quantity >= portionCap}
+                    disabled={cartItem.quantity >= portionCap || submitting}
                     onClick={() => handleIncrement(cartItem)}
                     className={`touch-target w-8 h-8 rounded-xl flex items-center justify-center font-bold text-base transition-all ${
-                      cartItem.quantity < portionCap
+                      cartItem.quantity < portionCap && !submitting
                         ? 'bg-white text-slate-800 shadow-xs hover:bg-slate-100 active:scale-95'
                         : 'text-slate-300 cursor-not-allowed'
                     }`}
@@ -173,6 +256,7 @@ export function CartView({ onBack, onPlaceOrder }: CartViewProps) {
         <TextArea
           rows={3}
           value={allergyNote}
+          disabled={submitting}
           onChange={(e) => setAllergyNote(e.target.value)}
           maxLength={300}
           placeholder="e.g. I am allergic to peanuts. Please avoid any cross-contamination..."
@@ -221,11 +305,12 @@ export function CartView({ onBack, onPlaceOrder }: CartViewProps) {
             type="primary"
             block
             size="large"
-            disabled={items.length === 0}
-            onClick={onPlaceOrder}
+            loading={submitting}
+            disabled={items.length === 0 || submitting}
+            onClick={handleSubmitOrder}
             className="!h-12 !rounded-2xl !bg-[#1D3557] hover:!bg-[#162a45] active:scale-[0.99] !font-bold text-sm shadow-md"
           >
-            Place Order
+            {submitting ? 'Placing Order...' : 'Place Order'}
           </Button>
 
           <Paragraph className="!text-[11px] !text-slate-400 text-center !mb-0">
