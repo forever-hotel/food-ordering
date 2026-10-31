@@ -243,6 +243,8 @@ describe('ComplaintsService', () => {
 
       expect(complaintRepo.save).toHaveBeenCalledTimes(1);
       expect(result.status).toBe(ComplaintStatus.SUBMITTED);
+      expect(result.assignedManager).toBeNull();
+      expect(result.resolutionNotes).toBeNull();
       expect(result.complaintId).toMatch(/^CMP-/);
     });
   });
@@ -360,6 +362,22 @@ describe('ComplaintsService', () => {
         expect.objectContaining({
           status: ComplaintStatus.UNDER_INVESTIGATION,
         }),
+      );
+    });
+
+    it('rejects status advancement with ForbiddenException when DEMO_MODE is not true', async () => {
+      (configService.get as any).mockReturnValueOnce('false');
+
+      await expect(
+        service.advanceComplaintStatus(
+          mockGuest,
+          existingComplaint.complaintId,
+          {
+            status: ComplaintStatus.UNDER_INVESTIGATION,
+          },
+        ),
+      ).rejects.toThrow(
+        'Demo status advancement is only permitted when DEMO_MODE is enabled.',
       );
     });
 

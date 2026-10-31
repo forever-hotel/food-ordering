@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { UpstreamServiceUnavailableException } from '../../../contracts/upstream-integration.exception.js';
 import { WkmsCreateTaskDto } from '../dto/wkms-task.dto.js';
 import { WkmsTaskResultDto } from '../dto/wkms-task-result.dto.js';
@@ -42,16 +42,23 @@ export class RealWkmsAdapter implements WkmsProvider {
     );
   }
 
+  /**
+   * Task status transitions are strictly owned by WKMS.
+   * FOSS has no authoritative worker dispatch or task execution domain permissions
+   * to mutate task states in production.
+   * Unauthorized mutations are rejected with ForbiddenException.
+   */
   public async transitionTaskStatus(
     taskId: string,
     newStatus: string,
-    assignedStaff?: string,
+    _assignedStaff?: string,
   ): Promise<WkmsTaskResultDto> {
     this.assertConfigured();
-    return this.executeHttpCall<WkmsTaskResultDto>(
-      `/api/v1/tasks/${encodeURIComponent(taskId)}/status`,
-      'PATCH',
-      { status: newStatus, assignedStaff },
+    this.logger.warn(
+      `Rejecting unauthorized task status transition for task [${taskId}] to [${newStatus}]: Worker task status transitions are strictly owned by WKMS.`,
+    );
+    throw new ForbiddenException(
+      'Task status transitions are strictly owned by WKMS. FOSS cannot mutate worker task statuses in production.',
     );
   }
 

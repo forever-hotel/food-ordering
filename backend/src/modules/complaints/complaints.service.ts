@@ -128,7 +128,7 @@ export class ComplaintsService {
     complaint.resolutionNotes = null;
     complaint.idempotencyKey = idempotencyKey;
 
-    // 6. Durable MAD Forwarding (survives upstream outage without data loss)
+    // 6. Durable MAD Forwarding (FOSS forwards complaint intake to MAD for managerial workflow)
     try {
       const madResult = await this.madProvider.fileComplaint({
         complaintId,
@@ -160,7 +160,7 @@ export class ComplaintsService {
       );
     }
 
-    // 7. Persist to Neon storage
+    // 7. Persist to FOSS Neon storage as the authoritative guest complaint intake owner
     await this.complaintRepository.save(complaint);
 
     // 8. Real-time stay broadcast
@@ -212,12 +212,20 @@ export class ComplaintsService {
 
   /**
    * Advances complaint status for simulation or manager action (Demo/Testing).
+   * Strictly gated by DEMO_MODE to prevent unauthorized production manager mutations.
    */
   public async advanceComplaintStatus(
     guest: GuestContext,
     complaintId: string,
     dto: AdvanceComplaintStatusDto,
   ): Promise<ComplaintResponseDto> {
+    const isDemo = this.configService.get<string>('DEMO_MODE') === 'true';
+    if (!isDemo) {
+      throw new ForbiddenException(
+        'Demo status advancement is only permitted when DEMO_MODE is enabled.',
+      );
+    }
+
     const complaint = await this.complaintRepository.findById(complaintId);
     if (
       !complaint ||

@@ -29,6 +29,8 @@ import {
   ComplaintSeverity,
 } from '../internal-services/mad/dto/mad-complaint.dto.js';
 import { MadComplaintResultDto } from '../internal-services/mad/dto/mad-complaint-result.dto.js';
+import { MadComplaintStatusUpdatedEventDto } from '../../modules/complaints/dto/mad-status-event.dto.js';
+import { ComplaintStatus } from '../../modules/complaints/enums/complaint-status.enum.js';
 import { BookingVerificationResultDto } from '../internal-services/booking/dto/booking-verification-result.dto.js';
 import { BookingStatus } from '../internal-services/booking/enums/booking-status.enum.js';
 
@@ -139,6 +141,29 @@ describe('Upstream Contracts DTO and Exception Specifications', () => {
       version: ContractVersion.V1_0,
     });
     expect(await validate(resultDto)).toHaveLength(0);
+  });
+
+  it('instantiates and validates MadComplaintStatusUpdatedEventDto for complaint.status_changed events', async () => {
+    const validEvent = plainToInstance(MadComplaintStatusUpdatedEventDto, {
+      eventId: 'd3b07384-d113-4623-8ffb-88a8d116a570',
+      complaintId: 'CMP-20261029-A1B2C3',
+      roomNumber: '101',
+      status: ComplaintStatus.RESOLVED,
+      assignedManager: 'Manager Sarah',
+      resolutionNotes: 'Complimentary dessert delivered and issue resolved.',
+      occurredAt: '2026-10-29T21:00:00.000Z',
+    });
+    expect(await validate(validEvent)).toHaveLength(0);
+
+    const invalidEvent = plainToInstance(MadComplaintStatusUpdatedEventDto, {
+      eventId: 'non-uuid-event-id',
+      complaintId: 'CMP-20261029-A1B2C3',
+      roomNumber: '101',
+      status: 'NON_EXISTENT_STATUS' as any,
+      occurredAt: '2026-10-29T21:00:00.000Z',
+    });
+    const errors = await validate(invalidEvent);
+    expect(errors.length).toBeGreaterThanOrEqual(2);
   });
 
   it('instantiates and validates BookingVerificationResultDto', async () => {

@@ -63,4 +63,25 @@ describe('RealWkmsAdapter', () => {
       UpstreamServiceUnavailableException,
     );
   });
+
+  it('rejects task status transition with ForbiddenException asserting WKMS authoritative ownership and does not log staff PII', async () => {
+    const adapter = new RealWkmsAdapter(
+      'https://wkms.internal.foreverhotel.com',
+      'test-wkms-key',
+    );
+    const warnSpy = jest.spyOn((adapter as any).logger, 'warn');
+
+    await expect(
+      adapter.transitionTaskStatus('task-101', 'COMPLETED', 'Staff Bob'),
+    ).rejects.toThrow(
+      'Task status transitions are strictly owned by WKMS. FOSS cannot mutate worker task statuses in production.',
+    );
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('task [task-101] to [COMPLETED]'),
+    );
+    expect(warnSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining('Staff Bob'),
+    );
+  });
 });

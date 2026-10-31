@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { UpstreamServiceUnavailableException } from '../../../contracts/upstream-integration.exception.js';
 import { FoodOrderStatus } from '../../../../modules/food-orders/enums/food-order-status.enum.js';
 import { KmsMenuCatalogDto, MealPeriod } from '../dto/kms-menu.dto.js';
@@ -56,15 +56,22 @@ export class RealKmsAdapter implements KmsProvider {
     );
   }
 
+  /**
+   * Kitchen order status transitions are strictly owned by KMS.
+   * FOSS has no authoritative kitchen domain permissions to advance or mutate
+   * order states (Placed -> In Preparation -> Ready -> Delivered) in production.
+   * Unauthorized mutations are rejected with ForbiddenException.
+   */
   public async transitionOrderStatus(
     orderId: string,
     newStatus: FoodOrderStatus,
   ): Promise<KmsOrderResultDto> {
     this.assertConfigured();
-    return this.executeHttpCall<KmsOrderResultDto>(
-      `/api/v1/orders/${encodeURIComponent(orderId)}/status`,
-      'PATCH',
-      { status: newStatus },
+    this.logger.warn(
+      `Rejecting unauthorized order status transition for order [${orderId}] to [${newStatus}]: Kitchen order status transitions are strictly owned by KMS.`,
+    );
+    throw new ForbiddenException(
+      'Kitchen order status transitions are strictly owned by KMS. FOSS cannot mutate kitchen order statuses in production.',
     );
   }
 
