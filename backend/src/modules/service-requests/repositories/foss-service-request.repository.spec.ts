@@ -28,7 +28,7 @@ describe('FossServiceRequestRepository', () => {
     expect(typeormRepo.save).toHaveBeenCalledWith(entity);
   });
 
-  it('finds a request by ID', async () => {
+  it('finds a request by public reference (non-UUID)', async () => {
     const entity = new FossServiceRequest();
     entity.requestId = 'req-101';
     typeormRepo.findOne.mockResolvedValue(entity);
@@ -36,8 +36,27 @@ describe('FossServiceRequestRepository', () => {
     const result = await repository.findById('req-101');
     expect(result).toBe(entity);
     expect(typeormRepo.findOne).toHaveBeenCalledWith({
-      where: { requestId: 'req-101' },
+      where: { publicReference: 'req-101' },
     });
+  });
+
+  it('finds a request by canonical UUID', async () => {
+    const entity = new FossServiceRequest();
+    const validUuid = '550e8400-e29b-41d4-a716-446655440000';
+    entity.requestId = validUuid;
+    typeormRepo.findOne.mockResolvedValue(entity);
+
+    const result = await repository.findById(validUuid);
+    expect(result).toBe(entity);
+    expect(typeormRepo.findOne).toHaveBeenCalledWith({
+      where: [{ requestId: validUuid }, { publicReference: validUuid }],
+    });
+  });
+
+  it('returns null for empty or invalid requestId types', async () => {
+    expect(await repository.findById('')).toBeNull();
+    expect(await repository.findById('   ')).toBeNull();
+    expect(await repository.findById(null as any)).toBeNull();
   });
 
   it('finds requests by booking ID and room number ordered by createdAt DESC', async () => {

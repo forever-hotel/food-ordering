@@ -13,7 +13,7 @@ export class CreateFossComplaints1791900000003 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS "foss_complaints" (
-        "complaint_id" VARCHAR(100) NOT NULL,
+        "complaint_id" UUID NOT NULL DEFAULT gen_random_uuid(),
         "booking_id" UUID NOT NULL,
         "room_number" VARCHAR(10) NOT NULL,
         "category" VARCHAR(50) NOT NULL,
@@ -43,13 +43,31 @@ export class CreateFossComplaints1791900000003 implements MigrationInterface {
     `);
 
     await queryRunner.query(`
-      CREATE INDEX IF NOT EXISTS "IDX_foss_complaints_related_order_id"
-        ON "foss_complaints" ("related_order_id")
+      DO $$ BEGIN
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'foss_complaints'
+            AND column_name = 'related_order_id'
+        ) THEN
+          CREATE INDEX IF NOT EXISTS "IDX_foss_complaints_related_order_id"
+            ON "foss_complaints" ("related_order_id");
+        END IF;
+      END $$;
     `);
 
     await queryRunner.query(`
-      CREATE INDEX IF NOT EXISTS "IDX_foss_complaints_related_request_id"
-        ON "foss_complaints" ("related_request_id")
+      DO $$ BEGIN
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'foss_complaints'
+            AND column_name = 'related_request_id'
+        ) THEN
+          CREATE INDEX IF NOT EXISTS "IDX_foss_complaints_related_request_id"
+            ON "foss_complaints" ("related_request_id");
+        END IF;
+      END $$;
     `);
 
     await queryRunner.query(`

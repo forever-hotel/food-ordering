@@ -18,8 +18,24 @@ export class FossComplaintRepository {
   }
 
   public async findById(complaintId: string): Promise<FossComplaint | null> {
+    if (!complaintId || typeof complaintId !== 'string') {
+      return null;
+    }
+    const trimmed = complaintId.trim();
+    if (!trimmed) {
+      return null;
+    }
+    const isUuid =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        trimmed,
+      );
+    if (isUuid) {
+      return this.repository.findOne({
+        where: [{ complaintId: trimmed }, { publicReference: trimmed }],
+      });
+    }
     return this.repository.findOne({
-      where: { complaintId },
+      where: { publicReference: trimmed },
     });
   }
 

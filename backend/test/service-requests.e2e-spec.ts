@@ -122,6 +122,9 @@ describe('Service Requests & WKMS Worker Dispatch (e2e)', () => {
       },
       save: async (req: FossServiceRequest) => {
         inMemoryRequests.set(req.requestId, req);
+        if (req.publicReference) {
+          inMemoryRequests.set(req.publicReference, req);
+        }
         return req;
       },
     };

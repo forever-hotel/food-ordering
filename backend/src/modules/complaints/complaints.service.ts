@@ -32,6 +32,7 @@ import { CreateComplaintDto } from './dto/create-complaint.dto.js';
 import { GetComplaintsQueryDto } from './dto/get-complaints-query.dto.js';
 import { MadComplaintStatusUpdatedEventDto } from './dto/mad-status-event.dto.js';
 import { FossComplaint } from './entities/foss-complaint.entity.js';
+import { ComplaintSeverity } from './enums/complaint-severity.enum.js';
 import { ComplaintStatus } from './enums/complaint-status.enum.js';
 import { FossComplaintRepository } from './repositories/foss-complaint.repository.js';
 
@@ -104,17 +105,31 @@ export class ComplaintsService {
       }
     }
 
-    // 4. Input sanitization and PII/PAN redaction
+    // 4. Validate enum compatibility against shared Neon schema (reject in production / real integration)
+    const isMock =
+      this.configService.get<string>('MOCK_EXTERNAL_SERVICES') === 'true';
+    const isDemo = this.configService.get<string>('DEMO_MODE') === 'true';
+    if (!isMock && !isDemo) {
+      if (dto.severity === ComplaintSeverity.URGENT) {
+        throw new BadRequestException(
+          'URGENT complaint severity requires cross-subsystem enum approval by MAD and cannot be persisted.',
+        );
+      }
+    }
+
+    // 5. Input sanitization and PII/PAN redaction
     const sanitizedSubject = this.sanitizeInput(dto.subject);
     const sanitizedDescription = this.sanitizeInput(dto.description);
 
-    // 5. Generate human-readable collision-free complaint reference (e.g. CMP-20261029-A1B2C3)
+    // 5. Generate canonical UUID primary key and human-readable complaint reference (e.g. CMP-20261029-A1B2C3)
     const datePart = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const randomSuffix = randomBytes(3).toString('hex').toUpperCase();
-    const complaintId = `CMP-${datePart}-${randomSuffix}`;
+    const publicRef = `CMP-${datePart}-${randomSuffix}`;
+    const canonicalComplaintId = randomUUID();
 
     const complaint = new FossComplaint();
-    complaint.complaintId = complaintId;
+    complaint.complaintId = canonicalComplaintId;
+    complaint.publicReference = publicRef;
     complaint.bookingId = guest.bookingId;
     complaint.roomNumber = guest.roomNumber;
     complaint.category = dto.category;
@@ -131,7 +146,7 @@ export class ComplaintsService {
     // 6. Durable MAD Forwarding (FOSS forwards complaint intake to MAD for managerial workflow)
     try {
       const madResult = await this.madProvider.fileComplaint({
-        complaintId,
+        complaintId: canonicalComplaintId,
         bookingId: guest.bookingId,
         roomNumber: guest.roomNumber,
         category: dto.category as unknown as MadCategory,
@@ -154,7 +169,7 @@ export class ComplaintsService {
       }
     } catch (err) {
       this.logger.warn(
-        `MAD upstream provider degraded or unreachable for complaint [${complaintId}]: ${
+        `MAD upstream provider degraded or unreachable for complaint [${canonicalComplaintId}]: ${
           err instanceof Error ? err.message : String(err)
         }. Complaint is preserved in FOSS Neon persistence.`,
       );
@@ -244,6 +259,12 @@ export class ComplaintsService {
     ) {
       throw new BadRequestException(
         'Cannot regress a resolved complaint to SUBMITTED.',
+      );
+    }
+
+    if (dto.status === ComplaintStatus.ESCALATED) {
+      throw new BadRequestException(
+        'ESCALATED complaint status requires cross-subsystem enum expansion approval by MAD and cannot be persisted.',
       );
     }
 
@@ -452,7 +473,7 @@ export class ComplaintsService {
 
   private mapToResponse(entity: FossComplaint): ComplaintResponseDto {
     return {
-      complaintId: entity.complaintId,
+      complaintId: entity.publicReference || entity.complaintId,
       bookingId: entity.bookingId,
       roomNumber: entity.roomNumber,
       category: entity.category,

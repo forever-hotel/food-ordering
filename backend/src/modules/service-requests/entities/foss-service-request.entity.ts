@@ -11,8 +11,16 @@ import { TaskPriority } from '../../../integrations/internal-services/wkms/enums
 
 @Entity('foss_service_requests')
 export class FossServiceRequest {
-  @PrimaryColumn({ type: 'varchar', length: 100, name: 'request_id' })
+  @PrimaryColumn({ type: 'uuid', name: 'request_id' })
   requestId!: string;
+
+  @Column({
+    type: 'varchar',
+    length: 50,
+    nullable: true,
+    name: 'public_reference',
+  })
+  publicReference!: string | null;
 
   @Index('IDX_foss_service_requests_booking_id')
   @Column({ type: 'uuid', name: 'booking_id' })
@@ -22,10 +30,18 @@ export class FossServiceRequest {
   @Column({ type: 'varchar', length: 10, name: 'room_number' })
   roomNumber!: string;
 
-  @Column({ type: 'varchar', length: 50, name: 'request_type' })
-  requestType!: string;
+  @Column({ type: 'varchar', length: 50, name: 'category' })
+  category!: string;
 
-  @Column({ type: 'varchar', length: 500, nullable: true, name: 'description' })
+  get requestType(): string {
+    return this.category;
+  }
+
+  set requestType(val: string) {
+    this.category = val;
+  }
+
+  @Column({ type: 'text', nullable: true, name: 'description' })
   description!: string | null;
 
   @Column({
@@ -64,10 +80,10 @@ export class FossServiceRequest {
   @Column({
     type: 'varchar',
     length: 128,
-    unique: true,
+    nullable: true,
     name: 'idempotency_key',
   })
-  idempotencyKey!: string;
+  idempotencyKey!: string | null;
 
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt!: Date;

@@ -17,8 +17,24 @@ export class FossServiceRequestRepository {
   }
 
   public async findById(requestId: string): Promise<FossServiceRequest | null> {
+    if (!requestId || typeof requestId !== 'string') {
+      return null;
+    }
+    const trimmed = requestId.trim();
+    if (!trimmed) {
+      return null;
+    }
+    const isUuid =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        trimmed,
+      );
+    if (isUuid) {
+      return this.repository.findOne({
+        where: [{ requestId: trimmed }, { publicReference: trimmed }],
+      });
+    }
     return this.repository.findOne({
-      where: { requestId },
+      where: { publicReference: trimmed },
     });
   }
 

@@ -12,7 +12,7 @@ export class CreateFossServiceRequests1791900000002 implements MigrationInterfac
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS "foss_service_requests" (
-        "request_id" VARCHAR(100) NOT NULL,
+        "request_id" UUID NOT NULL DEFAULT gen_random_uuid(),
         "booking_id" UUID NOT NULL,
         "room_number" VARCHAR(10) NOT NULL,
         "request_type" VARCHAR(50) NOT NULL,
@@ -40,8 +40,17 @@ export class CreateFossServiceRequests1791900000002 implements MigrationInterfac
     `);
 
     await queryRunner.query(`
-      CREATE INDEX IF NOT EXISTS "IDX_foss_service_requests_task_id"
-        ON "foss_service_requests" ("task_id")
+      DO $$ BEGIN
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'foss_service_requests'
+            AND column_name = 'task_id'
+        ) THEN
+          CREATE INDEX IF NOT EXISTS "IDX_foss_service_requests_task_id"
+            ON "foss_service_requests" ("task_id");
+        END IF;
+      END $$;
     `);
   }
 

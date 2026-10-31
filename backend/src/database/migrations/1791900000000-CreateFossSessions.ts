@@ -14,7 +14,7 @@ export class CreateFossSessions1791900000000 implements MigrationInterface {
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
-      CREATE TABLE "foss_sessions" (
+      CREATE TABLE IF NOT EXISTS "foss_sessions" (
         "session_id" UUID NOT NULL DEFAULT gen_random_uuid(),
         "booking_id" UUID NOT NULL,
         "room_number" VARCHAR(10) NOT NULL,

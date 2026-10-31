@@ -11,6 +11,16 @@ export class CreateFossDemoOrders1791900000001 implements MigrationInterface {
   name = 'CreateFossDemoOrders1791900000001';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
+    // KMS is the authoritative owner of food orders per ADR-003 and DDP-129.
+    // Demo orders are strictly development/demo projections and must not be created
+    // in production or shared staging Neon environments.
+    if (
+      process.env.NODE_ENV === 'production' ||
+      process.env.SKIP_DEMO_TABLES === 'true'
+    ) {
+      return;
+    }
+
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS "foss_demo_orders" (
         "order_id" VARCHAR(100) NOT NULL,
