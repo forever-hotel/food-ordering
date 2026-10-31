@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Button, Modal, Spin, Typography } from 'antd';
 
 const { Text, Paragraph } = Typography;
@@ -12,40 +12,84 @@ interface QrScannerModalProps {
   demoTokens?: Record<string, string>;
 }
 
+/**
+ * Extracts an activation token from a decoded QR string.
+ * Supports both full HTTPS URLs (e.g. https://guest.hotel.com/activate?token=XYZ)
+ * and direct raw opaque token strings.
+ */
+function parseScannedQr(rawValue: string): string {
+  const trimmed = rawValue.trim();
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    try {
+      const parsedUrl = new URL(trimmed);
+      const tokenParam =
+        parsedUrl.searchParams.get('token') || parsedUrl.searchParams.get('qrToken');
+      if (tokenParam) {
+        return tokenParam.trim();
+      }
+    } catch {
+      // If URL parsing fails, return raw string
+    }
+  }
+  return trimmed;
+}
+
 export function QrScannerModal({ open, onClose, onScan, demoTokens = {} }: QrScannerModalProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const animFrameIdRef = useRef<number | null>(null);
+  const hasScannedRef = useRef<boolean>(false);
 
   const [cameraState, setCameraState] = useState<
     'initializing' | 'active' | 'denied' | 'unsupported' | 'error'
   >('initializing');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Stop camera stream cleanly
-  const stopCamera = () => {
+  const isProduction = process.env.NODE_ENV === 'production';
+
+  // Stop camera stream and scanning loop cleanly
+  const stopCamera = useCallback(() => {
+    if (animFrameIdRef.current !== null) {
+      cancelAnimationFrame(animFrameIdRef.current);
+      animFrameIdRef.current = null;
+    }
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
     }
-  };
+  }, []);
 
   const handleClose = () => {
     stopCamera();
+    hasScannedRef.current = false;
     setCameraState('initializing');
     setErrorMessage(null);
     onClose();
   };
 
+  const handleDetectedToken = useCallback(
+    (rawCode: string) => {
+      if (hasScannedRef.current) return;
+      hasScannedRef.current = true;
+      const extractedToken = parseScannedQr(rawCode);
+      stopCamera();
+      onScan(extractedToken);
+      onClose();
+    },
+    [onScan, onClose, stopCamera],
+  );
+
   useEffect(() => {
     if (!open) {
       stopCamera();
+      hasScannedRef.current = false;
       return;
     }
 
     let isCancelled = false;
+    hasScannedRef.current = false;
 
     const initCamera = async () => {
-      // Yield to next microtask so state updates occur asynchronously
       await Promise.resolve();
       if (isCancelled) return;
 
@@ -56,14 +100,18 @@ export function QrScannerModal({ open, onClose, onScan, demoTokens = {} }: QrSca
       ) {
         setCameraState('unsupported');
         setErrorMessage(
-          'Camera access is not supported by your browser or environment. Please use manual code entry.',
+          'Camera access is not supported by your browser. Please use manual code entry.',
         );
         return;
       }
 
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment' },
+          video: {
+            facingMode: { ideal: 'environment' },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
           audio: false,
         });
 
@@ -75,9 +123,46 @@ export function QrScannerModal({ open, onClose, onScan, demoTokens = {} }: QrSca
         streamRef.current = stream;
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
-          videoRef.current.play().catch(() => {});
+          await videoRef.current.play().catch(() => {});
         }
         setCameraState('active');
+
+        // Setup live frame QR detection if native BarcodeDetector is available
+        const win =
+          typeof window !== 'undefined' ? (window as unknown as Record<string, unknown>) : {};
+        if ('BarcodeDetector' in win && typeof win.BarcodeDetector === 'function') {
+          try {
+            type BarcodeDetectorInstance = {
+              detect: (source: HTMLVideoElement) => Promise<Array<{ rawValue: string }>>;
+            };
+            const BarcodeDetectorCtor = win.BarcodeDetector as new (options?: {
+              formats: string[];
+            }) => BarcodeDetectorInstance;
+            const detector = new BarcodeDetectorCtor({ formats: ['qr_code'] });
+
+            const scanLoop = async () => {
+              if (isCancelled || hasScannedRef.current || !videoRef.current) return;
+
+              if (videoRef.current.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+                try {
+                  const barcodes = await detector.detect(videoRef.current);
+                  if (barcodes.length > 0 && barcodes[0]?.rawValue && !hasScannedRef.current) {
+                    handleDetectedToken(barcodes[0].rawValue);
+                    return;
+                  }
+                } catch {
+                  // Ignore frame detection failures, continue loop
+                }
+              }
+
+              animFrameIdRef.current = requestAnimationFrame(scanLoop);
+            };
+
+            animFrameIdRef.current = requestAnimationFrame(scanLoop);
+          } catch {
+            // Fallback: scanner stays active in viewfinder mode
+          }
+        }
       } catch (err: unknown) {
         if (isCancelled) return;
         const domErr = err as DOMException | Error;
@@ -106,12 +191,10 @@ export function QrScannerModal({ open, onClose, onScan, demoTokens = {} }: QrSca
       isCancelled = true;
       stopCamera();
     };
-  }, [open]);
+  }, [open, stopCamera, handleDetectedToken]);
 
   const handleSimulateScan = (token: string) => {
-    stopCamera();
-    onScan(token);
-    onClose();
+    handleDetectedToken(token);
   };
 
   return (
@@ -149,7 +232,7 @@ export function QrScannerModal({ open, onClose, onScan, demoTokens = {} }: QrSca
               </div>
             </div>
             <div className="absolute bottom-2 text-xs text-white/90 bg-black/60 px-3 py-1 rounded-full">
-              Align desk QR code inside frame
+              Align printed QR code inside frame
             </div>
           </div>
         )}
@@ -173,47 +256,49 @@ export function QrScannerModal({ open, onClose, onScan, demoTokens = {} }: QrSca
           </div>
         )}
 
-        {/* Developer / Demo Simulator Section */}
-        <div className="w-full mt-4 pt-3 border-t border-slate-100">
-          <Text className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-2 text-center">
-            Demo QR Simulator
-          </Text>
-          <div className="grid grid-cols-2 gap-2">
-            <Button
-              size="small"
-              onClick={() => {
-                const token =
-                  demoTokens['101-checked-in'] || demoTokens['Room 101'] || 'demo-room-101-token';
-                handleSimulateScan(token);
-              }}
-              className="text-xs"
-            >
-              Scan Room 101
-            </Button>
-            <Button
-              size="small"
-              onClick={() => {
-                const token =
-                  demoTokens['102-reserved'] || demoTokens['Room 102'] || 'demo-room-102-token';
-                handleSimulateScan(token);
-              }}
-              className="text-xs"
-            >
-              Scan Room 102
-            </Button>
-            <Button
-              size="small"
-              danger
-              onClick={() => {
-                const token = demoTokens['105-expired-window'] || 'expired-test-token';
-                handleSimulateScan(token);
-              }}
-              className="text-xs col-span-2"
-            >
-              Scan Expired Stay QR
-            </Button>
+        {/* Demo QR Simulator (disabled in production environments) */}
+        {!isProduction && (
+          <div className="w-full mt-4 pt-3 border-t border-slate-100">
+            <Text className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-2 text-center">
+              Development QR Simulator
+            </Text>
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                size="small"
+                onClick={() => {
+                  const token =
+                    demoTokens['101-checked-in'] || demoTokens['Room 101'] || 'demo-room-101-token';
+                  handleSimulateScan(token);
+                }}
+                className="text-xs"
+              >
+                Scan Room 101
+              </Button>
+              <Button
+                size="small"
+                onClick={() => {
+                  const token =
+                    demoTokens['102-reserved'] || demoTokens['Room 102'] || 'demo-room-102-token';
+                  handleSimulateScan(token);
+                }}
+                className="text-xs"
+              >
+                Scan Room 102
+              </Button>
+              <Button
+                size="small"
+                danger
+                onClick={() => {
+                  const token = demoTokens['105-expired-window'] || 'expired-test-token';
+                  handleSimulateScan(token);
+                }}
+                className="text-xs col-span-2"
+              >
+                Scan Expired Stay QR
+              </Button>
+            </div>
           </div>
-        </div>
+        )}
 
         <Button onClick={handleClose} className="mt-4 w-full">
           Close Scanner

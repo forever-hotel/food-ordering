@@ -19,6 +19,7 @@ import {
 import { GuestSessionResponseDto } from '../dto/guest-session-response.dto.js';
 import { FossSession } from '../entities/foss-session.entity.js';
 import { FossSessionRepository } from '../repositories/foss-session.repository.js';
+import { QrActivationService } from './qr-activation.service.js';
 import { QrTokenService } from './qr-token.service.js';
 
 @Injectable()
@@ -36,9 +37,15 @@ export class GuestSessionsService {
     private readonly qrTokenService: QrTokenService,
     private readonly bookingVerificationService: BookingVerificationService,
     private readonly configService: ConfigService,
+    @Optional() private qrActivationService?: QrActivationService,
     @Optional() @Inject('SESSION_CLOCK') clock?: () => Date,
   ) {
-    this.clock = clock ?? (() => new Date());
+    if (typeof qrActivationService === 'function' && !clock) {
+      this.clock = qrActivationService as unknown as () => Date;
+      this.qrActivationService = undefined;
+    } else {
+      this.clock = clock ?? (() => new Date());
+    }
     this.sessionTtlHours = Number(
       this.configService.get<string>('SESSION_TTL_HOURS') || 24,
     );
@@ -281,6 +288,11 @@ export class GuestSessionsService {
     // Simulate checkout on mock provider if active
     await this.bookingVerificationService.simulateCheckout(cleanBookingId);
 
+    // Revoke any pending unredeemed QR activation slips for this booking
+    if (this.qrActivationService) {
+      await this.qrActivationService.revokeBookingActivations(cleanBookingId);
+    }
+
     const result: FdsEventResponseDto = {
       success: true,
       processed: true,
@@ -361,6 +373,11 @@ export class GuestSessionsService {
       cleanBookingId,
       event.newRoomNumber.trim(),
     );
+
+    // Revoke any pending unredeemed QR activation slips for previous room/booking
+    if (this.qrActivationService) {
+      await this.qrActivationService.revokeBookingActivations(cleanBookingId);
+    }
 
     const result: FdsEventResponseDto = {
       success: true,

@@ -1,3 +1,4 @@
+import * as crypto from 'node:crypto';
 import {
   CanActivate,
   ExecutionContext,
@@ -32,6 +33,7 @@ export class InternalServiceGuard implements CanActivate {
 
     const configuredSecret =
       this.configService.get<string>('INTERNAL_SERVICE_KEY') ||
+      this.configService.get<string>('INTERNAL_SERVICE_SECRET') ||
       this.configService.get<string>('FDS_WEBHOOK_SECRET');
 
     const demoMode =
@@ -63,7 +65,13 @@ export class InternalServiceGuard implements CanActivate {
     }
 
     const providedKey = serviceKeyHeader.trim();
-    if (providedKey !== expectedSecret) {
+    const isMatch =
+      this.timingSafeCompare(providedKey, expectedSecret) ||
+      (demoMode &&
+        !isProduction &&
+        this.timingSafeCompare(providedKey, this.defaultDemoSecret));
+
+    if (!isMatch) {
       this.logger.warn(
         'Internal service request rejected: Invalid service credential provided.',
       );
@@ -71,5 +79,14 @@ export class InternalServiceGuard implements CanActivate {
     }
 
     return true;
+  }
+
+  /**
+   * Constant-time comparison using SHA-256 digests to eliminate side-channel timing attacks.
+   */
+  private timingSafeCompare(provided: string, expected: string): boolean {
+    const hashProvided = crypto.createHash('sha256').update(provided).digest();
+    const hashExpected = crypto.createHash('sha256').update(expected).digest();
+    return crypto.timingSafeEqual(hashProvided, hashExpected);
   }
 }

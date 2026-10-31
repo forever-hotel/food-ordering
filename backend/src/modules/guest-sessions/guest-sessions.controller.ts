@@ -3,11 +3,15 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   HttpCode,
   HttpStatus,
+  Optional,
   Param,
   Post,
   Req,
+  ServiceUnavailableException,
+  UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
 import type { Request } from 'express';
@@ -21,10 +25,12 @@ import {
   FdsRoomReassignEventDto,
 } from './dto/fds-events.dto.js';
 import { GuestSessionResponseDto } from './dto/guest-session-response.dto.js';
+import { IssueQrDto, IssueQrResponseDto } from './dto/issue-qr.dto.js';
 import { VerifyQrDto } from './dto/verify-qr.dto.js';
 import { GuestAuthGuard } from './guards/guest-auth.guard.js';
 import type { GuestContext } from './interfaces/guest-context.interface.js';
 import { GuestSessionsService } from './services/guest-sessions.service.js';
+import { QrActivationService } from './services/qr-activation.service.js';
 import { QrTokenService } from './services/qr-token.service.js';
 
 interface AuthenticatedRequest extends Request {
@@ -37,13 +43,62 @@ export class GuestSessionsController {
   constructor(
     private readonly guestSessionsService: GuestSessionsService,
     private readonly qrTokenService: QrTokenService,
+    @Optional() private readonly qrActivationService?: QrActivationService,
   ) {}
 
   /**
-   * Redeems a cryptographically signed QR code to establish a guest session.
+   * Protected internal endpoint for Front Desk System (FDS) to request a secure QR activation slip.
+   *
+   * Security & Architecture:
+   * - Restricted to authenticated internal FDS service identities via InternalServiceGuard.
+   * - Validates checked-in booking and room assignment against FDS stay contract.
+   * - Atomically revokes any previous unredeemed activation credentials for this booking (reissue safety).
+   * - Stores ONLY the SHA-256 hash in PostgreSQL; raw activation token is returned once for printing.
+   * - Explicit no-store cache header to prevent intermediate proxy credential caching.
+   */
+  @Post('internal/qr/issue')
+  @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'no-store')
+  @UseGuards(InternalServiceGuard)
+  async issueGuestQrSlip(
+    @Body() body: IssueQrDto,
+  ): Promise<IssueQrResponseDto> {
+    if (!body || typeof body !== 'object') {
+      throw new BadRequestException('Request body is required.');
+    }
+    if (!this.qrActivationService) {
+      throw new ServiceUnavailableException(
+        'QR activation service is unconfigured.',
+      );
+    }
+    return this.qrActivationService.issueActivationCredential(body);
+  }
+
+  /**
+   * Alias endpoint for backwards/direct compatibility with alternative FDS gateway path conventions.
+   */
+  @Post('internal/qr-issue')
+  @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'no-store')
+  @UseGuards(InternalServiceGuard)
+  async issueGuestQrSlipAlias(
+    @Body() body: IssueQrDto,
+  ): Promise<IssueQrResponseDto> {
+    return this.issueGuestQrSlip(body);
+  }
+
+  /**
+   * Redeems an activation credential or signed QR code to establish a room-scoped guest session.
+   *
+   * Single-Use & Replay Protection:
+   * - Opaque 256-bit activation tokens are redeemed atomically against the database.
+   * - Once redeemed, the activation token cannot be reused by anyone.
+   * - In development/test environments, signed fixture tokens (containing '.') are verified
+   *   via QrTokenService to preserve test fixture compatibility.
    */
   @Post('qr')
   @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'no-store')
   async authenticateWithQr(
     @Body() body: VerifyQrDto,
   ): Promise<GuestSessionResponseDto> {
@@ -51,13 +106,36 @@ export class GuestSessionsController {
       throw new BadRequestException('Request body with qrToken is required.');
     }
 
-    return this.guestSessionsService.authenticateWithQr(body.qrToken);
+    const token = body.qrToken.trim();
+
+    // Differentiate between opaque single-use activation credentials and signed development tokens
+    if (!token.includes('.')) {
+      if (!this.qrActivationService) {
+        throw new ServiceUnavailableException(
+          'QR activation service is unconfigured.',
+        );
+      }
+      return this.qrActivationService.redeemActivationCredential(token);
+    }
+
+    // Signed tokens (used in local development demo fixtures)
+    if (
+      process.env.NODE_ENV === 'production' &&
+      process.env.ALLOW_LEGACY_QR_TOKENS !== 'true'
+    ) {
+      throw new UnauthorizedException(
+        'Legacy signed QR tokens are disabled in production. Please use an authoritative FDS-issued activation slip.',
+      );
+    }
+
+    return this.guestSessionsService.authenticateWithQr(token);
   }
 
   /**
    * Retrieves the current authenticated guest's active session and stay context.
    */
   @Get('me')
+  @Header('Cache-Control', 'no-store')
   @UseGuards(GuestAuthGuard)
   getMe(
     @CurrentGuest() guest: GuestContext,
@@ -107,6 +185,7 @@ export class GuestSessionsController {
    */
   @Post('logout')
   @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'no-store')
   @UseGuards(GuestAuthGuard)
   async logout(
     @Req() req: AuthenticatedRequest,
@@ -116,9 +195,18 @@ export class GuestSessionsController {
 
   /**
    * Helper endpoint providing pre-signed QR tokens for demo rooms.
+   * Disabled in production environments.
    */
   @Get('demo-tokens')
   getDemoTokens(): { tokens: Record<string, string> } {
+    if (
+      process.env.NODE_ENV === 'production' &&
+      process.env.ALLOW_DEMO_TOKENS !== 'true'
+    ) {
+      throw new UnauthorizedException(
+        'Demo tokens are disabled in production.',
+      );
+    }
     return {
       tokens: this.qrTokenService.getDemoTokens(),
     };
