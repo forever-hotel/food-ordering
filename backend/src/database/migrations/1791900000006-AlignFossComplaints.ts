@@ -44,13 +44,31 @@ export class AlignFossComplaints1791900000006 implements MigrationInterface {
     `);
 
     await queryRunner.query(`
-      CREATE INDEX IF NOT EXISTS "IDX_foss_complaints_referenced_order"
-        ON "foss_complaints" ("referenced_order_id");
+      DO $$ BEGIN
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = current_schema()
+            AND table_name = 'foss_complaints'
+            AND column_name = 'referenced_order_id'
+        ) THEN
+          CREATE INDEX IF NOT EXISTS "IDX_foss_complaints_referenced_order"
+            ON "foss_complaints" ("referenced_order_id");
+        END IF;
+      END $$;
     `);
 
     await queryRunner.query(`
-      CREATE INDEX IF NOT EXISTS "IDX_foss_complaints_referenced_request"
-        ON "foss_complaints" ("referenced_request_id");
+      DO $$ BEGIN
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = current_schema()
+            AND table_name = 'foss_complaints'
+            AND column_name = 'referenced_request_id'
+        ) THEN
+          CREATE INDEX IF NOT EXISTS "IDX_foss_complaints_referenced_request"
+            ON "foss_complaints" ("referenced_request_id");
+        END IF;
+      END $$;
     `);
   }
 
