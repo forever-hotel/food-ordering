@@ -64,4 +64,17 @@ describe('RealKmsAdapter', () => {
       UpstreamServiceUnavailableException,
     );
   });
+
+  it('rejects order status transition with ForbiddenException asserting KMS authoritative ownership', async () => {
+    const adapter = new RealKmsAdapter(
+      'https://kms.internal.foreverhotel.com',
+      'test-kms-key',
+    );
+
+    await expect(
+      adapter.transitionOrderStatus('order-101', 'IN_PREPARATION' as any),
+    ).rejects.toThrow(
+      'Kitchen order status transitions are strictly owned by KMS. FOSS cannot mutate kitchen order statuses in production.',
+    );
+  });
 });

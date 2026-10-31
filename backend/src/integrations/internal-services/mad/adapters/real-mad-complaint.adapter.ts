@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { UpstreamServiceUnavailableException } from '../../../contracts/upstream-integration.exception.js';
 import { MadCreateComplaintDto } from '../dto/mad-complaint.dto.js';
 import { MadComplaintResultDto } from '../dto/mad-complaint-result.dto.js';
@@ -34,15 +34,22 @@ export class RealMadComplaintAdapter implements MadComplaintProvider {
     );
   }
 
+  /**
+   * Complaint resolution and managerial notes are strictly owned by MAD.
+   * FOSS owns guest complaint creation (intake). It has no domain authority to resolve
+   * complaints directly in production.
+   * Unauthorized resolution calls are rejected with ForbiddenException.
+   */
   public async resolveComplaint(
     complaintId: string,
-    resolutionNotes: string,
+    _resolutionNotes: string,
   ): Promise<MadComplaintResultDto> {
     this.assertConfigured();
-    return this.executeHttpCall<MadComplaintResultDto>(
-      `/api/v1/complaints/${encodeURIComponent(complaintId)}/resolve`,
-      'POST',
-      { resolutionNotes },
+    this.logger.warn(
+      `Rejecting unauthorized complaint resolution for complaint [${complaintId}]: Complaint resolution is strictly owned by MAD.`,
+    );
+    throw new ForbiddenException(
+      'Complaint resolution is strictly owned by MAD. FOSS cannot resolve complaints directly in production.',
     );
   }
 

@@ -359,5 +359,35 @@ describe('Upstream KMS, WKMS, MAD, and FDS Versioned Contracts (e2e/contract)', 
       });
       expect(complaint.complaintId).toBeDefined();
     });
+
+    it('prevents unauthorized production status mutations across KMS, WKMS, and MAD by failing with ForbiddenException', async () => {
+      const realKms = new RealKmsAdapter(
+        'https://kms.internal.foreverhotel.com',
+      );
+      const realWkms = new RealWkmsAdapter(
+        'https://wkms.internal.foreverhotel.com',
+      );
+      const realMad = new RealMadComplaintAdapter(
+        'https://mad.internal.foreverhotel.com',
+      );
+
+      await expect(
+        realKms.transitionOrderStatus('order-101', 'DELIVERED' as any),
+      ).rejects.toThrow(
+        'Kitchen order status transitions are strictly owned by KMS. FOSS cannot mutate kitchen order statuses in production.',
+      );
+
+      await expect(
+        realWkms.transitionTaskStatus('task-101', 'COMPLETED'),
+      ).rejects.toThrow(
+        'Task status transitions are strictly owned by WKMS. FOSS cannot mutate worker task statuses in production.',
+      );
+
+      await expect(
+        realMad.resolveComplaint('complaint-101', 'Resolution note'),
+      ).rejects.toThrow(
+        'Complaint resolution is strictly owned by MAD. FOSS cannot resolve complaints directly in production.',
+      );
+    });
   });
 });

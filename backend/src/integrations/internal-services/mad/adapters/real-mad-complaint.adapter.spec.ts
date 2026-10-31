@@ -59,8 +59,32 @@ describe('RealMadComplaintAdapter', () => {
     const adapter = new RealMadComplaintAdapter(
       'https://mad.internal.foreverhotel.com',
     );
+    await expect(adapter.getComplaint('complaint-101')).rejects.toThrow(
+      UpstreamServiceUnavailableException,
+    );
+  });
+
+  it('rejects complaint resolution with ForbiddenException asserting MAD managerial ownership and does not log resolution notes', async () => {
+    const adapter = new RealMadComplaintAdapter(
+      'https://mad.internal.foreverhotel.com',
+      'test-mad-key',
+    );
+    const warnSpy = jest.spyOn((adapter as any).logger, 'warn');
+
     await expect(
-      adapter.resolveComplaint('complaint-101', 'notes'),
-    ).rejects.toThrow(UpstreamServiceUnavailableException);
+      adapter.resolveComplaint(
+        'complaint-101',
+        'Confidential guest resolution details',
+      ),
+    ).rejects.toThrow(
+      'Complaint resolution is strictly owned by MAD. FOSS cannot resolve complaints directly in production.',
+    );
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('complaint [complaint-101]'),
+    );
+    expect(warnSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining('Confidential guest resolution details'),
+    );
   });
 });
