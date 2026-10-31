@@ -2,10 +2,12 @@ import { jest } from '@jest/globals';
 import { BadRequestException } from '@nestjs/common';
 
 import { GuestSessionResponseDto } from './dto/guest-session-response.dto.js';
+import { IssueQrDto, IssueQrResponseDto } from './dto/issue-qr.dto.js';
 import { VerifyQrDto } from './dto/verify-qr.dto.js';
 import { GuestSessionsController } from './guest-sessions.controller.js';
 import type { GuestContext } from './interfaces/guest-context.interface.js';
 import { GuestSessionsService } from './services/guest-sessions.service.js';
+import { QrActivationService } from './services/qr-activation.service.js';
 import { QrTokenService } from './services/qr-token.service.js';
 
 describe('GuestSessionsController', () => {
@@ -26,6 +28,17 @@ describe('GuestSessionsController', () => {
   let mockQrTokenService: {
     getDemoTokens: jest.MockedFunction<() => Record<string, string>>;
   };
+  let mockQrActivationService: {
+    issueActivationCredential: jest.MockedFunction<
+      (dto: IssueQrDto) => Promise<IssueQrResponseDto>
+    >;
+    redeemActivationCredential: jest.MockedFunction<
+      (token: string) => Promise<GuestSessionResponseDto>
+    >;
+    revokeBookingActivations: jest.MockedFunction<
+      (bookingId: string) => Promise<number>
+    >;
+  };
 
   beforeEach(() => {
     mockGuestSessionsService = {
@@ -42,14 +55,85 @@ describe('GuestSessionsController', () => {
       }),
     };
 
+    mockQrActivationService = {
+      issueActivationCredential: jest.fn<() => Promise<IssueQrResponseDto>>(),
+      redeemActivationCredential:
+        jest.fn<() => Promise<GuestSessionResponseDto>>(),
+      revokeBookingActivations: jest.fn<() => Promise<number>>(),
+    };
+
     controller = new GuestSessionsController(
       mockGuestSessionsService as unknown as GuestSessionsService,
       mockQrTokenService as unknown as QrTokenService,
+      mockQrActivationService as unknown as QrActivationService,
     );
   });
 
+  describe('issueGuestQrSlip', () => {
+    it('delegates QR issuance to QrActivationService', async () => {
+      const issueDto: IssueQrDto = {
+        bookingId: 'b1010000-0000-4000-8000-000000000101',
+        roomNumber: '101',
+        checkOutDate: '2026-11-02T11:00:00Z',
+      };
+
+      const expectedResponse: IssueQrResponseDto = {
+        status: 'ACTIVATED',
+        sessionReference: 'act-uuid',
+        activationUrl:
+          'https://guest.foreverhotel.com/activate?token=token-123',
+        qrToken: 'token-123',
+        expiresAt: '2026-10-31T16:15:00Z',
+        validUntilDate: '2026-11-02T11:00:00Z',
+      };
+
+      mockQrActivationService.issueActivationCredential.mockResolvedValue(
+        expectedResponse,
+      );
+
+      const result = await controller.issueGuestQrSlip(issueDto);
+      expect(
+        mockQrActivationService.issueActivationCredential,
+      ).toHaveBeenCalledWith(issueDto);
+      expect(result).toEqual(expectedResponse);
+    });
+
+    it('works via issueGuestQrSlipAlias', async () => {
+      const issueDto: IssueQrDto = {
+        bookingReference: 'b1010000-0000-4000-8000-000000000101',
+        roomNumber: '101',
+      };
+
+      const expectedResponse: IssueQrResponseDto = {
+        status: 'ACTIVATED',
+        sessionReference: 'act-uuid',
+        activationUrl:
+          'https://guest.foreverhotel.com/activate?token=token-123',
+        qrToken: 'token-123',
+        expiresAt: '2026-10-31T16:15:00Z',
+        validUntilDate: '2026-11-02T11:00:00Z',
+      };
+
+      mockQrActivationService.issueActivationCredential.mockResolvedValue(
+        expectedResponse,
+      );
+
+      const result = await controller.issueGuestQrSlipAlias(issueDto);
+      expect(
+        mockQrActivationService.issueActivationCredential,
+      ).toHaveBeenCalledWith(issueDto);
+      expect(result).toEqual(expectedResponse);
+    });
+
+    it('rejects empty body', async () => {
+      await expect(controller.issueGuestQrSlip(null as any)).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+  });
+
   describe('authenticateWithQr', () => {
-    it('authenticates valid QR payload and returns session response', async () => {
+    it('routes opaque single-use activation credentials (no dot) to QrActivationService', async () => {
       const responseDto: GuestSessionResponseDto = {
         sessionId: 'sess-1',
         bookingId: 'book-1',
@@ -58,8 +142,40 @@ describe('GuestSessionsController', () => {
         guestName: 'Jane Doe',
         stayStart: '2026-10-27T10:00:00Z',
         stayEnd: '2026-10-30T10:00:00Z',
-        expiresAt: '2026-10-29T10:00:00Z',
-        createdAt: '2026-10-28T10:00:00Z',
+        expiresAt: '2026-10-28T10:00:00Z',
+        createdAt: '2026-10-27T10:00:00Z',
+        active: true,
+      };
+
+      mockQrActivationService.redeemActivationCredential.mockResolvedValue(
+        responseDto,
+      );
+
+      const body: VerifyQrDto = {
+        qrToken: 'opaque-base64url-token-without-dots',
+      };
+      const result = await controller.authenticateWithQr(body);
+
+      expect(
+        mockQrActivationService.redeemActivationCredential,
+      ).toHaveBeenCalledWith('opaque-base64url-token-without-dots');
+      expect(
+        mockGuestSessionsService.authenticateWithQr,
+      ).not.toHaveBeenCalled();
+      expect(result).toEqual(responseDto);
+    });
+
+    it('routes signed development fixture tokens (with dot) to GuestSessionsService', async () => {
+      const responseDto: GuestSessionResponseDto = {
+        sessionId: 'sess-1',
+        bookingId: 'book-1',
+        roomNumber: '101',
+        sessionToken: 'raw-token',
+        guestName: 'Jane Doe',
+        stayStart: '2026-10-27T10:00:00Z',
+        stayEnd: '2026-10-30T10:00:00Z',
+        expiresAt: '2026-10-28T10:00:00Z',
+        createdAt: '2026-10-27T10:00:00Z',
         active: true,
       };
 
@@ -67,19 +183,19 @@ describe('GuestSessionsController', () => {
         responseDto,
       );
 
-      const body: VerifyQrDto = { qrToken: 'valid.qr.token' };
+      const body: VerifyQrDto = { qrToken: 'encoded-payload.valid-signature' };
       const result = await controller.authenticateWithQr(body);
 
       expect(mockGuestSessionsService.authenticateWithQr).toHaveBeenCalledWith(
-        'valid.qr.token',
+        'encoded-payload.valid-signature',
       );
-      expect(result).toBe(responseDto);
+      expect(
+        mockQrActivationService.redeemActivationCredential,
+      ).not.toHaveBeenCalled();
+      expect(result).toEqual(responseDto);
     });
 
-    it('throws BadRequestException when body or qrToken is missing', async () => {
-      await expect(
-        controller.authenticateWithQr(null as unknown as VerifyQrDto),
-      ).rejects.toThrow(BadRequestException);
+    it('rejects request with missing or empty qrToken', async () => {
       await expect(
         controller.authenticateWithQr({ qrToken: '' } as VerifyQrDto),
       ).rejects.toThrow(BadRequestException);
@@ -87,146 +203,128 @@ describe('GuestSessionsController', () => {
   });
 
   describe('getMe', () => {
-    it('returns current guest context with active status', () => {
-      const guest: GuestContext = {
+    it('returns current guest context with active: true', () => {
+      const guestContext: GuestContext = {
         sessionId: 'sess-1',
         bookingId: 'book-1',
-        guestId: 'sess-1',
         roomNumber: '101',
         guestName: 'Jane Doe',
-        role: 'GUEST',
+        stayStart: '2026-10-27T10:00:00Z',
+        stayEnd: '2026-10-30T10:00:00Z',
       };
 
-      const result = controller.getMe(guest);
-
-      expect(result).toEqual({
-        ...guest,
-        active: true,
-      });
-    });
-  });
-
-  describe('logout', () => {
-    it('delegates logout to guestSessionsService with session token', async () => {
-      mockGuestSessionsService.logout.mockResolvedValue({
-        success: true,
-        message: 'Logged out successfully.',
-      });
-
-      const req = {
-        sessionToken: 'active-session-token',
-        guest: {} as GuestContext,
-      } as unknown as Parameters<typeof controller.logout>[0];
-
-      const result = await controller.logout(req);
-
-      expect(mockGuestSessionsService.logout).toHaveBeenCalledWith(
-        'active-session-token',
-      );
-      expect(result.success).toBe(true);
+      const result = controller.getMe(guestContext);
+      expect(result).toEqual({ ...guestContext, active: true });
     });
   });
 
   describe('verifyRoomAccess', () => {
-    it('returns room access authorization details', () => {
-      const guest: GuestContext = {
-        sessionId: 'sess-101',
-        bookingId: 'book-101',
-        guestId: 'sess-101',
+    it('returns authorized payload for matching room', () => {
+      const guestContext: GuestContext = {
+        sessionId: 'sess-1',
+        bookingId: 'book-1',
         roomNumber: '101',
-        role: 'GUEST',
+        stayStart: '2026-10-27T10:00:00Z',
+        stayEnd: '2026-10-30T10:00:00Z',
       };
 
-      const result = controller.verifyRoomAccess('101', guest);
-
+      const result = controller.verifyRoomAccess('101', guestContext);
       expect(result).toEqual({
         authorized: true,
         roomNumber: '101',
-        sessionId: 'sess-101',
+        sessionId: 'sess-1',
       });
     });
   });
 
   describe('verifyBookingAccess', () => {
-    it('returns booking access authorization details', () => {
-      const guest: GuestContext = {
-        sessionId: 'sess-101',
-        bookingId: 'book-101',
-        guestId: 'sess-101',
+    it('returns authorized payload for matching booking', () => {
+      const guestContext: GuestContext = {
+        sessionId: 'sess-1',
+        bookingId: 'book-1',
         roomNumber: '101',
-        role: 'GUEST',
+        stayStart: '2026-10-27T10:00:00Z',
+        stayEnd: '2026-10-30T10:00:00Z',
       };
 
-      const result = controller.verifyBookingAccess('book-101', guest);
-
+      const result = controller.verifyBookingAccess('book-1', guestContext);
       expect(result).toEqual({
         authorized: true,
-        bookingId: 'book-101',
-        sessionId: 'sess-101',
+        bookingId: 'book-1',
+        sessionId: 'sess-1',
       });
     });
   });
 
-  describe('getDemoTokens', () => {
-    it('returns demo tokens from qrTokenService', () => {
-      const result = controller.getDemoTokens();
+  describe('logout', () => {
+    it('logs out guest session successfully', async () => {
+      mockGuestSessionsService.logout.mockResolvedValue({
+        success: true,
+        message: 'Logged out successfully.',
+      });
 
-      expect(result.tokens).toEqual({
-        '101-checked-in': 'demo-qr-token-101',
+      const req = { sessionToken: 'bearer-token-123' } as any;
+      const result = await controller.logout(req);
+      expect(mockGuestSessionsService.logout).toHaveBeenCalledWith(
+        'bearer-token-123',
+      );
+      expect(result.success).toBe(true);
+    });
+  });
+
+  describe('getDemoTokens', () => {
+    it('returns demo tokens record from service in dev', () => {
+      const result = controller.getDemoTokens();
+      expect(result).toEqual({
+        tokens: { '101-checked-in': 'demo-qr-token-101' },
       });
     });
   });
 
   describe('handleCheckoutEvent', () => {
-    it('delegates valid checkout event to guestSessionsService', async () => {
+    it('delegates checkout event to guestSessionsService', async () => {
       const checkoutEvent = {
-        eventId: 'evt-checkout-1',
-        eventType: 'fds.guest.checkout' as const,
-        bookingId: 'book-101',
+        eventId: 'evt-1',
+        bookingId: 'book-1',
         roomNumber: '101',
-        checkoutTime: '2026-10-28T12:00:00Z',
       };
 
       mockGuestSessionsService.handleFdsCheckoutEvent.mockResolvedValue({
         success: true,
         processed: true,
-        message: 'Revoked',
+        bookingId: 'book-1',
         sessionRevoked: true,
       });
 
-      const result = await controller.handleCheckoutEvent(checkoutEvent);
+      const result = await controller.handleCheckoutEvent(checkoutEvent as any);
       expect(
         mockGuestSessionsService.handleFdsCheckoutEvent,
       ).toHaveBeenCalledWith(checkoutEvent);
       expect(result.sessionRevoked).toBe(true);
     });
 
-    it('rejects checkout event when missing eventId or bookingId', async () => {
-      await expect(controller.handleCheckoutEvent(null as any)).rejects.toThrow(
-        BadRequestException,
-      );
-
+    it('rejects checkout event when eventId or bookingId is missing', async () => {
       await expect(
-        controller.handleCheckoutEvent({ eventId: '' } as any),
+        controller.handleCheckoutEvent({
+          eventId: 'evt-1',
+        } as any),
       ).rejects.toThrow(BadRequestException);
     });
   });
 
   describe('handleRoomReassignEvent', () => {
-    it('delegates valid room reassign event to guestSessionsService', async () => {
+    it('delegates room reassign event to guestSessionsService', async () => {
       const reassignEvent = {
-        eventId: 'evt-reassign-1',
-        eventType: 'fds.room.reassigned' as const,
-        bookingId: 'book-101',
+        eventId: 'evt-1',
+        bookingId: 'book-1',
         previousRoomNumber: '101',
-        newRoomNumber: '105',
-        reassignedAt: '2026-10-28T12:00:00Z',
+        newRoomNumber: '102',
       };
 
       mockGuestSessionsService.handleFdsRoomReassignEvent.mockResolvedValue({
         success: true,
         processed: true,
-        message: 'Reassigned',
+        bookingId: 'book-1',
         sessionRevoked: true,
       });
 

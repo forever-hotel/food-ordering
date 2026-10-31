@@ -11,6 +11,7 @@ import { BookingVerificationService } from '../../../integrations/internal-servi
 import { FossSession } from '../entities/foss-session.entity.js';
 import { FossSessionRepository } from '../repositories/foss-session.repository.js';
 import { GuestSessionsService } from './guest-sessions.service.js';
+import { QrActivationService } from './qr-activation.service.js';
 import { QrTokenPayload, QrTokenService } from './qr-token.service.js';
 
 describe('GuestSessionsService', () => {
@@ -26,6 +27,11 @@ describe('GuestSessionsService', () => {
   };
   let mockQrTokenService: {
     verifyToken: jest.MockedFunction<(token: string) => QrTokenPayload>;
+  };
+  let mockQrActivationService: {
+    revokeBookingActivations: jest.MockedFunction<
+      (bookingId: string) => Promise<number>
+    >;
   };
   let mockBookingVerificationService: {
     verifyStay: jest.MockedFunction<
@@ -79,6 +85,12 @@ describe('GuestSessionsService', () => {
       }),
     };
 
+    mockQrActivationService = {
+      revokeBookingActivations: jest
+        .fn<(bookingId: string) => Promise<number>>()
+        .mockResolvedValue(0),
+    };
+
     mockBookingVerificationService = {
       verifyStay: jest
         .fn<() => Promise<BookingVerificationResultDto>>()
@@ -105,6 +117,7 @@ describe('GuestSessionsService', () => {
       mockQrTokenService as unknown as QrTokenService,
       mockBookingVerificationService as unknown as BookingVerificationService,
       mockConfigService as unknown as ConfigService,
+      mockQrActivationService as unknown as QrActivationService,
       () => mockClock,
     );
   });
