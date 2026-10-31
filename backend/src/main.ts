@@ -5,6 +5,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module.js';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter.js';
 import { correlationMiddleware } from './common/middleware/correlation.middleware.js';
+import { createIngressPrefixMiddleware } from './common/middleware/ingress-prefix.middleware.js';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -15,6 +16,9 @@ async function bootstrap() {
 
   // Global request correlation ID injection
   app.use(correlationMiddleware);
+
+  // Ingress prefix normalization for API Gateway proxy routing (e.g. /foss/* -> /*)
+  app.use(createIngressPrefixMiddleware());
 
   // Global standardized error filter with correlation and sanitization
   app.useGlobalFilters(new HttpExceptionFilter());
@@ -74,6 +78,6 @@ async function bootstrap() {
     customSiteTitle: 'Forever Hotel FOSS API Documentation',
   });
 
-  await app.listen(process.env.PORT ?? 3001, process.env.HOST || '::');
+  await app.listen(process.env.PORT ?? 4300, process.env.HOST || '::');
 }
 bootstrap();
