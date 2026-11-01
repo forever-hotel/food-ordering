@@ -149,19 +149,13 @@ export function MenuTab() {
   const targetPeriod = categoryPeriodMap[selectedCategory] || 'ALL_DAY';
   const categoryWindow =
     catalog?.mealWindows.find(
-      (w) =>
-        w.period === targetPeriod ||
-        w.name.toLowerCase() === selectedCategory.toLowerCase(),
+      (w) => w.period === targetPeriod || w.name.toLowerCase() === selectedCategory.toLowerCase(),
     ) ||
     catalog?.mealWindows.find((w) => w.isActive) ||
     catalog?.mealWindows[0];
 
-  const cutoffTimeDisplay = categoryWindow
-    ? categoryWindow.cutoffTime.slice(0, 5)
-    : '14:30';
-  const remainingMinutes = categoryWindow
-    ? Math.floor(categoryWindow.secondsRemaining / 60)
-    : 0;
+  const cutoffTimeDisplay = categoryWindow ? categoryWindow.cutoffTime.slice(0, 5) : '14:30';
+  const remainingMinutes = categoryWindow ? Math.floor(categoryWindow.secondsRemaining / 60) : 0;
   const hoursLeft = Math.floor(remainingMinutes / 60);
   const minsLeft = remainingMinutes % 60;
   const timeLeftDisplay =
@@ -225,7 +219,8 @@ export function MenuTab() {
             {isCutoffReached ? (
               <span className="text-slate-700">
                 {selectedCategory} service has ended for today (served until{' '}
-                <strong className="font-bold">{cutoffTimeDisplay}</strong>). Please check our active dining options above.
+                <strong className="font-bold">{cutoffTimeDisplay}</strong>). Please check our active
+                dining options above.
               </span>
             ) : isCategoryActive ? (
               <span className="text-amber-950">
@@ -244,9 +239,7 @@ export function MenuTab() {
           </span>
         }
         className={`!rounded-xl shadow-xs ${
-          isCutoffReached
-            ? '!border-slate-200 !bg-slate-50'
-            : '!border-amber-200 !bg-amber-50'
+          isCutoffReached ? '!border-slate-200 !bg-slate-50' : '!border-amber-200 !bg-amber-50'
         }`}
       />
 
