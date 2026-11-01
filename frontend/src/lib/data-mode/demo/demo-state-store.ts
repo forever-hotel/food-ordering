@@ -29,59 +29,99 @@ export interface DemoStay {
   isExpired?: boolean;
 }
 
-export const DEMO_STAYS: DemoStay[] = [
-  {
-    roomNumber: '101',
-    bookingId: 'booking-101',
-    guestName: 'John Doe',
-    sessionToken: 'demo-token-room-101',
-    qrToken: 'act-demo-101',
-    shortCode: '101',
-    checkIn: '2026-10-30T14:00:00.000Z',
-    checkOut: '2026-11-05T11:00:00.000Z',
-  },
-  {
-    roomNumber: '102',
-    bookingId: 'booking-102',
-    guestName: 'Jane Smith',
-    sessionToken: 'demo-token-room-102',
-    qrToken: 'act-demo-102',
-    shortCode: '102',
-    checkIn: '2026-10-31T15:00:00.000Z',
-    checkOut: '2026-11-04T11:00:00.000Z',
-  },
-  {
-    roomNumber: '103',
-    bookingId: 'booking-103',
-    guestName: 'Robert Frost',
-    sessionToken: 'demo-token-room-103',
-    qrToken: 'act-demo-103',
-    shortCode: '103',
-    checkIn: '2026-11-01T12:00:00.000Z',
-    checkOut: '2026-11-06T11:00:00.000Z',
-  },
-  {
-    roomNumber: '204',
-    bookingId: 'booking-204',
-    guestName: 'Alice Wong',
-    sessionToken: 'demo-token-room-204',
-    qrToken: 'act-demo-204',
-    shortCode: '204',
-    checkIn: '2026-11-01T14:00:00.000Z',
-    checkOut: '2026-11-03T11:00:00.000Z',
-  },
-  {
-    roomNumber: '999',
-    bookingId: 'booking-expired',
-    guestName: 'Expired Session',
-    sessionToken: 'demo-token-expired',
-    qrToken: 'act-demo-expired',
-    shortCode: '999',
-    checkIn: '2026-10-20T14:00:00.000Z',
-    checkOut: '2026-10-25T11:00:00.000Z',
-    isExpired: true,
-  },
-];
+/**
+ * Deterministic Scenario Clock Strategy
+ * Controls scenario time for testing stay validity, cancellation cutoffs, and meal periods.
+ */
+export class DemoScenarioClock {
+  private static mockTimeMs: number | null = null;
+
+  public static now(): Date {
+    return this.mockTimeMs !== null ? new Date(this.mockTimeMs) : new Date();
+  }
+
+  public static setTime(dateOrMs: Date | number | string): void {
+    this.mockTimeMs = new Date(dateOrMs).getTime();
+  }
+
+  public static advance(ms: number): void {
+    const current = this.now().getTime();
+    this.mockTimeMs = current + ms;
+  }
+
+  public static isOverridden(): boolean {
+    return this.mockTimeMs !== null;
+  }
+
+  public static reset(): void {
+    this.mockTimeMs = null;
+  }
+
+  public static generateStays(baseDate: Date = DemoScenarioClock.now()): DemoStay[] {
+    const msInDay = 86400000;
+    const nowMs = baseDate.getTime();
+
+    return [
+      {
+        roomNumber: '101',
+        bookingId: 'booking-101',
+        guestName: 'John Doe',
+        sessionToken: 'demo-token-room-101',
+        qrToken: 'act-demo-101',
+        shortCode: '101',
+        checkIn: new Date(nowMs - 2 * msInDay).toISOString(),
+        checkOut: new Date(nowMs + 4 * msInDay).toISOString(),
+        isExpired: false,
+      },
+      {
+        roomNumber: '102',
+        bookingId: 'booking-102',
+        guestName: 'Jane Smith',
+        sessionToken: 'demo-token-room-102',
+        qrToken: 'act-demo-102',
+        shortCode: '102',
+        checkIn: new Date(nowMs - 1 * msInDay).toISOString(),
+        checkOut: new Date(nowMs + 3 * msInDay).toISOString(),
+        isExpired: false,
+      },
+      {
+        roomNumber: '103',
+        bookingId: 'booking-103',
+        guestName: 'Robert Frost',
+        sessionToken: 'demo-token-room-103',
+        qrToken: 'act-demo-103',
+        shortCode: '103',
+        checkIn: new Date(nowMs - 12 * 3600000).toISOString(),
+        checkOut: new Date(nowMs + 5 * msInDay).toISOString(),
+        isExpired: false,
+      },
+      {
+        roomNumber: '204',
+        bookingId: 'booking-204',
+        guestName: 'Alice Wong',
+        sessionToken: 'demo-token-room-204',
+        qrToken: 'act-demo-204',
+        shortCode: '204',
+        checkIn: new Date(nowMs - 6 * 3600000).toISOString(),
+        checkOut: new Date(nowMs + 2 * msInDay).toISOString(),
+        isExpired: false,
+      },
+      {
+        roomNumber: '999',
+        bookingId: 'booking-expired',
+        guestName: 'Expired Session',
+        sessionToken: 'demo-token-expired',
+        qrToken: 'act-demo-expired',
+        shortCode: '999',
+        checkIn: new Date(nowMs - 7 * msInDay).toISOString(),
+        checkOut: new Date(nowMs - 1 * msInDay).toISOString(),
+        isExpired: true,
+      },
+    ];
+  }
+}
+
+export let DEMO_STAYS: DemoStay[] = DemoScenarioClock.generateStays();
 
 export const DEMO_MENU_ITEMS: GuestMenuItem[] = [
   // --- STARTERS ---
@@ -348,6 +388,7 @@ type RealtimeListener = (event: FossRealtimeEvent) => void;
 export class DemoStateStore {
   private static instance: DemoStateStore | null = null;
 
+  private stays: DemoStay[] = DemoScenarioClock.generateStays();
   private orders: Map<string, FoodOrderResponse> = new Map();
   private serviceRequests: Map<string, ServiceRequestResponse> = new Map();
   private complaints: Map<string, ComplaintResponse> = new Map();
@@ -365,7 +406,34 @@ export class DemoStateStore {
     return DemoStateStore.instance;
   }
 
+  public getStays(): DemoStay[] {
+    return this.stays;
+  }
+
+  public getDemoTokens(): Record<string, string> {
+    const tokens: Record<string, string> = {};
+    for (const stay of this.stays) {
+      if (!stay.isExpired) {
+        tokens[stay.roomNumber] = stay.qrToken;
+      }
+    }
+    return tokens;
+  }
+
+  public setClockTime(time: Date | number | string): void {
+    DemoScenarioClock.setTime(time);
+    this.reset();
+  }
+
+  public resetClock(): void {
+    DemoScenarioClock.reset();
+    this.reset();
+  }
+
   public reset(): void {
+    DemoScenarioClock.reset();
+    this.stays = DemoScenarioClock.generateStays();
+    DEMO_STAYS = this.stays;
     this.orders.clear();
     this.serviceRequests.clear();
     this.complaints.clear();
@@ -377,7 +445,7 @@ export class DemoStateStore {
   }
 
   private seedInitialFixtures(): void {
-    const now = new Date();
+    const now = DemoScenarioClock.now();
 
     // --- ROOM 101 FIXTURES ---
     const order101Delivered: FoodOrderResponse = {
@@ -599,24 +667,29 @@ export class DemoStateStore {
 
   // --- SESSION RESOLUTION ---
   public resolveStayByToken(sessionToken: string): DemoStay {
-    const stay = DEMO_STAYS.find((s) => s.sessionToken === sessionToken);
+    if (!sessionToken || !sessionToken.startsWith('demo-token-')) {
+      throw new ApiError('Real API tokens cannot be resolved in Demo Mode.', 401);
+    }
+    const stay = this.stays.find((s) => s.sessionToken === sessionToken);
     if (!stay) {
       throw new ApiError('Invalid or unauthenticated demo session token.', 401);
     }
-    if (stay.isExpired) {
+    const isPastCheckout = new Date(stay.checkOut).getTime() <= DemoScenarioClock.now().getTime();
+    if (stay.isExpired || isPastCheckout) {
       throw new ApiError('Demo session has expired.', 401);
     }
     return stay;
   }
 
   public resolveStayByQr(qrToken: string): DemoStay {
-    const stay = DEMO_STAYS.find(
+    const stay = this.stays.find(
       (s) => s.qrToken === qrToken || s.shortCode === qrToken || s.roomNumber === qrToken,
     );
     if (!stay) {
       throw new ApiError('Invalid or expired QR activation code.', 400);
     }
-    if (stay.isExpired) {
+    const isPastCheckout = new Date(stay.checkOut).getTime() <= DemoScenarioClock.now().getTime();
+    if (stay.isExpired || isPastCheckout) {
       throw new ApiError('Guest stay has already checked out or QR is expired.', 400);
     }
     return stay;
@@ -662,7 +735,7 @@ export class DemoStateStore {
     }
 
     const orderId = `ORD-DEMO-${Math.floor(100 + Math.random() * 900)}`;
-    const now = new Date();
+    const now = DemoScenarioClock.now();
     const cancellationCutoff = new Date(now.getTime() + 600 * 1000);
 
     let totalAmount = 0;
@@ -756,7 +829,14 @@ export class DemoStateStore {
       throw new ApiError('Order has already been delivered and cannot be cancelled.', 409);
     }
 
-    const now = new Date();
+    const now = DemoScenarioClock.now();
+    const cutoffTime = order.cancellationCutoffTime
+      ? new Date(order.cancellationCutoffTime).getTime()
+      : 0;
+    if (cutoffTime > 0 && now.getTime() > cutoffTime) {
+      throw new ApiError('Cancellation window has expired (10-minute limit exceeded).', 409);
+    }
+
     order.status = 'CANCELLED';
     order.canCancel = false;
     order.updatedAt = now.toISOString();
@@ -787,7 +867,7 @@ export class DemoStateStore {
       throw new ApiError('Cross-room order advancement forbidden.', 403);
     }
 
-    const now = new Date();
+    const now = DemoScenarioClock.now();
     order.status = newStatus;
     order.updatedAt = now.toISOString();
     order.canCancel = newStatus === 'PLACED';
@@ -862,7 +942,7 @@ export class DemoStateStore {
     }
 
     const requestId = `REQ-DEMO-${Math.floor(100 + Math.random() * 900)}`;
-    const now = new Date();
+    const now = DemoScenarioClock.now();
 
     const newReq: ServiceRequestResponse = {
       requestId,
@@ -918,7 +998,7 @@ export class DemoStateStore {
       throw new ApiError('Cross-room service request advancement forbidden.', 403);
     }
 
-    const now = new Date();
+    const now = DemoScenarioClock.now();
     req.status = newStatus;
     req.updatedAt = now.toISOString();
     if (assignedStaff) {
@@ -986,7 +1066,7 @@ export class DemoStateStore {
 
   public createComplaint(stay: DemoStay, payload: CreateComplaintPayload): ComplaintResponse {
     const complaintId = `CMP-DEMO-${Math.floor(100 + Math.random() * 900)}`;
-    const now = new Date();
+    const now = DemoScenarioClock.now();
 
     const newCmp: ComplaintResponse = {
       complaintId,
@@ -1046,7 +1126,7 @@ export class DemoStateStore {
       throw new ApiError('Cross-room complaint advancement forbidden.', 403);
     }
 
-    const now = new Date();
+    const now = DemoScenarioClock.now();
     cmp.status = newStatus;
     cmp.updatedAt = now.toISOString();
     if (resolutionNotes) {
@@ -1088,7 +1168,7 @@ export class DemoStateStore {
   // --- MENU ---
   public getMenuCatalog(): GuestMenuResponse {
     return {
-      currentTimeInColombo: new Date().toISOString(),
+      currentTimeInColombo: DemoScenarioClock.now().toISOString(),
       activeMealPeriods: ['LUNCH', 'ALL_DAY'],
       categories: ['Starters', 'Mains', 'Desserts', 'Beverages'],
       mealWindows: JSON.parse(JSON.stringify(DEMO_MEAL_WINDOWS)),
