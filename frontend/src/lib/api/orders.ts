@@ -104,16 +104,6 @@ export async function placeFoodOrder(
       throw err;
     }
 
-    // In local development or standalone UI demo without running backend, fallback gracefully
-    if (
-      process.env.NODE_ENV !== 'production' &&
-      typeof window !== 'undefined' &&
-      window.location.hostname === 'localhost'
-    ) {
-      // If network refused connection, produce deterministic demo confirmation
-      return createMockOrderResponse(payload, effectiveKey);
-    }
-
     const message =
       err instanceof Error
         ? err.message

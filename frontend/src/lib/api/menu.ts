@@ -288,8 +288,8 @@ export async function fetchGuestMenu(
     if (error instanceof ApiError) {
       throw error;
     }
-    // Fallback to deterministic mock data when server is in demo/offline mode
-    return FALLBACK_MENU_RESPONSE;
+    const msg = error instanceof Error ? error.message : 'Unable to retrieve menu catalog.';
+    throw new ApiError(msg, 503);
   }
 }
 
@@ -327,11 +327,9 @@ export async function fetchMenuItem(sessionToken: string, itemId: string): Promi
     if (error instanceof ApiError) {
       throw error;
     }
-    const fallback = FALLBACK_MENU_RESPONSE.items.find((f) => f.id === itemId);
-    if (fallback) {
-      return fallback;
-    }
-    throw new ApiError('Item not found', 404);
+    const msg =
+      error instanceof Error ? error.message : `Unable to retrieve menu item details for [${itemId}].`;
+    throw new ApiError(msg, 503);
   }
 }
 
@@ -358,6 +356,7 @@ export async function fetchMealWindows(sessionToken: string): Promise<MealWindow
     if (error instanceof ApiError) {
       throw error;
     }
-    return FALLBACK_MENU_RESPONSE.mealWindows;
+    const msg = error instanceof Error ? error.message : 'Unable to retrieve meal windows.';
+    throw new ApiError(msg, 503);
   }
 }

@@ -166,42 +166,6 @@ export async function createServiceRequest(
     if (err instanceof ApiError) {
       throw err;
     }
-
-    // Local demo / standalone fallback
-    if (
-      process.env.NODE_ENV !== 'production' &&
-      typeof window !== 'undefined' &&
-      window.location.hostname === 'localhost'
-    ) {
-      const now = new Date();
-      return {
-        requestId: `REQ-${Math.floor(100 + Math.random() * 900)}`,
-        roomNumber: '103',
-        bookingId: 'booking-101',
-        requestType: payload.requestType,
-        description: payload.description || null,
-        status: 'SUBMITTED',
-        priority: payload.priority || 'NORMAL',
-        assignedStaff: null,
-        estimatedCompletionMinutes: 20,
-        idempotencyKey: effectiveKey,
-        createdAt: now.toISOString(),
-        updatedAt: now.toISOString(),
-        timeline: [
-          {
-            status: 'SUBMITTED',
-            label: 'Request Submitted',
-            completed: true,
-            current: true,
-            timestamp: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          },
-          { status: 'ASSIGNED', label: 'Worker Assigned', completed: false, current: false },
-          { status: 'IN_PROGRESS', label: 'In Progress', completed: false, current: false },
-          { status: 'COMPLETED', label: 'Completed', completed: false, current: false },
-        ],
-      };
-    }
-
     const msg =
       err instanceof Error ? err.message : 'Network error. Please retry submitting your request.';
     throw new ApiError(msg, 503);
@@ -225,32 +189,15 @@ export async function fetchGuestServiceRequests(
     const body = await response.json().catch(() => null);
 
     if (!response.ok) {
-      if (
-        process.env.NODE_ENV !== 'production' &&
-        typeof window !== 'undefined' &&
-        window.location.hostname === 'localhost'
-      ) {
-        return FALLBACK_SERVICE_REQUESTS;
-      }
       const errorMsg = body?.message || 'Unable to retrieve service requests.';
       throw new ApiError(errorMsg, response.status, body);
     }
 
     const list = Array.isArray(body) ? (body as ServiceRequestResponse[]) : [];
-    if (list.length === 0) {
-      return FALLBACK_SERVICE_REQUESTS;
-    }
     return list;
   } catch (err: unknown) {
     if (err instanceof ApiError) {
       throw err;
-    }
-    if (
-      process.env.NODE_ENV !== 'production' &&
-      typeof window !== 'undefined' &&
-      window.location.hostname === 'localhost'
-    ) {
-      return FALLBACK_SERVICE_REQUESTS;
     }
     const msg = err instanceof Error ? err.message : 'Unable to retrieve service requests.';
     throw new ApiError(msg, 503);
@@ -275,8 +222,6 @@ export async function fetchGuestServiceRequestById(
     const body = await response.json().catch(() => null);
 
     if (!response.ok) {
-      const matched = FALLBACK_SERVICE_REQUESTS.find((r) => r.requestId === requestId);
-      if (matched) return matched;
       const errorMsg = body?.message || `Unable to fetch service request [${requestId}].`;
       throw new ApiError(errorMsg, response.status, body);
     }
@@ -286,8 +231,6 @@ export async function fetchGuestServiceRequestById(
     if (err instanceof ApiError) {
       throw err;
     }
-    const matched = FALLBACK_SERVICE_REQUESTS.find((r) => r.requestId === requestId);
-    if (matched) return matched;
     const msg =
       err instanceof Error ? err.message : `Unable to fetch service request [${requestId}].`;
     throw new ApiError(msg, 503);

@@ -208,45 +208,52 @@ export async function createComplaint(
     if (err instanceof ApiError) {
       throw err;
     }
-    // Network failure in demo mode - fallback gracefully
-    const fallbackId = `CMP-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-    return {
-      complaintId: fallbackId,
-      bookingId: 'booking-stay-103',
-      roomNumber: '103',
-      category: payload.category,
-      severity: payload.severity,
-      subject: payload.subject,
-      description: payload.description,
-      status: 'SUBMITTED',
-      relatedOrderId: payload.relatedOrderId || null,
-      relatedRequestId: payload.relatedRequestId || null,
-      assignedManager: 'Duty Manager (Auto-Assigned)',
-      resolutionNotes: null,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      timeline: [
-        {
-          status: 'SUBMITTED',
-          label: 'Complaint Submitted',
-          completed: true,
-          current: true,
-          timestamp: 'Just now',
-        },
-        {
-          status: 'UNDER_INVESTIGATION',
-          label: 'Under Investigation',
-          completed: false,
-          current: false,
-        },
-        {
-          status: 'RESOLVED',
-          label: 'Resolved',
-          completed: false,
-          current: false,
-        },
-      ],
-    };
+
+    // Explicitly isolated test fixture environment only
+    if (sessionToken === 'offline-token') {
+      const fallbackId = `CMP-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+      return {
+        complaintId: fallbackId,
+        bookingId: 'booking-stay-103',
+        roomNumber: '103',
+        category: payload.category,
+        severity: payload.severity,
+        subject: payload.subject,
+        description: payload.description,
+        status: 'SUBMITTED',
+        relatedOrderId: payload.relatedOrderId || null,
+        relatedRequestId: payload.relatedRequestId || null,
+        assignedManager: 'Duty Manager (Auto-Assigned)',
+        resolutionNotes: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        timeline: [
+          {
+            status: 'SUBMITTED',
+            label: 'Complaint Submitted',
+            completed: true,
+            current: true,
+            timestamp: 'Just now',
+          },
+          {
+            status: 'UNDER_INVESTIGATION',
+            label: 'Under Investigation',
+            completed: false,
+            current: false,
+          },
+          {
+            status: 'RESOLVED',
+            label: 'Resolved',
+            completed: false,
+            current: false,
+          },
+        ],
+      };
+    }
+
+    const msg =
+      err instanceof Error ? err.message : 'Network error. Please retry submitting your complaint.';
+    throw new ApiError(msg, 503);
   }
 }
 
@@ -269,12 +276,14 @@ export async function fetchGuestComplaints(sessionToken: string): Promise<Compla
       throw new ApiError(message, res.status, errorData);
     }
 
-    return (await res.json()) as ComplaintResponse[];
+    const data = await res.json().catch(() => []);
+    return Array.isArray(data) ? (data as ComplaintResponse[]) : [];
   } catch (err: unknown) {
     if (err instanceof ApiError) {
       throw err;
     }
-    return FALLBACK_COMPLAINTS;
+    const msg = err instanceof Error ? err.message : 'Unable to retrieve complaints.';
+    throw new ApiError(msg, 503);
   }
 }
 
@@ -306,9 +315,9 @@ export async function fetchGuestComplaintById(
     if (err instanceof ApiError) {
       throw err;
     }
-    const matched = FALLBACK_COMPLAINTS.find((c) => c.complaintId === id);
-    if (matched) return matched;
-    throw new ApiError(`Complaint [${id}] not found.`, 404);
+    const msg =
+      err instanceof Error ? err.message : `Unable to retrieve complaint details for [${id}].`;
+    throw new ApiError(msg, 503);
   }
 }
 
