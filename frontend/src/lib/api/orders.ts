@@ -479,23 +479,37 @@ export const STATUS_RANK: Record<string, number> = {
 };
 
 /**
- * Merges newly received order updates with the current order list,
- * strictly preventing stale polling responses or out-of-order SSE events
- * from regressing an already advanced order status (e.g. DELIVERED).
+ * Reconciles an authoritative order-history response from the backend.
+ *
+ * Rules:
+ * 1. An authoritative empty response (`incoming.length === 0`) clears stale history.
+ * 2. Only orders present in `incoming` are retained (orders that no longer belong to the stay are dropped).
+ * 3. Status monotonicity: if a local order was advanced (e.g. DELIVERED via real-time SSE)
+ *    and a delayed in-flight polling response contains an older status (e.g. IN_PREPARATION)
+ *    with `incomingTime <= existingTime`, the more advanced status is preserved.
+ * 4. Explicit status corrections or server updates with `incomingTime > existingTime` or
+ *    cancellation take precedence from the authoritative server response.
+ * 5. Orders are sorted descending by `createdAt`.
  */
-export function mergeOrders(
+export function reconcileAuthoritativeOrders(
   current: FoodOrderResponse[],
   incoming: FoodOrderResponse[],
 ): FoodOrderResponse[] {
-  const map = new Map<string, FoodOrderResponse>();
-  for (const o of current) {
-    map.set(o.orderId, o);
+  if (!incoming || incoming.length === 0) {
+    return [];
   }
 
+  const currentMap = new Map<string, FoodOrderResponse>();
+  for (const o of current) {
+    currentMap.set(o.orderId, o);
+  }
+
+  const result: FoodOrderResponse[] = [];
+
   for (const inc of incoming) {
-    const existing = map.get(inc.orderId);
+    const existing = currentMap.get(inc.orderId);
     if (!existing) {
-      map.set(inc.orderId, inc);
+      result.push(inc);
       continue;
     }
 
@@ -505,17 +519,88 @@ export function mergeOrders(
     const existingTime = existing.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
     const incomingTime = inc.updatedAt ? new Date(inc.updatedAt).getTime() : 0;
 
-    // Prevent stale polling or delayed events from regressing an already advanced status
+    // If local state is at a higher progress rank and incoming response does not have a newer timestamp,
+    // prevent delayed polling from regressing the advanced status.
     if (existingRank > incomingRank && incomingTime <= existingTime) {
+      result.push(existing);
       continue;
     }
 
-    map.set(inc.orderId, inc);
+    result.push(inc);
   }
 
-  return Array.from(map.values()).sort((a, b) => {
+  return result.sort((a, b) => {
     const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
     const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
     return bTime - aTime;
   });
+}
+
+/**
+ * Applies an incremental real-time SSE status update to the current order list.
+ *
+ * Rules:
+ * 1. If the order exists, it is updated unless the update is an older out-of-order event.
+ * 2. If the order does not exist, it is prepended.
+ * 3. Preserves sorting by `createdAt` descending.
+ */
+export function applyIncrementalOrderUpdate(
+  current: FoodOrderResponse[],
+  update: FoodOrderResponse,
+): FoodOrderResponse[] {
+  if (!update || !update.orderId) {
+    return current;
+  }
+
+  const existingIndex = current.findIndex((o) => o.orderId === update.orderId);
+
+  if (existingIndex < 0) {
+    // New order for this stay, prepend and sort
+    return [update, ...current].sort((a, b) => {
+      const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return bTime - aTime;
+    });
+  }
+
+  const existing = current[existingIndex];
+  const existingRank = STATUS_RANK[existing.status] || 0;
+  const updateRank = STATUS_RANK[update.status] || 0;
+
+  const existingTime = existing.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
+  const updateTime = update.updatedAt ? new Date(update.updatedAt).getTime() : 0;
+
+  // Reject out-of-order SSE event that has lower rank and older/equal timestamp
+  if (existingRank > updateRank && updateTime <= existingTime) {
+    return current;
+  }
+
+  const next = [...current];
+  next[existingIndex] = update;
+  return next.sort((a, b) => {
+    const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    return bTime - aTime;
+  });
+}
+
+/**
+ * Merges newly received order updates with the current order list.
+ * Defaults to authoritative reconciliation when receiving full order arrays.
+ */
+export function mergeOrders(
+  current: FoodOrderResponse[],
+  incoming: FoodOrderResponse[],
+  options?: { isAuthoritative?: boolean },
+): FoodOrderResponse[] {
+  const isAuthoritative = options?.isAuthoritative ?? true;
+  if (isAuthoritative) {
+    return reconcileAuthoritativeOrders(current, incoming);
+  }
+
+  let acc = [...current];
+  for (const inc of incoming) {
+    acc = applyIncrementalOrderUpdate(acc, inc);
+  }
+  return acc;
 }

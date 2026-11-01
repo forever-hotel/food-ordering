@@ -3,7 +3,11 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { Card, Tag, Typography, Button } from 'antd';
 import type { FoodOrderResponse } from '../../../types/orders.ts';
-import { fetchGuestOrders, mergeOrders } from '../../../lib/api/orders.ts';
+import {
+  fetchGuestOrders,
+  reconcileAuthoritativeOrders,
+  applyIncrementalOrderUpdate,
+} from '../../../lib/api/orders.ts';
 import { formatLkrPrice } from '../../../lib/api/menu.ts';
 import { useAuth } from '../../../lib/auth/auth-context.tsx';
 import { useNavigation } from '../../../lib/navigation/navigation-context.tsx';
@@ -40,7 +44,7 @@ export function OrdersTab() {
   const realtimeClientRef = useRef<FossRealtimeClient | null>(null);
 
   const loadOrders = useCallback(async () => {
-    if (!sessionToken) {
+    if (!sessionToken || !guest?.bookingId || !guest?.roomNumber) {
       setOrders([]);
       setLoading(false);
       return;
@@ -53,11 +57,12 @@ export function OrdersTab() {
     try {
       const data = await fetchGuestOrders(sessionToken);
       if (seq === latestFetchSeqRef.current) {
-        setOrders((prev) => mergeOrders(prev, data));
+        setOrders((prev) => reconcileAuthoritativeOrders(prev, data));
       }
     } catch (err: unknown) {
       if (seq === latestFetchSeqRef.current) {
         const msg = err instanceof Error ? err.message : 'Unable to retrieve order history.';
+        setOrders([]);
         setError(msg);
       }
     } finally {
@@ -65,17 +70,19 @@ export function OrdersTab() {
         setLoading(false);
       }
     }
-  }, [sessionToken]);
+  }, [sessionToken, guest?.bookingId, guest?.roomNumber]);
 
   // Initial fetch and session change handling: clear previous data on session change
   useEffect(() => {
     let isCancelled = false;
     const seq = ++latestFetchSeqRef.current;
 
-    if (!sessionToken || !guest?.roomNumber) {
+    if (!sessionToken || !guest?.bookingId || !guest?.roomNumber) {
       Promise.resolve().then(() => {
         if (!isCancelled && seq === latestFetchSeqRef.current) {
           setOrders([]);
+          setSelectedOrderId(null);
+          setError(null);
           setLoading(false);
         }
       });
@@ -87,7 +94,8 @@ export function OrdersTab() {
     fetchGuestOrders(sessionToken)
       .then((data) => {
         if (!isCancelled && seq === latestFetchSeqRef.current) {
-          setOrders(data);
+          setOrders(reconcileAuthoritativeOrders([], data));
+          setSelectedOrderId(null);
           setError(null);
           setLoading(false);
         }
@@ -95,6 +103,8 @@ export function OrdersTab() {
       .catch((err: unknown) => {
         if (!isCancelled && seq === latestFetchSeqRef.current) {
           const msg = err instanceof Error ? err.message : 'Unable to retrieve order history.';
+          setOrders([]);
+          setSelectedOrderId(null);
           setError(msg);
           setLoading(false);
         }
@@ -108,6 +118,10 @@ export function OrdersTab() {
   // Real-time events & polling fallback for order status updates (including DELIVERED)
   useEffect(() => {
     if (!sessionToken || !guest?.bookingId || !guest?.roomNumber) {
+      if (realtimeClientRef.current) {
+        realtimeClientRef.current.disconnect();
+        realtimeClientRef.current = null;
+      }
       return;
     }
 
@@ -127,15 +141,17 @@ export function OrdersTab() {
           const updated = event.data as FoodOrderResponse;
           if (!updated || !updated.orderId) return;
 
-          // Reject event if room or booking does not match authenticated stay
-          if (updated.roomNumber && updated.roomNumber !== guest.roomNumber) {
-            return;
-          }
-          if (guest.bookingId && updated.bookingId && updated.bookingId !== guest.bookingId) {
+          // Reject event if room or booking does not match authenticated stay or is missing either
+          if (
+            !updated.roomNumber ||
+            !updated.bookingId ||
+            updated.roomNumber !== guest.roomNumber ||
+            updated.bookingId !== guest.bookingId
+          ) {
             return;
           }
 
-          setOrders((prev) => mergeOrders(prev, [updated]));
+          setOrders((prev) => applyIncrementalOrderUpdate(prev, updated));
         }
       },
     });
@@ -149,7 +165,7 @@ export function OrdersTab() {
       fetchGuestOrders(sessionToken)
         .then((data) => {
           if (seq === latestFetchSeqRef.current) {
-            setOrders((prev) => mergeOrders(prev, data));
+            setOrders((prev) => reconcileAuthoritativeOrders(prev, data));
           }
         })
         .catch(() => {});
@@ -162,17 +178,18 @@ export function OrdersTab() {
     };
   }, [sessionToken, guest?.bookingId, guest?.roomNumber]);
 
-  // Strict stay isolation: require verifiable room ownership and matching booking ID if present
+  // Strict stay isolation: require verifiable room ownership and matching booking ID
   const roomNumber = guest?.roomNumber;
   const bookingId = guest?.bookingId;
 
   const roomOrders = useMemo(() => {
-    if (!roomNumber) return [];
+    if (!roomNumber || !bookingId) return [];
     return orders.filter((o) => {
-      if (!o.roomNumber || o.roomNumber !== roomNumber) {
+      // Reject records missing either identifier or not matching the authenticated stay
+      if (!o.roomNumber || !o.bookingId) {
         return false;
       }
-      if (bookingId && o.bookingId && o.bookingId !== bookingId) {
+      if (o.roomNumber !== roomNumber || o.bookingId !== bookingId) {
         return false;
       }
       return true;
@@ -192,16 +209,16 @@ export function OrdersTab() {
 
   const handleBackFromTracker = useCallback(() => {
     setSelectedOrderId(null);
-    if (!sessionToken) return;
+    if (!sessionToken || !guest?.bookingId || !guest?.roomNumber) return;
     const seq = ++latestFetchSeqRef.current;
     fetchGuestOrders(sessionToken)
       .then((data) => {
         if (seq === latestFetchSeqRef.current) {
-          setOrders((prev) => mergeOrders(prev, data));
+          setOrders((prev) => reconcileAuthoritativeOrders(prev, data));
         }
       })
       .catch(() => {});
-  }, [sessionToken]);
+  }, [sessionToken, guest?.bookingId, guest?.roomNumber]);
 
   // If viewing detailed status tracker (Figure 36)
   if (selectedOrderId) {
