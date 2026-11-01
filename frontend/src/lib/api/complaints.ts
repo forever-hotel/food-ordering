@@ -4,8 +4,6 @@
  * Traceability: GA-13-15; Final Design Report p25, Figure 39; SDS §5.2.4 (FOSS-18).
  */
 
-import API_URL from './config.ts';
-import { ApiError } from './guest-sessions.ts';
 import type {
   ComplaintCategory,
   ComplaintSeverity,
@@ -13,6 +11,7 @@ import type {
   ComplaintResponse,
   CreateComplaintPayload,
 } from '../../types/complaints.ts';
+import { getComplaintsProvider } from '../data-mode/provider-factory.ts';
 
 export interface CategoryOption {
   value: ComplaintCategory;
@@ -180,111 +179,14 @@ export async function createComplaint(
   sessionToken: string,
   idempotencyKey?: string,
 ): Promise<ComplaintResponse> {
-  const idemKey = idempotencyKey || generateComplaintIdempotencyKey();
-
-  try {
-    const res = await fetch(`${API_URL}/complaints`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${sessionToken}`,
-        'x-idempotency-key': idemKey,
-      },
-      body: JSON.stringify({
-        ...payload,
-        idempotencyKey: idemKey,
-      }),
-    });
-
-    if (!res.ok) {
-      const errorData = await res.json().catch(() => ({}));
-      const message =
-        errorData.message || `Failed to submit complaint (${res.status} ${res.statusText})`;
-      throw new ApiError(message, res.status, errorData);
-    }
-
-    return (await res.json()) as ComplaintResponse;
-  } catch (err: unknown) {
-    if (err instanceof ApiError) {
-      throw err;
-    }
-
-    // Explicitly isolated test fixture environment only
-    if (sessionToken === 'offline-token') {
-      const fallbackId = `CMP-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-      return {
-        complaintId: fallbackId,
-        bookingId: 'booking-stay-103',
-        roomNumber: '103',
-        category: payload.category,
-        severity: payload.severity,
-        subject: payload.subject,
-        description: payload.description,
-        status: 'SUBMITTED',
-        relatedOrderId: payload.relatedOrderId || null,
-        relatedRequestId: payload.relatedRequestId || null,
-        assignedManager: 'Duty Manager (Auto-Assigned)',
-        resolutionNotes: null,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        timeline: [
-          {
-            status: 'SUBMITTED',
-            label: 'Complaint Submitted',
-            completed: true,
-            current: true,
-            timestamp: 'Just now',
-          },
-          {
-            status: 'UNDER_INVESTIGATION',
-            label: 'Under Investigation',
-            completed: false,
-            current: false,
-          },
-          {
-            status: 'RESOLVED',
-            label: 'Resolved',
-            completed: false,
-            current: false,
-          },
-        ],
-      };
-    }
-
-    const msg =
-      err instanceof Error ? err.message : 'Network error. Please retry submitting your complaint.';
-    throw new ApiError(msg, 503);
-  }
+  return getComplaintsProvider().createComplaint(payload, sessionToken, idempotencyKey);
 }
 
 /**
  * Fetches all complaints filed for the current active guest stay.
  */
 export async function fetchGuestComplaints(sessionToken: string): Promise<ComplaintResponse[]> {
-  try {
-    const res = await fetch(`${API_URL}/complaints`, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${sessionToken}`,
-      },
-    });
-
-    if (!res.ok) {
-      const errorData = await res.json().catch(() => ({}));
-      const message =
-        errorData.message || `Failed to fetch complaints (${res.status} ${res.statusText})`;
-      throw new ApiError(message, res.status, errorData);
-    }
-
-    const data = await res.json().catch(() => []);
-    return Array.isArray(data) ? (data as ComplaintResponse[]) : [];
-  } catch (err: unknown) {
-    if (err instanceof ApiError) {
-      throw err;
-    }
-    const msg = err instanceof Error ? err.message : 'Unable to retrieve complaints.';
-    throw new ApiError(msg, 503);
-  }
+  return getComplaintsProvider().fetchGuestComplaints(sessionToken);
 }
 
 /**
@@ -294,31 +196,8 @@ export async function fetchGuestComplaintById(
   id: string,
   sessionToken: string,
 ): Promise<ComplaintResponse> {
-  try {
-    const res = await fetch(`${API_URL}/complaints/${encodeURIComponent(id)}`, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${sessionToken}`,
-      },
-    });
-
-    if (!res.ok) {
-      const errorData = await res.json().catch(() => ({}));
-      const message =
-        errorData.message ||
-        `Failed to retrieve complaint details (${res.status} ${res.statusText})`;
-      throw new ApiError(message, res.status, errorData);
-    }
-
-    return (await res.json()) as ComplaintResponse;
-  } catch (err: unknown) {
-    if (err instanceof ApiError) {
-      throw err;
-    }
-    const msg =
-      err instanceof Error ? err.message : `Unable to retrieve complaint details for [${id}].`;
-    throw new ApiError(msg, 503);
-  }
+  const normalizedId = id.replace(/^#/, '');
+  return getComplaintsProvider().fetchGuestComplaintById(sessionToken, normalizedId);
 }
 
 /**
@@ -330,40 +209,26 @@ export async function advanceComplaintStatusDemo(
   sessionToken: string,
   notes?: string,
 ): Promise<ComplaintResponse> {
-  try {
-    const res = await fetch(`${API_URL}/complaints/${encodeURIComponent(id)}/status`, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${sessionToken}`,
-      },
-      body: JSON.stringify({
-        status: nextStatus,
-        notes: notes || `Status updated to ${nextStatus} via evaluator demo action.`,
-        assignedManager: 'Duty Manager Sarah K.',
-      }),
-    });
+  const normalizedId = id.replace(/^#/, '');
+  return getComplaintsProvider().advanceDemoComplaintStatus(
+    sessionToken,
+    normalizedId,
+    nextStatus,
+    notes,
+  );
+}
 
-    if (!res.ok) {
-      const errorData = await res.json().catch(() => ({}));
-      const message =
-        errorData.message || `Failed to advance complaint status (${res.status} ${res.statusText})`;
-      throw new ApiError(message, res.status, errorData);
-    }
-
-    return (await res.json()) as ComplaintResponse;
-  } catch (err: unknown) {
-    if (err instanceof ApiError) {
-      throw err;
-    }
-    // Fallback simulation for local/demo runs
-    const existing =
-      FALLBACK_COMPLAINTS.find((c) => c.complaintId === id) || FALLBACK_COMPLAINTS[0];
-    return {
-      ...existing,
-      status: nextStatus,
-      resolutionNotes: notes || `Resolved via evaluator simulation.`,
-      updatedAt: new Date().toISOString(),
-    };
-  }
+export async function advanceDemoComplaintStatus(
+  sessionToken: string,
+  complaintId: string,
+  newStatus: ComplaintStatus,
+  resolutionNotes?: string,
+): Promise<ComplaintResponse> {
+  const normalizedId = complaintId.replace(/^#/, '');
+  return getComplaintsProvider().advanceDemoComplaintStatus(
+    sessionToken,
+    normalizedId,
+    newStatus,
+    resolutionNotes,
+  );
 }

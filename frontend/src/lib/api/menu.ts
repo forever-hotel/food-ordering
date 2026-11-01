@@ -6,6 +6,7 @@ import type {
   GuestMenuResponse,
   MealWindowStatus,
 } from '../../types/menu.ts';
+import { getMenuProvider } from '../data-mode/provider-factory.ts';
 
 export const FALLBACK_MENU_RESPONSE: GuestMenuResponse = {
   currentTimeInColombo: '2026-10-30 12:14:00',
@@ -237,100 +238,21 @@ export function formatLkrPrice(price: number): string {
  * Fetches the active menu catalog with meal windows and items from FOSS API.
  */
 export async function fetchGuestMenu(
-  sessionToken: string,
+  sessionToken?: string,
   params?: GetMenuParams,
 ): Promise<GuestMenuResponse> {
-  const query = new URLSearchParams();
-  if (params?.category) query.set('category', params.category);
-  if (params?.mealPeriod) query.set('mealPeriod', params.mealPeriod);
-  if (params?.availableOnly) query.set('availableOnly', 'true');
-  if (params?.search) query.set('search', params.search);
-
-  const queryString = query.toString() ? `?${query.toString()}` : '';
-
-  try {
-    const response = await fetch(`${API_URL}/menu${queryString}`, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${sessionToken}`,
-      },
-    });
-
-    const body = await response.json().catch(() => null);
-
-    if (!response.ok) {
-      const errorMsg = body?.message || 'Failed to retrieve menu catalog.';
-      throw new ApiError(errorMsg, response.status, body);
-    }
-
-    // Merge nutrition and portion caps if backend items omit them
-    const enrichedItems = (body.items || []).map((item: GuestMenuItem) => {
-      const fallback = FALLBACK_MENU_RESPONSE.items.find(
-        (f) => f.id === item.id || f.name.toLowerCase() === item.name.toLowerCase(),
-      );
-      return {
-        ...item,
-        portionCap: item.portionCap || fallback?.portionCap || 3,
-        nutrition: item.nutrition ||
-          fallback?.nutrition || {
-            calories: 420,
-            proteinGrams: 30,
-            fatGrams: 14,
-          },
-      };
-    });
-
-    return {
-      ...body,
-      items: enrichedItems,
-    };
-  } catch (error) {
-    if (error instanceof ApiError) {
-      throw error;
-    }
-    const msg = error instanceof Error ? error.message : 'Unable to retrieve menu catalog.';
-    throw new ApiError(msg, 503);
-  }
+  return getMenuProvider().fetchGuestMenu(sessionToken, params);
 }
 
 /**
  * Fetches single menu item detail by ID.
  */
 export async function fetchMenuItem(sessionToken: string, itemId: string): Promise<GuestMenuItem> {
-  try {
-    const response = await fetch(`${API_URL}/menu/items/${itemId}`, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${sessionToken}`,
-      },
-    });
-
-    const body = await response.json().catch(() => null);
-
-    if (!response.ok) {
-      const errorMsg = body?.message || 'Failed to retrieve menu item details.';
-      throw new ApiError(errorMsg, response.status, body);
-    }
-
-    const fallback = FALLBACK_MENU_RESPONSE.items.find((f) => f.id === itemId);
-    return {
-      ...body,
-      portionCap: body.portionCap || fallback?.portionCap || 3,
-      nutrition: body.nutrition ||
-        fallback?.nutrition || {
-          calories: 420,
-          proteinGrams: 30,
-          fatGrams: 14,
-        },
-    };
-  } catch (error) {
-    if (error instanceof ApiError) {
-      throw error;
-    }
-    const msg =
-      error instanceof Error ? error.message : `Unable to retrieve menu item details for [${itemId}].`;
-    throw new ApiError(msg, 503);
+  const item = await getMenuProvider().fetchGuestMenuItem(itemId, sessionToken);
+  if (!item) {
+    throw new ApiError(`Item ${itemId} not found.`, 404);
   }
+  return item;
 }
 
 /**

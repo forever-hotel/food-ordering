@@ -1,60 +1,21 @@
-import API_URL from './config.ts';
 import type { GuestContext, GuestSessionResponse } from '../../types/guest-session.ts';
+import { getSessionsProvider } from '../data-mode/provider-factory.ts';
+import { ApiError } from '../data-mode/api-error.ts';
 
-export class ApiError extends Error {
-  readonly statusCode: number;
-  readonly data?: unknown;
-
-  constructor(message: string, statusCode: number, data?: unknown) {
-    super(message);
-    this.name = 'ApiError';
-    this.statusCode = statusCode;
-    this.data = data;
-  }
-}
+export { ApiError };
 
 /**
- * Redeems a signed QR token with the FOSS backend to establish a guest session.
+ * Redeems a signed QR token with the FOSS backend or Demo State Store to establish a guest session.
  */
 export async function redeemQrToken(qrToken: string): Promise<GuestSessionResponse> {
-  const response = await fetch(`${API_URL}/guest-sessions/qr`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ qrToken }),
-  });
-
-  const body = await response.json().catch(() => null);
-
-  if (!response.ok) {
-    const errorMsg =
-      body?.message || body?.error || 'Failed to authenticate QR code. Please try again.';
-    throw new ApiError(errorMsg, response.status, body);
-  }
-
-  return body as GuestSessionResponse;
+  return getSessionsProvider().redeemQrToken(qrToken);
 }
 
 /**
- * Validates active session and retrieves guest stay context from /guest-sessions/me.
+ * Validates active session and retrieves guest stay context.
  */
 export async function fetchCurrentSession(sessionToken: string): Promise<GuestContext> {
-  const response = await fetch(`${API_URL}/guest-sessions/me`, {
-    method: 'GET',
-    headers: {
-      Authorization: `Bearer ${sessionToken}`,
-    },
-  });
-
-  const body = await response.json().catch(() => null);
-
-  if (!response.ok) {
-    const errorMsg = body?.message || 'Session expired or invalid.';
-    throw new ApiError(errorMsg, response.status, body);
-  }
-
-  return body as GuestContext;
+  return getSessionsProvider().fetchCurrentSession(sessionToken);
 }
 
 /**
@@ -63,37 +24,12 @@ export async function fetchCurrentSession(sessionToken: string): Promise<GuestCo
 export async function logoutSession(
   sessionToken: string,
 ): Promise<{ success: boolean; message: string }> {
-  const response = await fetch(`${API_URL}/guest-sessions/logout`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${sessionToken}`,
-    },
-  });
-
-  const body = await response.json().catch(() => null);
-
-  if (!response.ok) {
-    const errorMsg = body?.message || 'Failed to logout.';
-    throw new ApiError(errorMsg, response.status, body);
-  }
-
-  return body;
+  return getSessionsProvider().logoutSession(sessionToken);
 }
 
 /**
- * Fetches demo room tokens from the backend helper endpoint.
+ * Fetches demo room tokens from the provider.
  */
 export async function fetchDemoTokens(): Promise<Record<string, string>> {
-  try {
-    const response = await fetch(`${API_URL}/guest-sessions/demo-tokens`, {
-      method: 'GET',
-    });
-    if (!response.ok) {
-      return {};
-    }
-    const body = await response.json();
-    return body?.tokens || {};
-  } catch {
-    return {};
-  }
+  return getSessionsProvider().fetchDemoTokens();
 }

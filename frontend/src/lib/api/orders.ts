@@ -1,6 +1,9 @@
-import API_URL from './config.ts';
-import { ApiError } from './guest-sessions.ts';
-import type { CreateFoodOrderPayload, FoodOrderResponse } from '../../types/orders.ts';
+import type {
+  CreateFoodOrderPayload,
+  FoodOrderResponse,
+  FoodOrderStatus,
+} from '../../types/orders.ts';
+import { getOrdersProvider } from '../data-mode/provider-factory.ts';
 
 /**
  * Generates a unique, high-entropy client-side idempotency key for order submission.
@@ -69,47 +72,7 @@ export async function placeFoodOrder(
   idempotencyKey: string,
 ): Promise<FoodOrderResponse> {
   const effectiveKey = idempotencyKey || payload.idempotencyKey || generateIdempotencyKey();
-
-  const requestBody = {
-    items: payload.items,
-    allergyNote: payload.allergyNote?.trim() || undefined,
-    idempotencyKey: effectiveKey,
-  };
-
-  try {
-    const response = await fetch(`${API_URL}/food-orders`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${sessionToken}`,
-        'Idempotency-Key': effectiveKey,
-        'X-Idempotency-Key': effectiveKey,
-      },
-      body: JSON.stringify(requestBody),
-    });
-
-    const body = await response.json().catch(() => null);
-
-    if (!response.ok) {
-      const errorMsg =
-        body?.message ||
-        body?.error ||
-        'Failed to place order. Please review your selection and try again.';
-      throw new ApiError(errorMsg, response.status, body);
-    }
-
-    return body as FoodOrderResponse;
-  } catch (err: unknown) {
-    if (err instanceof ApiError) {
-      throw err;
-    }
-
-    const message =
-      err instanceof Error
-        ? err.message
-        : 'Network connection timed out. Please retry placing your order.';
-    throw new ApiError(message, 503);
-  }
+  return getOrdersProvider().placeFoodOrder(sessionToken, payload, effectiveKey);
 }
 
 /**
@@ -322,60 +285,14 @@ export async function fetchGuestOrderById(
   orderId: string,
 ): Promise<FoodOrderResponse> {
   const normalizedId = orderId.replace(/^#/, '');
-
-  try {
-    const response = await fetch(`${API_URL}/food-orders/${encodeURIComponent(normalizedId)}`, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${sessionToken}`,
-      },
-    });
-
-    const body = await response.json().catch(() => null);
-
-    if (!response.ok) {
-      const errorMsg = body?.message || `Unable to fetch order [${orderId}].`;
-      throw new ApiError(errorMsg, response.status, body);
-    }
-
-    return body as FoodOrderResponse;
-  } catch (err: unknown) {
-    if (err instanceof ApiError) {
-      throw err;
-    }
-    const msg = err instanceof Error ? err.message : `Unable to fetch order [${orderId}].`;
-    throw new ApiError(msg, 503);
-  }
+  return getOrdersProvider().fetchGuestOrderById(sessionToken, normalizedId);
 }
 
 /**
  * Lists all food orders placed during the current stay.
  */
 export async function fetchGuestOrders(sessionToken: string): Promise<FoodOrderResponse[]> {
-  try {
-    const response = await fetch(`${API_URL}/food-orders`, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${sessionToken}`,
-      },
-    });
-
-    const body = await response.json().catch(() => null);
-
-    if (!response.ok) {
-      const errorMsg = body?.message || 'Unable to retrieve order history.';
-      throw new ApiError(errorMsg, response.status, body);
-    }
-
-    const orders = Array.isArray(body) ? (body as FoodOrderResponse[]) : [];
-    return orders;
-  } catch (err: unknown) {
-    if (err instanceof ApiError) {
-      throw err;
-    }
-    const msg = err instanceof Error ? err.message : 'Unable to retrieve order history.';
-    throw new ApiError(msg, 503);
-  }
+  return getOrdersProvider().fetchGuestOrders(sessionToken);
 }
 
 /**
@@ -387,37 +304,7 @@ export async function cancelFoodOrder(
   reason?: string,
 ): Promise<FoodOrderResponse> {
   const normalizedId = orderId.replace(/^#/, '');
-
-  try {
-    const response = await fetch(
-      `${API_URL}/food-orders/${encodeURIComponent(normalizedId)}/cancel`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${sessionToken}`,
-        },
-        body: JSON.stringify({ reason }),
-      },
-    );
-
-    const body = await response.json().catch(() => null);
-
-    if (!response.ok) {
-      const errorMsg =
-        body?.message ||
-        'Order cannot be cancelled because kitchen preparation has already begun or 10-minute window has expired.';
-      throw new ApiError(errorMsg, response.status, body);
-    }
-
-    return body as FoodOrderResponse;
-  } catch (err: unknown) {
-    if (err instanceof ApiError) {
-      throw err;
-    }
-    const msg = err instanceof Error ? err.message : 'Unable to cancel order.';
-    throw new ApiError(msg, 503);
-  }
+  return getOrdersProvider().cancelFoodOrder(sessionToken, normalizedId, reason);
 }
 
 /**
@@ -429,35 +316,20 @@ export async function advanceOrderStatusDemo(
   status: string,
 ): Promise<FoodOrderResponse> {
   const normalizedId = orderId.replace(/^#/, '');
+  return getOrdersProvider().advanceDemoOrderStatus(
+    sessionToken,
+    normalizedId,
+    status as FoodOrderStatus,
+  );
+}
 
-  try {
-    const response = await fetch(
-      `${API_URL}/food-orders/${encodeURIComponent(normalizedId)}/status`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${sessionToken}`,
-        },
-        body: JSON.stringify({ status }),
-      },
-    );
-
-    const body = await response.json().catch(() => null);
-
-    if (!response.ok) {
-      const errorMsg = body?.message || 'Unable to advance order status.';
-      throw new ApiError(errorMsg, response.status, body);
-    }
-
-    return body as FoodOrderResponse;
-  } catch (err: unknown) {
-    if (err instanceof ApiError) {
-      throw err;
-    }
-    const msg = err instanceof Error ? err.message : 'Unable to advance order status.';
-    throw new ApiError(msg, 503);
-  }
+export async function advanceDemoOrderStatus(
+  sessionToken: string,
+  orderId: string,
+  newStatus: FoodOrderStatus,
+): Promise<FoodOrderResponse> {
+  const normalizedId = orderId.replace(/^#/, '');
+  return getOrdersProvider().advanceDemoOrderStatus(sessionToken, normalizedId, newStatus);
 }
 
 export const STATUS_RANK: Record<string, number> = {
