@@ -344,13 +344,6 @@ export async function fetchGuestOrderById(
     const body = await response.json().catch(() => null);
 
     if (!response.ok) {
-      // In local demo or offline, check if matches sample orders
-      const matched = FALLBACK_STAY_ORDERS.find(
-        (o) => o.orderId === normalizedId || o.orderId === orderId,
-      );
-      if (matched) {
-        return matched;
-      }
       const errorMsg = body?.message || `Unable to fetch order [${orderId}].`;
       throw new ApiError(errorMsg, response.status, body);
     }
@@ -359,12 +352,6 @@ export async function fetchGuestOrderById(
   } catch (err: unknown) {
     if (err instanceof ApiError) {
       throw err;
-    }
-    const matched = FALLBACK_STAY_ORDERS.find(
-      (o) => o.orderId === normalizedId || o.orderId === orderId,
-    );
-    if (matched) {
-      return matched;
     }
     const msg = err instanceof Error ? err.message : `Unable to fetch order [${orderId}].`;
     throw new ApiError(msg, 503);
@@ -386,13 +373,6 @@ export async function fetchGuestOrders(sessionToken: string): Promise<FoodOrderR
     const body = await response.json().catch(() => null);
 
     if (!response.ok) {
-      if (
-        process.env.NODE_ENV !== 'production' &&
-        typeof window !== 'undefined' &&
-        window.location.hostname === 'localhost'
-      ) {
-        return FALLBACK_STAY_ORDERS;
-      }
       const errorMsg = body?.message || 'Unable to retrieve order history.';
       throw new ApiError(errorMsg, response.status, body);
     }
@@ -402,13 +382,6 @@ export async function fetchGuestOrders(sessionToken: string): Promise<FoodOrderR
   } catch (err: unknown) {
     if (err instanceof ApiError) {
       throw err;
-    }
-    if (
-      process.env.NODE_ENV !== 'production' &&
-      typeof window !== 'undefined' &&
-      window.location.hostname === 'localhost'
-    ) {
-      return FALLBACK_STAY_ORDERS;
     }
     const msg = err instanceof Error ? err.message : 'Unable to retrieve order history.';
     throw new ApiError(msg, 503);
@@ -495,4 +468,54 @@ export async function advanceOrderStatusDemo(
     const msg = err instanceof Error ? err.message : 'Unable to advance order status.';
     throw new ApiError(msg, 503);
   }
+}
+
+export const STATUS_RANK: Record<string, number> = {
+  PLACED: 1,
+  IN_PREPARATION: 2,
+  READY: 3,
+  DELIVERED: 4,
+  CANCELLED: 4,
+};
+
+/**
+ * Merges newly received order updates with the current order list,
+ * strictly preventing stale polling responses or out-of-order SSE events
+ * from regressing an already advanced order status (e.g. DELIVERED).
+ */
+export function mergeOrders(
+  current: FoodOrderResponse[],
+  incoming: FoodOrderResponse[],
+): FoodOrderResponse[] {
+  const map = new Map<string, FoodOrderResponse>();
+  for (const o of current) {
+    map.set(o.orderId, o);
+  }
+
+  for (const inc of incoming) {
+    const existing = map.get(inc.orderId);
+    if (!existing) {
+      map.set(inc.orderId, inc);
+      continue;
+    }
+
+    const existingRank = STATUS_RANK[existing.status] || 0;
+    const incomingRank = STATUS_RANK[inc.status] || 0;
+
+    const existingTime = existing.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
+    const incomingTime = inc.updatedAt ? new Date(inc.updatedAt).getTime() : 0;
+
+    // Prevent stale polling or delayed events from regressing an already advanced status
+    if (existingRank > incomingRank && incomingTime <= existingTime) {
+      continue;
+    }
+
+    map.set(inc.orderId, inc);
+  }
+
+  return Array.from(map.values()).sort((a, b) => {
+    const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    return bTime - aTime;
+  });
 }

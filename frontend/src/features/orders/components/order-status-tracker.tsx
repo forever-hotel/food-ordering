@@ -139,13 +139,13 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
   const realtimeClientRef = useRef<FossRealtimeClient | null>(null);
 
   useEffect(() => {
-    if (!sessionToken || !guest) return;
+    if (!sessionToken || !guest?.bookingId || !guest?.roomNumber) return;
 
     const client = new FossRealtimeClient({
       apiUrl: API_URL,
       sessionToken,
-      bookingId: guest.bookingId || 'booking-101',
-      roomNumber: guest.roomNumber || '103',
+      bookingId: guest.bookingId,
+      roomNumber: guest.roomNumber,
       pollIntervalMs: 5000,
       onEvent: (event: FossRealtimeEvent) => {
         if (event.eventType === RealtimeEventType.FOOD_ORDER_STATUS_UPDATED) {

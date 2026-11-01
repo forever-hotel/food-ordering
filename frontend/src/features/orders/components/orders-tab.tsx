@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { Card, Tag, Typography, Button } from 'antd';
 import type { FoodOrderResponse } from '../../../types/orders.ts';
-import { fetchGuestOrders } from '../../../lib/api/orders.ts';
+import { fetchGuestOrders, mergeOrders } from '../../../lib/api/orders.ts';
 import { formatLkrPrice } from '../../../lib/api/menu.ts';
 import { useAuth } from '../../../lib/auth/auth-context.tsx';
 import { useNavigation } from '../../../lib/navigation/navigation-context.tsx';
@@ -36,33 +36,64 @@ export function OrdersTab() {
   const [error, setError] = useState<string | null>(null);
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
 
+  const latestFetchSeqRef = useRef<number>(0);
+  const realtimeClientRef = useRef<FossRealtimeClient | null>(null);
+
   const loadOrders = useCallback(async () => {
+    if (!sessionToken) {
+      setOrders([]);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setError(null);
+    const seq = ++latestFetchSeqRef.current;
 
     try {
-      const data = await fetchGuestOrders(sessionToken || 'demo-token');
-      setOrders(data);
+      const data = await fetchGuestOrders(sessionToken);
+      if (seq === latestFetchSeqRef.current) {
+        setOrders((prev) => mergeOrders(prev, data));
+      }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Unable to retrieve order history.';
-      setError(msg);
+      if (seq === latestFetchSeqRef.current) {
+        const msg = err instanceof Error ? err.message : 'Unable to retrieve order history.';
+        setError(msg);
+      }
     } finally {
-      setLoading(false);
+      if (seq === latestFetchSeqRef.current) {
+        setLoading(false);
+      }
     }
   }, [sessionToken]);
 
+  // Initial fetch and session change handling: clear previous data on session change
   useEffect(() => {
     let isCancelled = false;
+    const seq = ++latestFetchSeqRef.current;
 
-    fetchGuestOrders(sessionToken || 'demo-token')
+    if (!sessionToken || !guest?.roomNumber) {
+      Promise.resolve().then(() => {
+        if (!isCancelled && seq === latestFetchSeqRef.current) {
+          setOrders([]);
+          setLoading(false);
+        }
+      });
+      return () => {
+        isCancelled = true;
+      };
+    }
+
+    fetchGuestOrders(sessionToken)
       .then((data) => {
-        if (!isCancelled) {
+        if (!isCancelled && seq === latestFetchSeqRef.current) {
           setOrders(data);
+          setError(null);
           setLoading(false);
         }
       })
       .catch((err: unknown) => {
-        if (!isCancelled) {
+        if (!isCancelled && seq === latestFetchSeqRef.current) {
           const msg = err instanceof Error ? err.message : 'Unable to retrieve order history.';
           setError(msg);
           setLoading(false);
@@ -72,42 +103,39 @@ export function OrdersTab() {
     return () => {
       isCancelled = true;
     };
-  }, [sessionToken]);
+  }, [sessionToken, guest?.bookingId, guest?.roomNumber]);
 
   // Real-time events & polling fallback for order status updates (including DELIVERED)
-  const realtimeClientRef = useRef<FossRealtimeClient | null>(null);
-
   useEffect(() => {
-    if (!sessionToken || !guest) return;
+    if (!sessionToken || !guest?.bookingId || !guest?.roomNumber) {
+      return;
+    }
+
+    if (realtimeClientRef.current) {
+      realtimeClientRef.current.disconnect();
+      realtimeClientRef.current = null;
+    }
 
     const client = new FossRealtimeClient({
       apiUrl: API_URL,
       sessionToken,
-      bookingId: guest.bookingId || 'booking-101',
-      roomNumber: guest.roomNumber || '103',
+      bookingId: guest.bookingId,
+      roomNumber: guest.roomNumber,
       pollIntervalMs: 6000,
       onEvent: (event: FossRealtimeEvent) => {
         if (event.eventType === RealtimeEventType.FOOD_ORDER_STATUS_UPDATED) {
           const updated = event.data as FoodOrderResponse;
-          if (updated && updated.orderId) {
-            setOrders((prev) => {
-              const idx = prev.findIndex((o) => o.orderId === updated.orderId);
-              if (idx >= 0) {
-                const next = [...prev];
-                next[idx] = updated;
-                return next;
-              }
-              // If order belongs to this room, prepend it to stay orders
-              if (
-                !guest?.roomNumber ||
-                !updated.roomNumber ||
-                updated.roomNumber === guest.roomNumber
-              ) {
-                return [updated, ...prev];
-              }
-              return prev;
-            });
+          if (!updated || !updated.orderId) return;
+
+          // Reject event if room or booking does not match authenticated stay
+          if (updated.roomNumber && updated.roomNumber !== guest.roomNumber) {
+            return;
           }
+          if (guest.bookingId && updated.bookingId && updated.bookingId !== guest.bookingId) {
+            return;
+          }
+
+          setOrders((prev) => mergeOrders(prev, [updated]));
         }
       },
     });
@@ -115,11 +143,14 @@ export function OrdersTab() {
     client.connect();
     realtimeClientRef.current = client;
 
-    // Periodic poll fallback to ensure delivered and live statuses stay fresh
+    // Periodic poll fallback to ensure delivered and live statuses stay fresh without regressing
     const interval = setInterval(() => {
-      fetchGuestOrders(sessionToken || 'demo-token')
+      const seq = ++latestFetchSeqRef.current;
+      fetchGuestOrders(sessionToken)
         .then((data) => {
-          setOrders(data);
+          if (seq === latestFetchSeqRef.current) {
+            setOrders((prev) => mergeOrders(prev, data));
+          }
         })
         .catch(() => {});
     }, 8000);
@@ -127,15 +158,26 @@ export function OrdersTab() {
     return () => {
       clearInterval(interval);
       client.disconnect();
+      realtimeClientRef.current = null;
     };
-  }, [sessionToken, guest]);
+  }, [sessionToken, guest?.bookingId, guest?.roomNumber]);
 
-  // Isolate orders belonging strictly to the active room stay (retaining DELIVERED and active orders)
+  // Strict stay isolation: require verifiable room ownership and matching booking ID if present
   const roomNumber = guest?.roomNumber;
+  const bookingId = guest?.bookingId;
+
   const roomOrders = useMemo(() => {
-    if (!roomNumber) return orders;
-    return orders.filter((o) => !o.roomNumber || o.roomNumber === roomNumber);
-  }, [orders, roomNumber]);
+    if (!roomNumber) return [];
+    return orders.filter((o) => {
+      if (!o.roomNumber || o.roomNumber !== roomNumber) {
+        return false;
+      }
+      if (bookingId && o.bookingId && o.bookingId !== bookingId) {
+        return false;
+      }
+      return true;
+    });
+  }, [orders, roomNumber, bookingId]);
 
   const todayOrders = useMemo(() => roomOrders.filter((o) => isToday(o.createdAt)), [roomOrders]);
   const pastOrders = useMemo(() => roomOrders.filter((o) => !isToday(o.createdAt)), [roomOrders]);
@@ -150,8 +192,14 @@ export function OrdersTab() {
 
   const handleBackFromTracker = useCallback(() => {
     setSelectedOrderId(null);
-    fetchGuestOrders(sessionToken || 'demo-token')
-      .then((data) => setOrders(data))
+    if (!sessionToken) return;
+    const seq = ++latestFetchSeqRef.current;
+    fetchGuestOrders(sessionToken)
+      .then((data) => {
+        if (seq === latestFetchSeqRef.current) {
+          setOrders((prev) => mergeOrders(prev, data));
+        }
+      })
       .catch(() => {});
   }, [sessionToken]);
 
