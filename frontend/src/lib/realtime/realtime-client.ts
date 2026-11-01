@@ -102,9 +102,11 @@ export class FossRealtimeClient {
 
   private initEventSource(): void {
     try {
-      const url = `${this.config.apiUrl}/realtime/events/stream`;
+      const token = this.config.sessionToken?.trim();
+      const queryParam = token ? `?token=${encodeURIComponent(token)}` : '';
+      const url = `${this.config.apiUrl}/realtime/events/stream${queryParam}`;
       // Note: native EventSource does not support custom headers, so standard
-      // token passing or authorization cookie is used, or fallback polling
+      // token query parameter passing is used for SSE stream authentication
       this.eventSource = new EventSource(url);
 
       this.eventSource.onopen = () => {
