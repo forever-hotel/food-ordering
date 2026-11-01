@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { Alert, App, Badge, Button } from 'antd';
-import type { GuestMenuItem, GuestMenuResponse } from '../../../types/menu.ts';
+import type { GuestMenuItem, GuestMenuResponse, MealPeriod } from '../../../types/menu.ts';
 import { fetchGuestMenu, formatLkrPrice } from '../../../lib/api/menu.ts';
 import { useAuth } from '../../../lib/auth/auth-context.tsx';
 import { useNavigation } from '../../../lib/navigation/navigation-context.tsx';
@@ -33,6 +33,7 @@ export function MenuTab() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<CategoryKey>('Lunch');
+  const [selectedCourse, setSelectedCourse] = useState<string>('All');
   const [selectedItem, setSelectedItem] = useState<GuestMenuItem | null>(null);
 
   useEffect(() => {
@@ -168,14 +169,14 @@ export function MenuTab() {
   }
 
   // Dynamic meal window banner calculation for selected category (Figure 32)
-  const categoryPeriodMap: Record<string, string> = {
+  const categoryPeriodMap: Record<CategoryKey, MealPeriod> = {
     Breakfast: 'BREAKFAST',
     Lunch: 'LUNCH',
     Dinner: 'DINNER',
     Tea: 'ALL_DAY',
   };
 
-  const targetPeriod = categoryPeriodMap[selectedCategory] || 'ALL_DAY';
+  const targetPeriod: MealPeriod = categoryPeriodMap[selectedCategory] || 'ALL_DAY';
   const categoryWindow =
     catalog?.mealWindows.find(
       (w) => w.period === targetPeriod || w.name.toLowerCase() === selectedCategory.toLowerCase(),
@@ -195,15 +196,60 @@ export function MenuTab() {
   const isCategoryActive = categoryWindow?.isActive ?? false;
   const isCutoffReached = categoryWindow?.isCutoffReached ?? false;
 
+  // Canonical data model alignment:
+  // Subsystem KMS items provide food course categories (Starters, Mains, Desserts, Beverages)
+  // along with mealPeriods (BREAKFAST, LUNCH, DINNER, ALL_DAY).
+  // Legacy or demo items may directly categorize by meal period (e.g. category: 'Lunch').
   const displayedItems = (catalog?.items || []).filter((item) => {
-    if (selectedCategory === 'Tea') {
-      return (
-        item.category.toLowerCase().includes('tea') ||
-        item.category.toLowerCase().includes('beverage')
-      );
+    const matchesMealPeriod =
+      item.mealPeriods && item.mealPeriods.length > 0
+        ? item.mealPeriods.some(
+            (p) =>
+              p === targetPeriod ||
+              p === 'ALL_DAY' ||
+              (targetPeriod === 'ALL_DAY' && p === 'TEA_TIME'),
+          )
+        : false;
+
+    const matchesCategoryDirectly =
+      item.category.toLowerCase() === selectedCategory.toLowerCase() ||
+      (selectedCategory === 'Tea' &&
+        (item.category.toLowerCase().includes('tea') ||
+          item.category.toLowerCase().includes('beverage')));
+
+    if (!matchesMealPeriod && !matchesCategoryDirectly) {
+      return false;
     }
-    return item.category.toLowerCase() === selectedCategory.toLowerCase();
+
+    if (selectedCourse && selectedCourse !== 'All') {
+      return item.category.toLowerCase() === selectedCourse.toLowerCase();
+    }
+
+    return true;
   });
+
+  const availableCourses: string[] = [];
+  if (catalog?.items) {
+    const courseSet = new Set<string>();
+    for (const item of catalog.items) {
+      const inPeriod =
+        item.mealPeriods?.some(
+          (p) =>
+            p === targetPeriod ||
+            p === 'ALL_DAY' ||
+            (targetPeriod === 'ALL_DAY' && p === 'TEA_TIME'),
+        ) ||
+        item.category.toLowerCase() === selectedCategory.toLowerCase() ||
+        (selectedCategory === 'Tea' &&
+          (item.category.toLowerCase().includes('tea') ||
+            item.category.toLowerCase().includes('beverage')));
+
+      if (inPeriod && item.category && item.category.toLowerCase() !== selectedCategory.toLowerCase()) {
+        courseSet.add(item.category);
+      }
+    }
+    availableCourses.push(...Array.from(courseSet));
+  }
 
   return (
     <div
@@ -226,7 +272,10 @@ export function MenuTab() {
               type="button"
               role="tab"
               aria-selected={isSelected}
-              onClick={() => setSelectedCategory(cat.key)}
+              onClick={() => {
+                setSelectedCategory(cat.key);
+                setSelectedCourse('All');
+              }}
               className={`touch-target px-4 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all focus-visible:outline-2 focus-visible:outline-[#1D3557] ${
                 isSelected
                   ? 'bg-[#1D3557] text-white shadow-xs'
@@ -238,6 +287,35 @@ export function MenuTab() {
           );
         })}
       </div>
+
+      {/* Course Categories Sub-Filter (when items contain course taxonomy: Starters, Mains, Desserts, Beverages) */}
+      {availableCourses.length > 0 && (
+        <div
+          role="tablist"
+          aria-label="Course categories"
+          className="flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar select-none"
+        >
+          {['All', ...availableCourses].map((course) => {
+            const isSelected = selectedCourse === course;
+            return (
+              <button
+                key={course}
+                type="button"
+                role="tab"
+                aria-selected={isSelected}
+                onClick={() => setSelectedCourse(course)}
+                className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${
+                  isSelected
+                    ? 'bg-slate-800 text-white font-semibold shadow-xs'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200'
+                }`}
+              >
+                {course}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* Meal Period Banner (Figure 32: "Lunch orders close at 14:30 — 2h 16m left") */}
       <Alert
