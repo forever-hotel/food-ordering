@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Alert, Badge, Button, message } from 'antd';
+import { Alert, App, Badge, Button } from 'antd';
 import type { GuestMenuItem, GuestMenuResponse } from '../../../types/menu.ts';
 import { fetchGuestMenu, formatLkrPrice } from '../../../lib/api/menu.ts';
 import { useAuth } from '../../../lib/auth/auth-context.tsx';
@@ -24,6 +24,7 @@ const CATEGORIES: { key: CategoryKey; label: string }[] = [
 ];
 
 export function MenuTab() {
+  const { message } = App.useApp();
   const { sessionToken, guest } = useAuth();
   const { setPageHeader, resetHeaderForTab } = useNavigation();
   const { totalCount, totalAmount, addItem, isCartOpen, setIsCartOpen } = useCart();
@@ -214,7 +215,7 @@ export function MenuTab() {
       <Alert
         type={isCutoffReached ? 'info' : 'warning'}
         showIcon
-        message={
+        title={
           <span className="text-xs font-medium">
             {isCutoffReached ? (
               <span className="text-slate-700">

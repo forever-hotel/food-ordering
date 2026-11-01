@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { Button, Card, Input, Radio, Select, Tag, Typography, message } from 'antd';
+import { App, Button, Card, Input, Radio, Select, Tag, Typography } from 'antd';
 function CheckIcon({ className }: { className?: string }) {
   return (
     <svg
@@ -154,6 +154,7 @@ const { Text, Paragraph } = Typography;
 const { TextArea } = Input;
 
 export function ComplaintsTab() {
+  const { message } = App.useApp();
   const { sessionToken, guest } = useAuth();
 
   // Form State (matching Figure 39 default values)

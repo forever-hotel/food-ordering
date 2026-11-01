@@ -15,22 +15,38 @@ export class GuestAuthGuard implements CanActivate {
     const request = context.switchToHttp().getRequest();
     const authHeader = request.headers?.authorization;
 
-    if (!authHeader || typeof authHeader !== 'string') {
+    const queryToken =
+      typeof request.query?.token === 'string'
+        ? request.query.token.trim()
+        : undefined;
+
+    const isSseRequest = Boolean(
+      (typeof request.headers?.accept === 'string' &&
+        request.headers.accept.includes('text/event-stream')) ||
+      (typeof request.path === 'string' &&
+        request.path.includes('/realtime/events/stream')) ||
+      (typeof request.url === 'string' &&
+        request.url.includes('/realtime/events/stream')),
+    );
+
+    let token: string | undefined;
+
+    if (authHeader && typeof authHeader === 'string') {
+      const parts = authHeader.trim().split(' ');
+      if (parts.length !== 2 || parts[0]?.toLowerCase() !== 'bearer') {
+        throw new UnauthorizedException(
+          'Malformed Authorization header. Format: Bearer <token>',
+        );
+      }
+      token = parts[1];
+    } else if (isSseRequest && queryToken) {
+      token = queryToken;
+    }
+
+    if (!token) {
       throw new UnauthorizedException(
         'Authorization header with Bearer token is required.',
       );
-    }
-
-    const parts = authHeader.trim().split(' ');
-    if (parts.length !== 2 || parts[0]?.toLowerCase() !== 'bearer') {
-      throw new UnauthorizedException(
-        'Malformed Authorization header. Format: Bearer <token>',
-      );
-    }
-
-    const token = parts[1];
-    if (!token) {
-      throw new UnauthorizedException('Bearer token must not be empty.');
     }
 
     const { session, stay } =

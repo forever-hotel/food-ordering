@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Button, Card, Input, message, Tag, Typography } from 'antd';
+import { App, Button, Card, Input, Tag, Typography } from 'antd';
 import type { GuestMenuItem } from '../../../types/menu.ts';
 import { formatLkrPrice } from '../../../lib/api/menu.ts';
 import { useCart } from '../../../lib/cart/cart-context.tsx';
@@ -15,6 +15,7 @@ interface MenuItemDetailProps {
 }
 
 export function MenuItemDetail({ item, onBack }: MenuItemDetailProps) {
+  const { message } = App.useApp();
   const { addItem, getItemQuantity } = useCart();
   const [quantity, setQuantity] = useState(1);
   const [specialNotes, setSpecialNotes] = useState('');
