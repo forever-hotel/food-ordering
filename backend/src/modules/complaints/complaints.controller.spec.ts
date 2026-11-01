@@ -81,7 +81,7 @@ describe('ComplaintsController', () => {
     controller = new ComplaintsController(service);
   });
 
-  it('delegates fileComplaint to service', async () => {
+  it('delegates fileComplaint to service using standard idempotency-key', async () => {
     const dto: CreateComplaintDto = {
       category: ComplaintCategory.FOOD,
       severity: ComplaintSeverity.MEDIUM,
@@ -99,6 +99,52 @@ describe('ComplaintsController', () => {
       mockGuest,
       dto,
       'idemp-header-123',
+    );
+    expect(result).toEqual(mockResponse);
+  });
+
+  it('falls back to x-idempotency-key when standard header is absent', async () => {
+    const dto: CreateComplaintDto = {
+      category: ComplaintCategory.FOOD,
+      severity: ComplaintSeverity.MEDIUM,
+      subject: 'Cold soup delivered',
+      description: 'The mushroom soup was completely cold.',
+      relatedOrderId: 'order-101-001',
+    };
+
+    const result = await controller.fileComplaint(
+      mockGuest,
+      dto,
+      undefined,
+      'legacy-idemp-456',
+    );
+    expect(service.fileComplaint).toHaveBeenCalledWith(
+      mockGuest,
+      dto,
+      'legacy-idemp-456',
+    );
+    expect(result).toEqual(mockResponse);
+  });
+
+  it('prioritizes standard idempotency-key when both headers are provided', async () => {
+    const dto: CreateComplaintDto = {
+      category: ComplaintCategory.FOOD,
+      severity: ComplaintSeverity.MEDIUM,
+      subject: 'Cold soup delivered',
+      description: 'The mushroom soup was completely cold.',
+      relatedOrderId: 'order-101-001',
+    };
+
+    const result = await controller.fileComplaint(
+      mockGuest,
+      dto,
+      'standard-idemp-789',
+      'legacy-idemp-456',
+    );
+    expect(service.fileComplaint).toHaveBeenCalledWith(
+      mockGuest,
+      dto,
+      'standard-idemp-789',
     );
     expect(result).toEqual(mockResponse);
   });

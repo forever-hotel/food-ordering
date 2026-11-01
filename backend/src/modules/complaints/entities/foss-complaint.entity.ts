@@ -76,8 +76,7 @@ export class FossComplaint {
 
   @Index('IDX_foss_complaints_referenced_order_id')
   @Column({
-    type: 'varchar',
-    length: 100,
+    type: 'uuid',
     nullable: true,
     name: 'referenced_order_id',
   })
@@ -93,8 +92,7 @@ export class FossComplaint {
 
   @Index('IDX_foss_complaints_referenced_request_id')
   @Column({
-    type: 'varchar',
-    length: 100,
+    type: 'uuid',
     nullable: true,
     name: 'referenced_request_id',
   })

@@ -48,7 +48,14 @@ export class ServiceRequestsController {
   @ApiHeader({
     name: 'idempotency-key',
     required: false,
-    description: 'Unique client key preventing duplicate task creation',
+    description:
+      'Unique client key preventing duplicate task creation (standard)',
+  })
+  @ApiHeader({
+    name: 'x-idempotency-key',
+    required: false,
+    description:
+      'Unique client key preventing duplicate task creation (legacy compatibility)',
   })
   @ApiResponse({
     status: 201,
@@ -66,7 +73,8 @@ export class ServiceRequestsController {
   })
   @ApiResponse({
     status: 403,
-    description: 'Forbidden - idempotency key reused across different rooms',
+    description:
+      'Forbidden - idempotency key reused across different rooms or bookings',
   })
   @ApiResponse({
     status: 503,
@@ -76,12 +84,10 @@ export class ServiceRequestsController {
     @CurrentGuest() guest: GuestContext,
     @Body() dto: CreateServiceRequestDto,
     @Headers('idempotency-key') idempotencyKeyHeader?: string,
+    @Headers('x-idempotency-key') xIdempotencyKeyHeader?: string,
   ): Promise<ServiceRequestResponseDto> {
-    return this.serviceRequestsService.createServiceRequest(
-      guest,
-      dto,
-      idempotencyKeyHeader,
-    );
+    const key = idempotencyKeyHeader?.trim() || xIdempotencyKeyHeader?.trim();
+    return this.serviceRequestsService.createServiceRequest(guest, dto, key);
   }
 
   @Get()

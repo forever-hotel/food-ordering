@@ -49,18 +49,18 @@ export class CreateComplaintDto {
   description!: string;
 
   @ApiPropertyOptional({
-    example: 'order-101-001',
+    example: 'd35b7387-eb92-428a-be24-009bbd011863',
     description:
-      'Optional reference to an existing food order within the current guest stay',
+      'Optional reference to an existing food order within the current guest stay (canonical UUID or demo reference)',
   })
   @IsString()
   @IsOptional()
   relatedOrderId?: string;
 
   @ApiPropertyOptional({
-    example: 'req-101-001',
+    example: '903c9983-18c1-4f0f-8043-f8885c2b803f',
     description:
-      'Optional reference to an existing service request within the current guest stay',
+      'Optional reference to an existing service request within the current guest stay (canonical UUID or public reference)',
   })
   @IsString()
   @IsOptional()

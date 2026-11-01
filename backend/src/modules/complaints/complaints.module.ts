@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { InternalServiceGuard } from '../../common/auth/internal-service.guard.js';
+import { KmsInternalModule } from '../../integrations/internal-services/kms/kms-internal.module.js';
 import { MadInternalModule } from '../../integrations/internal-services/mad/mad-internal.module.js';
 import { RealtimeModule } from '../../realtime/realtime.module.js';
 import { FoodOrdersModule } from '../food-orders/food-orders.module.js';
@@ -15,6 +16,7 @@ import { FossComplaintRepository } from './repositories/foss-complaint.repositor
   imports: [
     TypeOrmModule.forFeature([FossComplaint]),
     GuestSessionsModule,
+    KmsInternalModule,
     MadInternalModule,
     FoodOrdersModule,
     ServiceRequestsModule,

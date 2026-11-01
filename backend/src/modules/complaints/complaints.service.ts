@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
@@ -10,6 +11,10 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ContractVersion } from '../../integrations/contracts/contract-version.enum.js';
+import {
+  KMS_PROVIDER,
+  KmsProvider,
+} from '../../integrations/internal-services/kms/interfaces/kms-provider.interface.js';
 import {
   ComplaintCategory as MadCategory,
   ComplaintSeverity as MadSeverity,
@@ -51,6 +56,9 @@ export class ComplaintsService {
     private readonly configService: ConfigService,
     @Optional()
     private readonly realtimeService?: RealtimeService,
+    @Optional()
+    @Inject(KMS_PROVIDER)
+    private readonly kmsProvider?: KmsProvider,
   ) {}
 
   /**
@@ -62,34 +70,116 @@ export class ComplaintsService {
     dto: CreateComplaintDto,
     idempotencyHeader?: string,
   ): Promise<ComplaintResponseDto> {
+    const isUuid = (val?: string | null): boolean =>
+      Boolean(
+        val &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          val.trim(),
+        ),
+      );
+
     const idempotencyKey =
       idempotencyHeader?.trim() || dto.idempotencyKey?.trim() || randomUUID();
+
+    const sanitizedSubject = this.sanitizeInput(dto.subject);
+    const sanitizedDescription = this.sanitizeInput(dto.description);
 
     // 1. Idempotency replay check
     const existing =
       await this.complaintRepository.findByIdempotencyKey(idempotencyKey);
     if (existing) {
+      if (
+        existing.bookingId !== guest.bookingId ||
+        existing.roomNumber !== guest.roomNumber
+      ) {
+        throw new ForbiddenException(
+          'Idempotency key has already been used by a different room or booking.',
+        );
+      }
+
+      // Payload consistency check: reject reuse with different payload
+      if (
+        existing.category !== dto.category ||
+        existing.severity !== dto.severity ||
+        existing.subject !== sanitizedSubject ||
+        existing.description !== sanitizedDescription
+      ) {
+        throw new ConflictException(
+          'Idempotency key was already used with a different complaint payload.',
+        );
+      }
+
       this.logger.log(
         `Idempotent complaint replay: returning existing complaint [${existing.complaintId}] for room [${guest.roomNumber}].`,
       );
       return this.mapToResponse(existing);
     }
 
-    // 2. Cross-room ownership validation for referenced food orders
+    // 2. Cross-room ownership validation for referenced food orders (Demo & Canonical KMS)
+    let canonicalOrderId: string | null = null;
     if (dto.relatedOrderId) {
-      const order = await this.orderRepository.findById(dto.relatedOrderId);
-      if (
-        !order ||
-        order.bookingId !== guest.bookingId ||
-        order.roomNumber !== guest.roomNumber
-      ) {
+      let orderFound = false;
+
+      // Check in-memory demo order repository (for demo mode / local dev)
+      const demoOrder = await this.orderRepository.findById(dto.relatedOrderId);
+      if (demoOrder) {
+        if (
+          demoOrder.bookingId !== guest.bookingId ||
+          demoOrder.roomNumber !== guest.roomNumber
+        ) {
+          throw new BadRequestException(
+            `Referenced food order [${dto.relatedOrderId}] does not belong to the current guest stay.`,
+          );
+        }
+        orderFound = true;
+        canonicalOrderId = isUuid(demoOrder.orderId)
+          ? demoOrder.orderId
+          : isUuid(dto.relatedOrderId)
+            ? dto.relatedOrderId
+            : demoOrder.orderId;
+      }
+
+      // Check canonical KMS provider if not found in demo repository
+      if (!orderFound && this.kmsProvider) {
+        try {
+          const kmsOrder = await this.kmsProvider.getOrder(dto.relatedOrderId);
+          if (kmsOrder) {
+            if (
+              kmsOrder.bookingId !== guest.bookingId ||
+              kmsOrder.roomNumber !== guest.roomNumber
+            ) {
+              throw new BadRequestException(
+                `Referenced food order [${dto.relatedOrderId}] does not belong to the current guest stay.`,
+              );
+            }
+            orderFound = true;
+            canonicalOrderId = isUuid(kmsOrder.orderId)
+              ? kmsOrder.orderId
+              : isUuid(dto.relatedOrderId)
+                ? dto.relatedOrderId
+                : kmsOrder.orderId;
+          }
+        } catch (err) {
+          if (err instanceof BadRequestException) {
+            throw err;
+          }
+          this.logger.warn(
+            `KMS order lookup error for order [${dto.relatedOrderId}]: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          );
+        }
+      }
+
+      if (!orderFound) {
         throw new BadRequestException(
           `Referenced food order [${dto.relatedOrderId}] does not belong to the current guest stay.`,
         );
       }
     }
 
-    // 3. Cross-room ownership validation for referenced service requests
+    // 3. Cross-room ownership validation & UUID resolution for referenced service requests
+    let canonicalRequestId: string | null = null;
     if (dto.relatedRequestId) {
       const request = await this.serviceRequestRepository.findById(
         dto.relatedRequestId,
@@ -103,6 +193,11 @@ export class ComplaintsService {
           `Referenced service request [${dto.relatedRequestId}] does not belong to the current guest stay.`,
         );
       }
+      canonicalRequestId = isUuid(request.requestId)
+        ? request.requestId
+        : isUuid(dto.relatedRequestId)
+          ? dto.relatedRequestId
+          : request.requestId;
     }
 
     // 4. Validate enum compatibility against shared Neon schema (reject in production / real integration)
@@ -116,10 +211,6 @@ export class ComplaintsService {
         );
       }
     }
-
-    // 5. Input sanitization and PII/PAN redaction
-    const sanitizedSubject = this.sanitizeInput(dto.subject);
-    const sanitizedDescription = this.sanitizeInput(dto.description);
 
     // 5. Generate canonical UUID primary key and human-readable complaint reference (e.g. CMP-20261029-A1B2C3)
     const datePart = new Date().toISOString().slice(0, 10).replace(/-/g, '');
@@ -137,8 +228,8 @@ export class ComplaintsService {
     complaint.subject = sanitizedSubject;
     complaint.description = sanitizedDescription;
     complaint.status = ComplaintStatus.SUBMITTED;
-    complaint.relatedOrderId = dto.relatedOrderId ?? null;
-    complaint.relatedRequestId = dto.relatedRequestId ?? null;
+    complaint.relatedOrderId = canonicalOrderId;
+    complaint.relatedRequestId = canonicalRequestId;
     complaint.assignedManager = null;
     complaint.resolutionNotes = null;
     complaint.idempotencyKey = idempotencyKey;
@@ -153,8 +244,8 @@ export class ComplaintsService {
         severity: dto.severity as unknown as MadSeverity,
         subject: sanitizedSubject,
         description: sanitizedDescription,
-        relatedOrderId: dto.relatedOrderId,
-        relatedTaskId: dto.relatedRequestId,
+        relatedOrderId: canonicalOrderId || dto.relatedOrderId,
+        relatedTaskId: canonicalRequestId || dto.relatedRequestId,
         idempotencyKey,
         version: ContractVersion.V1_0,
       });
@@ -176,7 +267,47 @@ export class ComplaintsService {
     }
 
     // 7. Persist to FOSS Neon storage as the authoritative guest complaint intake owner
-    await this.complaintRepository.save(complaint);
+    try {
+      await this.complaintRepository.save(complaint);
+    } catch (err: unknown) {
+      const dbErr = err as {
+        code?: string;
+        message?: string;
+        constraint?: string;
+        detail?: string;
+      };
+      if (
+        dbErr?.code === '23505' &&
+        (dbErr?.constraint === 'UQ_foss_complaints_idempotency_key' ||
+          dbErr?.detail?.includes('idempotency_key') ||
+          dbErr?.message?.includes('idempotency_key'))
+      ) {
+        const raceExisting =
+          await this.complaintRepository.findByIdempotencyKey(idempotencyKey);
+        if (raceExisting) {
+          if (
+            raceExisting.bookingId !== guest.bookingId ||
+            raceExisting.roomNumber !== guest.roomNumber
+          ) {
+            throw new ForbiddenException(
+              'Idempotency key has already been used by a different room or booking.',
+            );
+          }
+          if (
+            raceExisting.category !== dto.category ||
+            raceExisting.severity !== dto.severity ||
+            raceExisting.subject !== sanitizedSubject ||
+            raceExisting.description !== sanitizedDescription
+          ) {
+            throw new ConflictException(
+              'Idempotency key was already used with a different complaint payload.',
+            );
+          }
+          return this.mapToResponse(raceExisting);
+        }
+      }
+      throw err;
+    }
 
     // 8. Real-time stay broadcast
     const response = this.mapToResponse(complaint);

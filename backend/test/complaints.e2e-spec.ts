@@ -20,6 +20,7 @@ import { ComplaintCategory } from '../src/modules/complaints/enums/complaint-cat
 import { ComplaintSeverity } from '../src/modules/complaints/enums/complaint-severity.enum.js';
 import { ComplaintStatus } from '../src/modules/complaints/enums/complaint-status.enum.js';
 import { FossComplaintRepository } from '../src/modules/complaints/repositories/foss-complaint.repository.js';
+import { KMS_PROVIDER } from '../src/integrations/internal-services/kms/interfaces/kms-provider.interface.js';
 import { FossDemoOrder } from '../src/modules/food-orders/entities/foss-demo-order.entity.js';
 import { FossDemoOrderRepository } from '../src/modules/food-orders/repositories/foss-demo-order.repository.js';
 import { GuestAuthGuard } from '../src/modules/guest-sessions/guards/guest-auth.guard.js';
@@ -203,6 +204,16 @@ describe('Guest Complaints Management (e2e)', () => {
         {
           provide: MAD_COMPLAINT_PROVIDER,
           useValue: mockMad,
+        },
+        {
+          provide: KMS_PROVIDER,
+          useValue: {
+            getOrder: async () => null,
+            getMenuCatalog: async () => ({}),
+            createOrder: async () => ({}),
+            cancelOrder: async () => ({}),
+            transitionOrderStatus: async () => ({}),
+          },
         },
         {
           provide: GuestSessionsService,
@@ -760,6 +771,96 @@ describe('Guest Complaints Management (e2e)', () => {
           occurredAt: 'not-a-date',
         })
         .expect(400);
+    });
+  });
+
+  describe('CIT-03: Cross-Room Idempotency Isolation and Header Precedence', () => {
+    const idempotencyKey = 'idemp-test-cit03-isolation-key';
+
+    it('submits complaint with standard idempotency-key and succeeds', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/complaints')
+        .set('Authorization', `Bearer ${activeTokenRoom101}`)
+        .set('idempotency-key', idempotencyKey)
+        .send({
+          category: ComplaintCategory.FOOD,
+          severity: ComplaintSeverity.MEDIUM,
+          subject: 'Cold soup in Room 101',
+          description: 'The soup was completely cold upon arrival.',
+        })
+        .expect(201);
+
+      expect(response.body.complaintId).toBeDefined();
+      expect(response.body.roomNumber).toBe('101');
+    });
+
+    it('replays same idempotency key for same room and receives cached response', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/complaints')
+        .set('Authorization', `Bearer ${activeTokenRoom101}`)
+        .set('idempotency-key', idempotencyKey)
+        .send({
+          category: ComplaintCategory.FOOD,
+          severity: ComplaintSeverity.MEDIUM,
+          subject: 'Cold soup in Room 101',
+          description: 'The soup was completely cold upon arrival.',
+        })
+        .expect(201);
+
+      expect(response.body.roomNumber).toBe('101');
+    });
+
+    it('rejects reuse of idempotency key by a different room with 403 Forbidden without leaking details', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/complaints')
+        .set('Authorization', `Bearer ${activeTokenRoom102}`)
+        .set('idempotency-key', idempotencyKey)
+        .send({
+          category: ComplaintCategory.FOOD,
+          severity: ComplaintSeverity.MEDIUM,
+          subject: 'Attempting to hijack idempotency key from Room 102',
+          description: 'Different room payload.',
+        })
+        .expect(403);
+
+      expect(response.body.message).toBe(
+        'Idempotency key has already been used by a different room or booking.',
+      );
+      expect(response.body.complaintId).toBeUndefined();
+      expect(response.body.subject).toBeUndefined();
+    });
+
+    it('rejects reuse of idempotency key with modified payload with 409 Conflict', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/complaints')
+        .set('Authorization', `Bearer ${activeTokenRoom101}`)
+        .set('idempotency-key', idempotencyKey)
+        .send({
+          category: ComplaintCategory.NOISE,
+          severity: ComplaintSeverity.HIGH,
+          subject: 'Different subject on same idempotency key',
+          description: 'Loud party next door.',
+        })
+        .expect(409);
+
+      expect(response.body.message).toContain('different complaint payload');
+    });
+
+    it('accepts legacy x-idempotency-key header', async () => {
+      const legacyKey = 'idemp-test-cit03-legacy-key';
+      const response = await request(app.getHttpServer())
+        .post('/complaints')
+        .set('Authorization', `Bearer ${activeTokenRoom101}`)
+        .set('x-idempotency-key', legacyKey)
+        .send({
+          category: ComplaintCategory.SERVICE,
+          severity: ComplaintSeverity.LOW,
+          subject: 'Slow service complaint',
+          description: 'Service took 45 minutes.',
+        })
+        .expect(201);
+
+      expect(response.body.complaintId).toBeDefined();
     });
   });
 });

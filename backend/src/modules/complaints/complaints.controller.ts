@@ -44,6 +44,18 @@ export class ComplaintsController {
     description:
       'Creates a room-bound guest complaint with category, severity, and optional order/request references, durable persistence in Neon, and upstream dispatch to MAD.',
   })
+  @ApiHeader({
+    name: 'idempotency-key',
+    required: false,
+    description:
+      'Unique client key preventing duplicate complaint submission (standard)',
+  })
+  @ApiHeader({
+    name: 'x-idempotency-key',
+    required: false,
+    description:
+      'Unique client key preventing duplicate complaint submission (legacy compatibility)',
+  })
   @ApiResponse({
     status: HttpStatus.CREATED,
     description: 'Complaint successfully created and registered',
@@ -58,12 +70,24 @@ export class ComplaintsController {
     status: HttpStatus.UNAUTHORIZED,
     description: 'Missing, invalid, or expired guest session token',
   })
+  @ApiResponse({
+    status: HttpStatus.FORBIDDEN,
+    description:
+      'Forbidden - idempotency key reused across different rooms or bookings',
+  })
+  @ApiResponse({
+    status: HttpStatus.CONFLICT,
+    description:
+      'Conflict - idempotency key reused with different complaint payload',
+  })
   public async fileComplaint(
     @CurrentGuest() guest: GuestContext,
     @Body() dto: CreateComplaintDto,
-    @Headers('x-idempotency-key') idempotencyHeader?: string,
+    @Headers('idempotency-key') idempotencyHeader?: string,
+    @Headers('x-idempotency-key') xIdempotencyHeader?: string,
   ): Promise<ComplaintResponseDto> {
-    return this.complaintsService.fileComplaint(guest, dto, idempotencyHeader);
+    const key = idempotencyHeader?.trim() || xIdempotencyHeader?.trim();
+    return this.complaintsService.fileComplaint(guest, dto, key);
   }
 
   @Get()
