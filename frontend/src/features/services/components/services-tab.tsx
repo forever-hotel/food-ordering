@@ -50,11 +50,15 @@ export function ServicesTab() {
 
   const loadRequests = useCallback(
     async (showLoading = false) => {
+      if (!sessionToken || !guest) {
+        if (showLoading) setLoading(false);
+        return;
+      }
       if (showLoading) setLoading(true);
       setFetchError(null);
 
       try {
-        const data = await fetchGuestServiceRequests(sessionToken || 'demo-token');
+        const data = await fetchGuestServiceRequests(sessionToken);
         setRequests(data);
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : 'Unable to retrieve service requests.';
@@ -63,14 +67,25 @@ export function ServicesTab() {
         if (showLoading) setLoading(false);
       }
     },
-    [sessionToken],
+    [sessionToken, guest],
   );
 
   // Asynchronous initial fetch without synchronous setState in effect body
   useEffect(() => {
     let isCancelled = false;
 
-    fetchGuestServiceRequests(sessionToken || 'demo-token')
+    if (!sessionToken || !guest) {
+      Promise.resolve().then(() => {
+        if (!isCancelled) {
+          setLoading(false);
+        }
+      });
+      return () => {
+        isCancelled = true;
+      };
+    }
+
+    fetchGuestServiceRequests(sessionToken)
       .then((data) => {
         if (!isCancelled) {
           setRequests(data);
@@ -88,19 +103,19 @@ export function ServicesTab() {
     return () => {
       isCancelled = true;
     };
-  }, [sessionToken]);
+  }, [sessionToken, guest]);
 
   // Real-time events & polling fallback
   const realtimeClientRef = useRef<FossRealtimeClient | null>(null);
 
   useEffect(() => {
-    if (!sessionToken || !guest) return;
+    if (!sessionToken || !guest?.bookingId || !guest?.roomNumber) return;
 
     const client = new FossRealtimeClient({
       apiUrl: API_URL,
       sessionToken,
-      bookingId: guest.bookingId || 'booking-101',
-      roomNumber: guest.roomNumber || '103',
+      bookingId: guest.bookingId,
+      roomNumber: guest.roomNumber,
       pollIntervalMs: 5000,
       onEvent: (event: FossRealtimeEvent) => {
         if (event.eventType === RealtimeEventType.SERVICE_REQUEST_STATUS_UPDATED) {
@@ -139,13 +154,18 @@ export function ServicesTab() {
 
     const interval = setInterval(() => {
       loadRequests(false);
-    }, 6000);
+    }, 8000);
 
     return () => clearInterval(interval);
   }, [requests, loadRequests]);
 
   const handleSubmit = async () => {
     if (submitting) return;
+
+    if (!sessionToken || !guest?.bookingId || !guest?.roomNumber) {
+      setSubmitError('Active verified guest session is required to submit a service request.');
+      return;
+    }
 
     setSubmitting(true);
     setSubmitError(null);
@@ -158,7 +178,7 @@ export function ServicesTab() {
 
     try {
       const newRequest = await createServiceRequest(
-        sessionToken || 'demo-token',
+        sessionToken,
         payload,
         idempotencyKeyRef.current,
       );
@@ -184,10 +204,12 @@ export function ServicesTab() {
   };
 
   const handleAdvanceStatus = async (requestId: string, targetStatus: ServiceRequestStatus) => {
+    if (!sessionToken) return;
+
     setAdvancingId(requestId);
     try {
       const updated = await advanceServiceRequestStatusDemo(
-        sessionToken || 'demo-token',
+        sessionToken,
         requestId,
         targetStatus,
         targetStatus === 'ASSIGNED'
@@ -268,6 +290,17 @@ export function ServicesTab() {
       .toLowerCase()
       .replace(/\b\w/g, (c) => c.toUpperCase());
   };
+
+  if (!sessionToken || !guest) {
+    return (
+      <div className="w-full py-8 text-center">
+        <EmptyState
+          title="Guest Session Required"
+          description="Please scan your room QR code to access hotel service requests."
+        />
+      </div>
+    );
+  }
 
   return (
     <div

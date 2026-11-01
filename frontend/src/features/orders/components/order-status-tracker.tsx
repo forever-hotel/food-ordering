@@ -78,11 +78,15 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
 
   const loadOrder = useCallback(
     async (showLoading = false) => {
+      if (!sessionToken) {
+        if (showLoading) setLoading(false);
+        return;
+      }
       if (showLoading) setLoading(true);
       setError(null);
 
       try {
-        const data = await fetchGuestOrderById(sessionToken || 'demo-token', orderId);
+        const data = await fetchGuestOrderById(sessionToken, orderId);
         setOrder(data);
 
         // Calculate countdown seconds
@@ -107,7 +111,18 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
   useEffect(() => {
     let isCancelled = false;
 
-    fetchGuestOrderById(sessionToken || 'demo-token', orderId)
+    if (!sessionToken) {
+      Promise.resolve().then(() => {
+        if (!isCancelled) {
+          setLoading(false);
+        }
+      });
+      return () => {
+        isCancelled = true;
+      };
+    }
+
+    fetchGuestOrderById(sessionToken, orderId)
       .then((data) => {
         if (!isCancelled) {
           setOrder(data);
@@ -209,12 +224,14 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
   const timeDisplay = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
 
   const handleCancelOrder = async () => {
+    if (!sessionToken) return;
+
     setCancelling(true);
     setCancelModalVisible(false);
 
     try {
       const updated = await cancelFoodOrder(
-        sessionToken || 'demo-token',
+        sessionToken,
         orderId,
         'Guest requested cancellation',
       );
@@ -234,10 +251,12 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
   };
 
   const handleAdvanceStatus = async (targetStatus: FoodOrderStatus) => {
+    if (!sessionToken) return;
+
     setAdvancingDemo(true);
     try {
       const updated = await advanceOrderStatusDemo(
-        sessionToken || 'demo-token',
+        sessionToken,
         orderId,
         targetStatus,
       );
@@ -318,7 +337,7 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
       <div className="w-full bg-[#1D3557] rounded-3xl p-5 text-white shadow-md space-y-2 relative overflow-hidden">
         <div className="flex items-center justify-between text-xs text-slate-300 font-medium">
           <span>
-            {formattedOrderId} · Room {order?.roomNumber || guest?.roomNumber || '103'} · In-Room
+            {formattedOrderId} · Room {order?.roomNumber || guest?.roomNumber || '—'} · In-Room
             Dining
           </span>
           <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-slate-800/80 border border-slate-700 text-amber-400 text-[11px] font-semibold">
@@ -493,7 +512,7 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
                 </Text>
               </div>
               <Text className="text-xs text-slate-500 block">
-                Worker delivers to Room {order?.roomNumber || guest?.roomNumber || '103'}
+                Worker delivers to Room {order?.roomNumber || guest?.roomNumber || '—'}
               </Text>
             </div>
           </div>

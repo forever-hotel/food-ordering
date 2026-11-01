@@ -1,10 +1,12 @@
-export enum RealtimeEventType {
-  FOOD_ORDER_STATUS_UPDATED = 'FOOD_ORDER_STATUS_UPDATED',
-  SERVICE_REQUEST_STATUS_UPDATED = 'SERVICE_REQUEST_STATUS_UPDATED',
-  COMPLAINT_STATUS_UPDATED = 'COMPLAINT_STATUS_UPDATED',
-  SESSION_REVOKED = 'SESSION_REVOKED',
-  HEARTBEAT = 'HEARTBEAT',
-}
+export const RealtimeEventType = {
+  FOOD_ORDER_STATUS_UPDATED: 'FOOD_ORDER_STATUS_UPDATED',
+  SERVICE_REQUEST_STATUS_UPDATED: 'SERVICE_REQUEST_STATUS_UPDATED',
+  COMPLAINT_STATUS_UPDATED: 'COMPLAINT_STATUS_UPDATED',
+  SESSION_REVOKED: 'SESSION_REVOKED',
+  HEARTBEAT: 'HEARTBEAT',
+} as const;
+export type RealtimeEventType =
+  (typeof RealtimeEventType)[keyof typeof RealtimeEventType];
 
 export interface FossRealtimeEvent<T = unknown> {
   eventId: string;
@@ -52,8 +54,10 @@ export class FossRealtimeClient {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private lastVersion = 0;
   private readonly seenEventIds = new Set<string>();
+  private readonly config: RealtimeClientConfig;
 
-  constructor(private readonly config: RealtimeClientConfig) {
+  constructor(config: RealtimeClientConfig) {
+    this.config = config;
     this.maxReconnectAttempts = config.maxReconnectAttempts ?? 5;
     this.initialBackoffMs = config.initialBackoffMs ?? 500;
     this.maxBackoffMs = config.maxBackoffMs ?? 5000;
@@ -62,6 +66,13 @@ export class FossRealtimeClient {
 
   public getStatus(): ConnectionStatus {
     return this.status;
+  }
+
+  public getSubscriptionContext(): { bookingId?: string; roomNumber?: string } {
+    return {
+      bookingId: this.config.bookingId,
+      roomNumber: this.config.roomNumber,
+    };
   }
 
   public connect(): void {

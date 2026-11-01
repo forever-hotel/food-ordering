@@ -38,7 +38,18 @@ export function MenuTab() {
   useEffect(() => {
     let isCancelled = false;
 
-    fetchGuestMenu(sessionToken || 'demo-token')
+    if (!sessionToken || !guest) {
+      Promise.resolve().then(() => {
+        if (!isCancelled) {
+          setLoading(false);
+        }
+      });
+      return () => {
+        isCancelled = true;
+      };
+    }
+
+    fetchGuestMenu(sessionToken)
       .then((data) => {
         if (!isCancelled) {
           setCatalog(data);
@@ -59,12 +70,14 @@ export function MenuTab() {
     return () => {
       isCancelled = true;
     };
-  }, [sessionToken]);
+  }, [sessionToken, guest]);
 
   const handleRetry = () => {
+    if (!sessionToken || !guest) return;
+
     setLoading(true);
     setError(null);
-    fetchGuestMenu(sessionToken || 'demo-token')
+    fetchGuestMenu(sessionToken)
       .then((data) => {
         setCatalog(data);
         setLoading(false);
@@ -81,7 +94,7 @@ export function MenuTab() {
     setSelectedItem(item);
     setPageHeader({
       title: item.name,
-      subtitle: `${item.category} · Room ${guest?.roomNumber || '103'}`,
+      subtitle: `${item.category}${guest?.roomNumber ? ` · Room ${guest.roomNumber}` : ''}`,
       showBackButton: true,
       onBack: () => {
         setSelectedItem(null);
@@ -101,8 +114,8 @@ export function MenuTab() {
     setSelectedItem(null);
     setPageHeader({
       title: 'Your Cart',
-      subtitle: `${totalCount} ${totalCount === 1 ? 'item' : 'items'} · Room ${
-        guest?.roomNumber || '103'
+      subtitle: `${totalCount} ${totalCount === 1 ? 'item' : 'items'}${
+        guest?.roomNumber ? ` · Room ${guest.roomNumber}` : ''
       }`,
       showBackButton: true,
       onBack: handleBackToMenu,
@@ -118,6 +131,17 @@ export function MenuTab() {
     }
   };
 
+  if (!sessionToken || !guest) {
+    return (
+      <div className="w-full py-8 text-center">
+        <EmptyState
+          title="Guest Session Required"
+          description="Please scan your room QR code to view the hotel dining menu."
+        />
+      </div>
+    );
+  }
+
   // If viewing cart screen (Figure 34 & Figure 35 Confirmation)
   if (isCartOpen) {
     return (
@@ -126,7 +150,11 @@ export function MenuTab() {
         onPlaceOrder={(order) => {
           setPageHeader({
             title: 'Order Confirmed',
-            subtitle: `Order #${order.orderId} · Room ${order.roomNumber || guest?.roomNumber || '103'}`,
+            subtitle: `Order #${order.orderId}${
+              order.roomNumber || guest?.roomNumber
+                ? ` · Room ${order.roomNumber || guest?.roomNumber}`
+                : ''
+            }`,
             showBackButton: false,
           });
         }}

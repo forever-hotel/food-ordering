@@ -72,9 +72,15 @@ export function CartView({ onBack, onPlaceOrder }: CartViewProps) {
       idempotencyKey: idempotencyKeyRef.current,
     };
 
+    if (!sessionToken || !guest?.bookingId || !guest?.roomNumber) {
+      setError('Active verified guest session is required to place an order.');
+      setSubmitting(false);
+      return;
+    }
+
     try {
       const order = await placeFoodOrder(
-        sessionToken || 'demo-token',
+        sessionToken,
         payload,
         idempotencyKeyRef.current,
       );

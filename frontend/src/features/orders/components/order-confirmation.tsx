@@ -91,7 +91,7 @@ export function OrderConfirmation({ order, onTrackStatus, onBackToMenu }: OrderC
       {/* 4. Room & Order Tag Pill (Figure 35: "Order #ORD-291 · Room 103") */}
       <div className="px-4 py-1.5 rounded-full bg-blue-50/80 border border-blue-100 text-[#1D3557] text-xs font-semibold select-none">
         <span>
-          Order {formattedOrderId} · Room {order.roomNumber || '103'}
+          Order {formattedOrderId} · Room {order.roomNumber || '—'}
         </span>
       </div>
 
