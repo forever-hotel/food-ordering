@@ -398,9 +398,6 @@ export async function fetchGuestOrders(sessionToken: string): Promise<FoodOrderR
     }
 
     const orders = Array.isArray(body) ? (body as FoodOrderResponse[]) : [];
-    if (orders.length === 0) {
-      return FALLBACK_STAY_ORDERS;
-    }
     return orders;
   } catch (err: unknown) {
     if (err instanceof ApiError) {
