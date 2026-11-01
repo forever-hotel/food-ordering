@@ -59,9 +59,13 @@ export function OrdersTab() {
     };
   }, [sessionToken]);
 
+  const handleBackFromTracker = useCallback(() => {
+    setSelectedOrderId(null);
+  }, []);
+
   // If viewing detailed status tracker (Figure 36)
   if (selectedOrderId) {
-    return <OrderStatusTracker orderId={selectedOrderId} onBack={() => setSelectedOrderId(null)} />;
+    return <OrderStatusTracker orderId={selectedOrderId} onBack={handleBackFromTracker} />;
   }
 
   const getStatusTag = (status: FoodOrderResponse['status']) => {

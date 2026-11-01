@@ -46,13 +46,22 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
       ? `#${orderId}`
       : `#ORD-${orderId.replace(/^[^\d]*/, '').slice(-3) || '291'}`;
 
+  const onBackRef = useRef(onBack);
+  useEffect(() => {
+    onBackRef.current = onBack;
+  }, [onBack]);
+
+  const handleBack = useCallback(() => {
+    onBackRef.current();
+  }, []);
+
   // Update header to match Figure 36 ("← Order Tracker / Order #ORD-291")
   useEffect(() => {
     setPageHeader({
       title: 'Order Tracker',
       subtitle: `Order ${formattedOrderId}`,
       showBackButton: true,
-      onBack,
+      onBack: handleBack,
     });
 
     return () => {
@@ -60,7 +69,7 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
     };
   }, [
     formattedOrderId,
-    onBack,
+    handleBack,
     setPageHeader,
     resetHeaderForTab,
     guest?.roomNumber,
@@ -272,7 +281,7 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
           message={error}
           onRetry={() => loadOrder(true)}
         />
-        <Button block onClick={onBack}>
+        <Button block onClick={handleBack}>
           Back to Order History
         </Button>
       </div>

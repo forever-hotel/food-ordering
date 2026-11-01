@@ -73,14 +73,13 @@ export function GuestShell({ children }: PropsWithChildren) {
           {!isAuthenticated && <span className="text-xl">🏨</span>}
 
           <div className="flex flex-col min-w-0">
-            <Typography.Title
-              level={1}
-              className={`guest-shell__title !mb-0 !text-base !font-bold leading-tight truncate ${
+            <h1
+              className={`guest-shell__title !m-0 !text-base !font-bold leading-tight truncate ${
                 isAuthenticated ? '!text-white' : '!text-[#1D3557]'
               }`}
             >
               {isAuthenticated ? pageHeader.title : 'Forever Hotel'}
-            </Typography.Title>
+            </h1>
             <span
               className={`text-xs leading-tight truncate ${
                 isAuthenticated ? 'text-slate-200' : 'text-slate-500'

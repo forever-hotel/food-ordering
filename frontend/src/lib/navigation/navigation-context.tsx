@@ -30,12 +30,26 @@ const DEFAULT_TITLES: Record<NavTabId, { title: string; subtitlePrefix: string }
 
 export function NavigationProvider({ children }: { children: React.ReactNode }) {
   const [activeTab, setActiveTabState] = useState<NavTabId>('menu');
-  const [pageHeader, setPageHeader] = useState<PageHeaderConfig>({
+  const [pageHeader, setPageHeaderState] = useState<PageHeaderConfig>({
     title: DEFAULT_TITLES.menu.title,
     subtitle: DEFAULT_TITLES.menu.subtitlePrefix,
     showBackButton: false,
     onBack: null,
   });
+
+  const setPageHeader = useCallback((config: PageHeaderConfig) => {
+    setPageHeaderState((prev) => {
+      if (
+        prev.title === config.title &&
+        prev.subtitle === config.subtitle &&
+        prev.showBackButton === config.showBackButton &&
+        prev.onBack === config.onBack
+      ) {
+        return prev;
+      }
+      return config;
+    });
+  }, []);
 
   const resetHeaderForTab = useCallback(
     (tab: NavTabId, roomNumber?: string, guestName?: string) => {
@@ -63,7 +77,7 @@ export function NavigationProvider({ children }: { children: React.ReactNode }) 
         onBack: null,
       });
     },
-    [],
+    [setPageHeader],
   );
 
   const setActiveTab = useCallback(
@@ -82,7 +96,7 @@ export function NavigationProvider({ children }: { children: React.ReactNode }) 
       setPageHeader,
       resetHeaderForTab,
     }),
-    [activeTab, pageHeader, setActiveTab, resetHeaderForTab],
+    [activeTab, pageHeader, setActiveTab, setPageHeader, resetHeaderForTab],
   );
 
   return <NavigationContext.Provider value={value}>{children}</NavigationContext.Provider>;

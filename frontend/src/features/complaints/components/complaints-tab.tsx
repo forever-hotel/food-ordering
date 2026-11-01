@@ -300,7 +300,7 @@ export function ComplaintsTab() {
       clearInterval(pollInterval);
       client.disconnect();
     };
-  }, [sessionToken, guest, loadComplaints]);
+  }, [sessionToken, guest, loadComplaints, message]);
 
   // Submission Handler
   const handleSubmit = async () => {
