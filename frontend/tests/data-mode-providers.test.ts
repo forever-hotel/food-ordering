@@ -8,16 +8,12 @@ import {
 } from '../src/lib/data-mode/data-mode.ts';
 import { demoStateStore } from '../src/lib/data-mode/demo/demo-state-store.ts';
 import { ApiError } from '../src/lib/data-mode/api-error.ts';
-import {
-  fetchGuestOrders,
-  fetchGuestOrderById,
-  placeFoodOrder,
-  cancelFoodOrder,
-  advanceDemoOrderStatus,
-} from '../src/lib/api/orders.ts';
-import { createServiceRequest, advanceDemoServiceRequestStatus } from '../src/lib/api/services.ts';
-import { createComplaint, advanceDemoComplaintStatus } from '../src/lib/api/complaints.ts';
-import { redeemQrToken } from '../src/lib/api/guest-sessions.ts';
+import { fetchGuestOrders } from '../src/lib/api/orders.ts';
+
+import { DemoSessionsProvider } from '../src/lib/data-mode/demo/demo-sessions.provider.ts';
+import { DemoOrdersProvider } from '../src/lib/data-mode/demo/demo-orders.provider.ts';
+import { DemoServicesProvider } from '../src/lib/data-mode/demo/demo-services.provider.ts';
+import { DemoComplaintsProvider } from '../src/lib/data-mode/demo/demo-complaints.provider.ts';
 
 describe('Phase 7 — Comprehensive Data Mode & Production Safeguards Tests (#101)', () => {
   const originalEnv = { ...process.env };
@@ -35,43 +31,47 @@ describe('Phase 7 — Comprehensive Data Mode & Production Safeguards Tests (#10
     demoStateStore.resetToInitial();
   });
 
-  describe('Demo Mode Isolated Functionality & Multi-Room Separation', () => {
-    beforeEach(() => {
-      setDataMode('demo');
-    });
+  describe('Preserved Demo Fixtures Functionality & Multi-Room Separation', () => {
+    const demoSessions = new DemoSessionsProvider();
+    const demoOrders = new DemoOrdersProvider();
+    const demoServices = new DemoServicesProvider();
+    const demoComplaints = new DemoComplaintsProvider();
 
-    it('activates Demo Mode and resolves demo provider implementations', () => {
-      assert.equal(getDataMode(), 'demo');
+    it('verifies preserved demo fixture providers for unit testing', () => {
+      assert.ok(demoSessions);
+      assert.ok(demoOrders);
+      assert.ok(demoServices);
+      assert.ok(demoComplaints);
     });
 
     it('authenticates multiple distinct rooms with independent stay contexts', async () => {
       // Room 101
-      const session101 = await redeemQrToken('act-demo-101');
+      const session101 = await demoSessions.redeemQrToken('act-demo-101');
       assert.equal(session101.guest.roomNumber, '101');
       assert.equal(session101.guest.bookingId, 'booking-101');
       assert.equal(session101.guest.guestName, 'John Doe');
 
       // Room 102
-      const session102 = await redeemQrToken('act-demo-102');
+      const session102 = await demoSessions.redeemQrToken('act-demo-102');
       assert.equal(session102.guest.roomNumber, '102');
       assert.equal(session102.guest.bookingId, 'booking-102');
       assert.equal(session102.guest.guestName, 'Jane Smith');
 
       // Room 103
-      const session103 = await redeemQrToken('act-demo-103');
+      const session103 = await demoSessions.redeemQrToken('act-demo-103');
       assert.equal(session103.guest.roomNumber, '103');
       assert.equal(session103.guest.bookingId, 'booking-103');
       assert.equal(session103.guest.guestName, 'Robert Frost');
 
       // Room 204
-      const session204 = await redeemQrToken('act-demo-204');
+      const session204 = await demoSessions.redeemQrToken('act-demo-204');
       assert.equal(session204.guest.roomNumber, '204');
       assert.equal(session204.guest.bookingId, 'booking-204');
       assert.equal(session204.guest.guestName, 'Alice Wong');
 
       // Expired room session
       await assert.rejects(
-        async () => redeemQrToken('act-demo-expired'),
+        async () => demoSessions.redeemQrToken('act-demo-expired'),
         (err: unknown) => {
           assert.ok(err instanceof ApiError);
           assert.equal(err.status, 400);
@@ -86,9 +86,9 @@ describe('Phase 7 — Comprehensive Data Mode & Production Safeguards Tests (#10
       const token102 = 'demo-token-room-102';
       const token103 = 'demo-token-room-103';
 
-      const orders101 = await fetchGuestOrders(token101);
-      const orders102 = await fetchGuestOrders(token102);
-      const orders103 = await fetchGuestOrders(token103);
+      const orders101 = await demoOrders.fetchGuestOrders(token101);
+      const orders102 = await demoOrders.fetchGuestOrders(token102);
+      const orders103 = await demoOrders.fetchGuestOrders(token103);
 
       assert.ok(orders101.length > 0);
       assert.ok(orders101.every((o) => o.roomNumber === '101' && o.bookingId === 'booking-101'));
@@ -102,7 +102,7 @@ describe('Phase 7 — Comprehensive Data Mode & Production Safeguards Tests (#10
       // Ensure Room 102 cannot view Room 101's order
       const order101Id = orders101[0].orderId;
       await assert.rejects(
-        async () => fetchGuestOrderById(token102, order101Id),
+        async () => demoOrders.fetchGuestOrderById(token102, order101Id),
         (err: unknown) => {
           assert.ok(err instanceof ApiError);
           assert.equal(err.status, 403);
@@ -115,7 +115,7 @@ describe('Phase 7 — Comprehensive Data Mode & Production Safeguards Tests (#10
       const token101 = 'demo-token-room-101';
 
       // 1. Place order
-      const newOrder = await placeFoodOrder(
+      const newOrder = await demoOrders.placeFoodOrder(
         token101,
         {
           items: [
@@ -136,15 +136,23 @@ describe('Phase 7 — Comprehensive Data Mode & Production Safeguards Tests (#10
       assert.equal(newOrder.totalAmount, 3600); // 1800 * 2
 
       // 2. Advance to IN_PREPARATION
-      const prep = await advanceDemoOrderStatus(token101, newOrder.orderId, 'IN_PREPARATION');
+      const prep = await demoOrders.advanceDemoOrderStatus(
+        token101,
+        newOrder.orderId,
+        'IN_PREPARATION',
+      );
       assert.equal(prep.status, 'IN_PREPARATION');
 
       // 3. Advance to READY
-      const ready = await advanceDemoOrderStatus(token101, newOrder.orderId, 'READY');
+      const ready = await demoOrders.advanceDemoOrderStatus(token101, newOrder.orderId, 'READY');
       assert.equal(ready.status, 'READY');
 
       // 4. Advance to DELIVERED
-      const delivered = await advanceDemoOrderStatus(token101, newOrder.orderId, 'DELIVERED');
+      const delivered = await demoOrders.advanceDemoOrderStatus(
+        token101,
+        newOrder.orderId,
+        'DELIVERED',
+      );
       assert.equal(delivered.status, 'DELIVERED');
     });
 
@@ -152,7 +160,11 @@ describe('Phase 7 — Comprehensive Data Mode & Production Safeguards Tests (#10
       const token101 = 'demo-token-room-101';
 
       // ORD-101-PLACED is in PLACED status
-      const cancelled = await cancelFoodOrder(token101, 'ORD-101-PLACED', 'Changed my mind');
+      const cancelled = await demoOrders.cancelFoodOrder(
+        token101,
+        'ORD-101-PLACED',
+        'Changed my mind',
+      );
       assert.equal(cancelled.status, 'CANCELLED');
       assert.equal(cancelled.canCancel, false);
     });
@@ -160,7 +172,7 @@ describe('Phase 7 — Comprehensive Data Mode & Production Safeguards Tests (#10
     it('simulates service request lifecycle with room isolation', async () => {
       const token102 = 'demo-token-room-102';
 
-      const created = await createServiceRequest(
+      const created = await demoServices.createServiceRequest(
         token102,
         {
           requestType: 'HOUSEKEEPING',
@@ -174,7 +186,7 @@ describe('Phase 7 — Comprehensive Data Mode & Production Safeguards Tests (#10
       assert.equal(created.bookingId, 'booking-102');
       assert.equal(created.status, 'SUBMITTED');
 
-      const assigned = await advanceDemoServiceRequestStatus(
+      const assigned = await demoServices.advanceDemoServiceRequestStatus(
         token102,
         created.requestId,
         'ASSIGNED',
@@ -183,7 +195,7 @@ describe('Phase 7 — Comprehensive Data Mode & Production Safeguards Tests (#10
       assert.equal(assigned.status, 'ASSIGNED');
       assert.equal(assigned.assignedStaff, 'Sunil Housekeeping');
 
-      const completed = await advanceDemoServiceRequestStatus(
+      const completed = await demoServices.advanceDemoServiceRequestStatus(
         token102,
         created.requestId,
         'COMPLETED',
@@ -194,7 +206,7 @@ describe('Phase 7 — Comprehensive Data Mode & Production Safeguards Tests (#10
     it('simulates complaint creation and escalation flow', async () => {
       const token101 = 'demo-token-room-101';
 
-      const complaint = await createComplaint(
+      const complaint = await demoComplaints.createComplaint(
         {
           category: 'NOISE',
           severity: 'HIGH',
@@ -208,7 +220,7 @@ describe('Phase 7 — Comprehensive Data Mode & Production Safeguards Tests (#10
       assert.equal(complaint.roomNumber, '101');
       assert.equal(complaint.status, 'SUBMITTED');
 
-      const investigating = await advanceDemoComplaintStatus(
+      const investigating = await demoComplaints.advanceDemoComplaintStatus(
         token101,
         complaint.complaintId,
         'UNDER_INVESTIGATION',
@@ -216,7 +228,7 @@ describe('Phase 7 — Comprehensive Data Mode & Production Safeguards Tests (#10
       );
       assert.equal(investigating.status, 'UNDER_INVESTIGATION');
 
-      const resolved = await advanceDemoComplaintStatus(
+      const resolved = await demoComplaints.advanceDemoComplaintStatus(
         token101,
         complaint.complaintId,
         'RESOLVED',
@@ -228,7 +240,7 @@ describe('Phase 7 — Comprehensive Data Mode & Production Safeguards Tests (#10
     it('resets demo state back to pristine initial dataset on reset', async () => {
       const token101 = 'demo-token-room-101';
 
-      await placeFoodOrder(
+      await demoOrders.placeFoodOrder(
         token101,
         {
           items: [{ menuItemId: 'menu-item-001', quantity: 1 }],
@@ -236,12 +248,12 @@ describe('Phase 7 — Comprehensive Data Mode & Production Safeguards Tests (#10
         'idem-reset-check',
       );
 
-      const beforeReset = await fetchGuestOrders(token101);
+      const beforeReset = await demoOrders.fetchGuestOrders(token101);
       assert.equal(beforeReset.length, 3); // 2 seed + 1 placed
 
       demoStateStore.resetToInitial();
 
-      const afterReset = await fetchGuestOrders(token101);
+      const afterReset = await demoOrders.fetchGuestOrders(token101);
       assert.equal(afterReset.length, 2); // exactly back to 2 initial seed orders
     });
   });

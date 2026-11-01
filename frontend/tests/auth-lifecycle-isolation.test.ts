@@ -12,12 +12,13 @@ import {
 } from '../src/lib/data-mode/data-mode.ts';
 import { DemoScenarioClock, demoStateStore } from '../src/lib/data-mode/demo/demo-state-store.ts';
 import { ApiError } from '../src/lib/data-mode/api-error.ts';
-import { fetchGuestOrders, placeFoodOrder, cancelFoodOrder } from '../src/lib/api/orders.ts';
-import { redeemQrToken, fetchCurrentSession } from '../src/lib/api/guest-sessions.ts';
+import { fetchGuestOrders } from '../src/lib/api/orders.ts';
+import { fetchCurrentSession, redeemQrToken } from '../src/lib/api/guest-sessions.ts';
 import {
   disconnectAllRealtimeClients,
   FossRealtimeClient,
 } from '../src/lib/realtime/realtime-client.ts';
+import { DemoOrdersProvider } from '../src/lib/data-mode/demo/demo-orders.provider.ts';
 
 // Mock minimal browser storage & window for testing environment
 class MockStorage implements Storage {
@@ -171,15 +172,12 @@ describe('FOSS — Harden Demo/API Mode Switching, Session Isolation & Lifecycle
       );
     });
 
-    it('rejects real non-demo tokens in Demo mode with 401', async () => {
-      setDataMode('demo');
-
+    it('rejects non-existent session tokens with 401', async () => {
       await assert.rejects(
         async () => fetchGuestOrders('real-jwt-or-opaque-token-12345'),
         (err: unknown) => {
           assert.ok(err instanceof ApiError);
           assert.equal(err.status, 401);
-          assert.match(err.message, /Real API tokens cannot be resolved in Demo Mode/i);
           return true;
         },
       );
@@ -189,7 +187,6 @@ describe('FOSS — Harden Demo/API Mode Switching, Session Isolation & Lifecycle
         (err: unknown) => {
           assert.ok(err instanceof ApiError);
           assert.equal(err.status, 401);
-          assert.match(err.message, /Real API tokens cannot be resolved in Demo Mode/i);
           return true;
         },
       );
@@ -296,8 +293,9 @@ describe('FOSS — Harden Demo/API Mode Switching, Session Isolation & Lifecycle
     });
 
     it('advancing clock past 10 minutes invalidates order cancellation window', async () => {
+      const demoOrdersProvider = new DemoOrdersProvider();
       // Place an order in Room 103
-      const order = await placeFoodOrder(
+      const order = await demoOrdersProvider.placeFoodOrder(
         'demo-token-room-103',
         {
           items: [{ menuItemId: 'menu-item-001', quantity: 2 }],
@@ -308,7 +306,7 @@ describe('FOSS — Harden Demo/API Mode Switching, Session Isolation & Lifecycle
       assert.equal(order.status, 'PLACED');
 
       // Cancellation should succeed immediately after placement
-      const canCancelInitially = await cancelFoodOrder(
+      const canCancelInitially = await demoOrdersProvider.cancelFoodOrder(
         'demo-token-room-103',
         order.orderId,
         'Changed mind',
@@ -316,7 +314,7 @@ describe('FOSS — Harden Demo/API Mode Switching, Session Isolation & Lifecycle
       assert.equal(canCancelInitially.status, 'CANCELLED');
 
       // Place another order
-      const order2 = await placeFoodOrder(
+      const order2 = await demoOrdersProvider.placeFoodOrder(
         'demo-token-room-103',
         {
           items: [{ menuItemId: 'menu-item-002', quantity: 1 }],
@@ -329,7 +327,8 @@ describe('FOSS — Harden Demo/API Mode Switching, Session Isolation & Lifecycle
 
       // Cancellation should now fail with 409 Conflict
       await assert.rejects(
-        async () => cancelFoodOrder('demo-token-room-103', order2.orderId, 'Too late'),
+        async () =>
+          demoOrdersProvider.cancelFoodOrder('demo-token-room-103', order2.orderId, 'Too late'),
         (err: unknown) => {
           assert.ok(err instanceof ApiError);
           assert.equal(err.status, 409);

@@ -8,11 +8,7 @@ export class ApiSessionsProvider implements SessionsProvider {
     if (!qrToken || qrToken.trim() === '') {
       throw new ApiError('QR activation code is required.', 400);
     }
-    if (
-      qrToken.startsWith('act-demo-') ||
-      qrToken.startsWith('qr-token-demo-') ||
-      ['101', '102', '103', '204', '999'].includes(qrToken)
-    ) {
+    if (qrToken.startsWith('act-demo-') || qrToken.startsWith('qr-token-demo-')) {
       throw new ApiError('Demonstration QR tokens cannot be redeemed against the real API.', 400);
     }
 
@@ -21,7 +17,7 @@ export class ApiSessionsProvider implements SessionsProvider {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ qrToken }),
+      body: JSON.stringify({ qrToken: qrToken.trim() }),
     });
 
     const body = await response.json().catch(() => null);
@@ -32,7 +28,39 @@ export class ApiSessionsProvider implements SessionsProvider {
       throw new ApiError(errorMsg, response.status, body);
     }
 
-    return body as GuestSessionResponse;
+    return {
+      sessionToken: body.sessionToken,
+      expiresAt: body.expiresAt,
+      guest: {
+        guestId:
+          body.sessionId ||
+          body.guestId ||
+          body.guest?.guestId ||
+          `guest-${body.roomNumber || body.guest?.roomNumber}`,
+        bookingId: body.bookingId || body.guest?.bookingId,
+        roomNumber: body.roomNumber || body.guest?.roomNumber,
+        guestName: body.guestName || body.guest?.guestName,
+        role: 'GUEST',
+      },
+    };
+  }
+
+  async resetDemo(): Promise<{ success: boolean; message: string }> {
+    const response = await fetch(`${API_URL}/guest-sessions/demo-reset`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    const body = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      const errorMsg = body?.message || 'Failed to reset backend demo state.';
+      throw new ApiError(errorMsg, response.status, body);
+    }
+
+    return body as { success: boolean; message: string };
   }
 
   async fetchCurrentSession(sessionToken: string): Promise<GuestContext> {

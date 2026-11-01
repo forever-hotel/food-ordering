@@ -59,4 +59,12 @@ export class DemoSessionsProvider implements SessionsProvider {
     }
     return map;
   }
+
+  async resetDemo(): Promise<{ success: boolean; message: string }> {
+    this.store.reset();
+    return {
+      success: true,
+      message: 'Demo state reset to initial fixtures.',
+    };
+  }
 }

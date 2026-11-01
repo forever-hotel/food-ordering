@@ -1,4 +1,10 @@
-import { getDataMode } from './data-mode.ts';
+/**
+ * Provider Factory for Single Frontend -> NestJS Backend Architecture (#101, FUI-16)
+ *
+ * All guest-facing operations communicate with the NestJS backend API.
+ * Runtime switching between frontend Demo and API implementations is removed;
+ * external mock vs real behavior is handled entirely upstream by the NestJS backend.
+ */
 import type {
   OrdersProvider,
   MenuProvider,
@@ -11,43 +17,29 @@ import { ApiMenuProvider } from './api/api-menu.provider.ts';
 import { ApiServicesProvider } from './api/api-services.provider.ts';
 import { ApiComplaintsProvider } from './api/api-complaints.provider.ts';
 import { ApiSessionsProvider } from './api/api-sessions.provider.ts';
-import { DemoOrdersProvider } from './demo/demo-orders.provider.ts';
-import { DemoMenuProvider } from './demo/demo-menu.provider.ts';
-import { DemoServicesProvider } from './demo/demo-services.provider.ts';
-import { DemoComplaintsProvider } from './demo/demo-complaints.provider.ts';
-import { DemoSessionsProvider } from './demo/demo-sessions.provider.ts';
 
 const apiOrders = new ApiOrdersProvider();
-const demoOrders = new DemoOrdersProvider();
-
 const apiMenu = new ApiMenuProvider();
-const demoMenu = new DemoMenuProvider();
-
 const apiServices = new ApiServicesProvider();
-const demoServices = new DemoServicesProvider();
-
 const apiComplaints = new ApiComplaintsProvider();
-const demoComplaints = new DemoComplaintsProvider();
-
 const apiSessions = new ApiSessionsProvider();
-const demoSessions = new DemoSessionsProvider();
 
 export function getOrdersProvider(): OrdersProvider {
-  return getDataMode() === 'api' ? apiOrders : demoOrders;
+  return apiOrders;
 }
 
 export function getMenuProvider(): MenuProvider {
-  return getDataMode() === 'api' ? apiMenu : demoMenu;
+  return apiMenu;
 }
 
 export function getServicesProvider(): ServicesProvider {
-  return getDataMode() === 'api' ? apiServices : demoServices;
+  return apiServices;
 }
 
 export function getComplaintsProvider(): ComplaintsProvider {
-  return getDataMode() === 'api' ? apiComplaints : demoComplaints;
+  return apiComplaints;
 }
 
 export function getSessionsProvider(): SessionsProvider {
-  return getDataMode() === 'api' ? apiSessions : demoSessions;
+  return apiSessions;
 }

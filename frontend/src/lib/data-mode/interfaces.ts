@@ -81,4 +81,5 @@ export interface SessionsProvider {
   fetchCurrentSession(sessionToken: string): Promise<GuestContext>;
   logoutSession(sessionToken: string): Promise<{ success: boolean; message: string }>;
   fetchDemoTokens(): Promise<Record<string, string>>;
+  resetDemo?(): Promise<{ success: boolean; message: string }>;
 }

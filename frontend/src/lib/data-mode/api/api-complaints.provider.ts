@@ -201,7 +201,8 @@ export class ApiComplaintsProvider implements ComplaintsProvider {
         },
         body: JSON.stringify({
           status: newStatus,
-          notes: resolutionNotes || `Status updated to ${newStatus} via evaluator demo action.`,
+          resolutionNotes:
+            resolutionNotes || `Status updated to ${newStatus} via evaluator demo action.`,
           assignedManager: 'Duty Manager Sarah K.',
         }),
       },

@@ -33,3 +33,14 @@ export async function logoutSession(
 export async function fetchDemoTokens(): Promise<Record<string, string>> {
   return getSessionsProvider().fetchDemoTokens();
 }
+
+/**
+ * Triggers development-only demo state reset on the backend.
+ */
+export async function resetBackendDemo(): Promise<{ success: boolean; message: string }> {
+  const provider = getSessionsProvider();
+  if (provider.resetDemo) {
+    return provider.resetDemo();
+  }
+  return { success: true, message: 'Reset completed' };
+}

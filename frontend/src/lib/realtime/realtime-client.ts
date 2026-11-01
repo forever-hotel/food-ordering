@@ -1,6 +1,3 @@
-import { getDataMode } from '../data-mode/data-mode.ts';
-import { DemoStateStore } from '../data-mode/demo/demo-state-store.ts';
-
 export const RealtimeEventType = {
   FOOD_ORDER_STATUS_UPDATED: 'FOOD_ORDER_STATUS_UPDATED',
   SERVICE_REQUEST_STATUS_UPDATED: 'SERVICE_REQUEST_STATUS_UPDATED',
@@ -45,13 +42,13 @@ export interface RealtimeClientConfig {
 
 /**
  * Global registry of active realtime clients across tabs and components.
- * Enables immediate teardown when data mode switches or guests log out.
+ * Enables immediate teardown when guests log out or switch stays.
  */
 const activeRealtimeClients = new Set<FossRealtimeClient>();
 
 /**
- * Forcibly disconnects and cleans up all active SSE streams and demo subscribers.
- * Prevents cross-room event contamination during mode and room transitions.
+ * Forcibly disconnects and cleans up all active SSE streams.
+ * Prevents cross-room event contamination during room transitions.
  */
 export function disconnectAllRealtimeClients(): void {
   for (const client of activeRealtimeClients) {
@@ -78,7 +75,6 @@ export class FossRealtimeClient {
   private lastVersion = 0;
   private readonly seenEventIds = new Set<string>();
   private readonly config: RealtimeClientConfig;
-  private demoUnsubscribe: (() => void) | null = null;
 
   constructor(config: RealtimeClientConfig) {
     this.config = config;
@@ -107,25 +103,10 @@ export class FossRealtimeClient {
     activeRealtimeClients.add(this);
     this.setStatus('CONNECTING');
 
-    // In Demo Mode, hook directly into the deterministic DemoStateStore event emitter
-    if (getDataMode() === 'demo') {
-      this.setStatus('CONNECTED');
-      this.demoUnsubscribe = DemoStateStore.getInstance().addRealtimeListener((event) => {
-        if (
-          event.roomNumber === this.config.roomNumber &&
-          event.bookingId === this.config.bookingId
-        ) {
-          this.config.onEvent?.(event);
-        }
-      });
-      return;
-    }
-
-    // In API Mode: if EventSource is available, attempt real SSE stream
+    // Attempt real SSE stream if EventSource is available; otherwise HTTP polling fallback
     if (typeof EventSource !== 'undefined') {
       this.initEventSource();
     } else {
-      // Fallback directly to HTTP polling
       this.startPollingFallback();
     }
   }
@@ -134,11 +115,6 @@ export class FossRealtimeClient {
     activeRealtimeClients.delete(this);
     this.setStatus('DISCONNECTED');
     this.reconnectAttempts = 0;
-
-    if (this.demoUnsubscribe) {
-      this.demoUnsubscribe();
-      this.demoUnsubscribe = null;
-    }
 
     if (this.eventSource) {
       this.eventSource.close();
