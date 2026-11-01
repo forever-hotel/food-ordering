@@ -173,6 +173,16 @@ describe('FOSS — Harden Demo/API Mode Switching, Session Isolation & Lifecycle
     });
 
     it('rejects non-existent session tokens with 401', async () => {
+      globalThis.fetch = (async () => {
+        return new Response(
+          JSON.stringify({ error: 'Unauthorized', message: 'Invalid session token' }),
+          {
+            status: 401,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        );
+      }) as unknown as typeof fetch;
+
       await assert.rejects(
         async () => fetchGuestOrders('real-jwt-or-opaque-token-12345'),
         (err: unknown) => {

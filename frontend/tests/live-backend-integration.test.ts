@@ -36,7 +36,33 @@ import {
 
 const BACKEND_URL = process.env.API_URL || 'http://localhost:4300';
 
+const isExplicitLiveAllowed = process.env.ALLOW_LIVE_DATABASE_INTEGRATION_TESTS === 'true';
+const isIsolatedTestDb = process.env.ISOLATED_TEST_DB === 'true';
+
 describe('Phase 5 — Live NestJS Backend HTTP and SSE Integration Tests (#101)', () => {
+  if (isExplicitLiveAllowed && !isIsolatedTestDb) {
+    it('DATABASE SAFETY GATE: Refuses to run against unconfirmed or shared database', () => {
+      throw new Error(
+        'DATABASE SAFETY GATE BLOCKED: ALLOW_LIVE_DATABASE_INTEGRATION_TESTS=true was provided, but ' +
+          'ISOLATED_TEST_DB=true is missing! Refusing to run write-capable integration tests against potentially shared database.',
+      );
+    });
+    return;
+  }
+
+  if (!isExplicitLiveAllowed || !isIsolatedTestDb) {
+    it('DATABASE SAFETY GATE: Live backend integration tests disabled against unverified/shared database', (t) => {
+      const warningMessage =
+        'DATABASE SAFETY GATE ENFORCED: Write-capable live integration test execution is strictly disabled. ' +
+        'The backend database connection is not verified as an isolated disposable test database. ' +
+        'Running write tests against shared Neon development or production is prohibited to protect shared data. ' +
+        'Prerequisites required: ALLOW_LIVE_DATABASE_INTEGRATION_TESTS=true AND ISOLATED_TEST_DB=true.';
+      t.diagnostic(warningMessage);
+      t.skip(warningMessage);
+    });
+    return;
+  }
+
   let room101Token = '';
   let room102Token = '';
   let room103Token = '';
@@ -258,7 +284,8 @@ describe('Phase 5 — Live NestJS Backend HTTP and SSE Integration Tests (#101)'
     assert.ok(complaints101.some((c) => c.complaintId === cmpData.complaintId));
   });
 
-  it('13. Verifies Realtime HTTP Polling endpoint GET /realtime/events/poll', async () => {
+  it('13. Verifies Realtime HTTP Polling and SSE stream establishment', async () => {
+    // 1. Polling fallback check
     const pollRes = await fetch(`${BACKEND_URL}/realtime/events/poll`, {
       headers: { Authorization: `Bearer ${room101Token}` },
     });
@@ -267,6 +294,16 @@ describe('Phase 5 — Live NestJS Backend HTTP and SSE Integration Tests (#101)'
     assert.ok(Array.isArray(pollData.events));
     assert.ok(typeof pollData.recommendedPollIntervalMs === 'number');
     assert.ok(pollData.serverTimestamp);
+
+    // 2. Real SSE streaming connection check
+    const abortCtrl = new AbortController();
+    const sseRes = await fetch(`${BACKEND_URL}/realtime/events/stream?token=${room101Token}`, {
+      headers: { Accept: 'text/event-stream' },
+      signal: abortCtrl.signal,
+    });
+    assert.equal(sseRes.status, 200);
+    assert.match(sseRes.headers.get('content-type') || '', /text\/event-stream/);
+    abortCtrl.abort();
   });
 
   it('14. Handles 401, 403, and 404 error cases accurately', async () => {
