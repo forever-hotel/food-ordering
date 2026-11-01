@@ -7,11 +7,24 @@ import type {
   ComplaintStatus,
 } from '../../../types/complaints.ts';
 
+function assertRealSessionToken(sessionToken: string, actionDesc: string): void {
+  if (!sessionToken || sessionToken.trim() === '') {
+    throw new ApiError(`Guest session token is required to ${actionDesc}.`, 401);
+  }
+  if (
+    sessionToken.startsWith('demo-token-') ||
+    ['101', '102', '103', '204', '999'].includes(sessionToken)
+  ) {
+    throw new ApiError(
+      'Demonstration session tokens cannot be transmitted to real API endpoints.',
+      401,
+    );
+  }
+}
+
 export class ApiComplaintsProvider implements ComplaintsProvider {
   async fetchGuestComplaints(sessionToken: string): Promise<ComplaintResponse[]> {
-    if (!sessionToken || sessionToken.trim() === '') {
-      throw new ApiError('Guest session token is required to fetch complaints.', 401);
-    }
+    assertRealSessionToken(sessionToken, 'fetch complaints');
 
     try {
       const response = await fetch(`${API_URL}/complaints`, {
@@ -48,9 +61,7 @@ export class ApiComplaintsProvider implements ComplaintsProvider {
     sessionToken: string,
     complaintId: string,
   ): Promise<ComplaintResponse> {
-    if (!sessionToken || sessionToken.trim() === '') {
-      throw new ApiError('Guest session token is required to fetch complaint details.', 401);
-    }
+    assertRealSessionToken(sessionToken, 'fetch complaint details');
 
     try {
       const response = await fetch(`${API_URL}/complaints/${encodeURIComponent(complaintId)}`, {
@@ -85,9 +96,7 @@ export class ApiComplaintsProvider implements ComplaintsProvider {
     sessionToken: string,
     idempotencyKey?: string,
   ): Promise<ComplaintResponse> {
-    if (!sessionToken || sessionToken.trim() === '') {
-      throw new ApiError('Guest session token is required to submit a complaint.', 401);
-    }
+    assertRealSessionToken(sessionToken, 'submit a complaint');
 
     const idemKey =
       idempotencyKey ||

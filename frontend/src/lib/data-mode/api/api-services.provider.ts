@@ -7,11 +7,24 @@ import type {
   ServiceRequestStatus,
 } from '../../../types/services.ts';
 
+function assertRealSessionToken(sessionToken: string, actionDesc: string): void {
+  if (!sessionToken || sessionToken.trim() === '') {
+    throw new ApiError(`Guest session token is required to ${actionDesc}.`, 401);
+  }
+  if (
+    sessionToken.startsWith('demo-token-') ||
+    ['101', '102', '103', '204', '999'].includes(sessionToken)
+  ) {
+    throw new ApiError(
+      'Demonstration session tokens cannot be transmitted to real API endpoints.',
+      401,
+    );
+  }
+}
+
 export class ApiServicesProvider implements ServicesProvider {
   async fetchGuestServiceRequests(sessionToken: string): Promise<ServiceRequestResponse[]> {
-    if (!sessionToken || sessionToken.trim() === '') {
-      throw new ApiError('Guest session token is required to fetch service requests.', 401);
-    }
+    assertRealSessionToken(sessionToken, 'fetch service requests');
 
     try {
       const response = await fetch(`${API_URL}/service-requests`, {
@@ -49,9 +62,7 @@ export class ApiServicesProvider implements ServicesProvider {
     sessionToken: string,
     requestId: string,
   ): Promise<ServiceRequestResponse> {
-    if (!sessionToken || sessionToken.trim() === '') {
-      throw new ApiError('Guest session token is required to fetch service request details.', 401);
-    }
+    assertRealSessionToken(sessionToken, 'fetch service request details');
 
     try {
       const response = await fetch(`${API_URL}/service-requests/${encodeURIComponent(requestId)}`, {
@@ -87,9 +98,7 @@ export class ApiServicesProvider implements ServicesProvider {
     payload: CreateServiceRequestPayload,
     idempotencyKey?: string,
   ): Promise<ServiceRequestResponse> {
-    if (!sessionToken || sessionToken.trim() === '') {
-      throw new ApiError('Guest session token is required to submit a service request.', 401);
-    }
+    assertRealSessionToken(sessionToken, 'submit a service request');
 
     const effectiveKey =
       idempotencyKey ||

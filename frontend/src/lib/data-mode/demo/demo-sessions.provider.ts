@@ -1,11 +1,15 @@
 import type { SessionsProvider } from '../interfaces.ts';
 import type { GuestContext, GuestSessionResponse } from '../../../types/guest-session.ts';
-import { DemoStateStore, DEMO_STAYS } from './demo-state-store.ts';
+import { DemoStateStore } from './demo-state-store.ts';
+import { ApiError } from '../api-error.ts';
 
 export class DemoSessionsProvider implements SessionsProvider {
   private readonly store = DemoStateStore.getInstance();
 
   async redeemQrToken(qrToken: string): Promise<GuestSessionResponse> {
+    if (!qrToken || qrToken.trim() === '') {
+      throw new ApiError('QR activation code is required.', 400);
+    }
     const stay = this.store.resolveStayByQr(qrToken);
     return {
       sessionToken: stay.sessionToken,
@@ -21,6 +25,12 @@ export class DemoSessionsProvider implements SessionsProvider {
   }
 
   async fetchCurrentSession(sessionToken: string): Promise<GuestContext> {
+    if (!sessionToken || sessionToken.trim() === '') {
+      throw new ApiError('Guest session token is required to fetch session context.', 401);
+    }
+    if (!sessionToken.startsWith('demo-token-')) {
+      throw new ApiError('Real API tokens cannot be resolved in Demo Mode.', 401);
+    }
     const stay = this.store.resolveStayByToken(sessionToken);
     return {
       guestId: `guest-${stay.roomNumber}`,
@@ -42,7 +52,7 @@ export class DemoSessionsProvider implements SessionsProvider {
 
   async fetchDemoTokens(): Promise<Record<string, string>> {
     const map: Record<string, string> = {};
-    for (const stay of DEMO_STAYS) {
+    for (const stay of this.store.getStays()) {
       if (!stay.isExpired) {
         map[`Room ${stay.roomNumber} (${stay.guestName})`] = stay.qrToken;
       }

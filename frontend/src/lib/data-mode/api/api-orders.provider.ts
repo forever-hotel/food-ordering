@@ -7,11 +7,24 @@ import type {
   FoodOrderStatus,
 } from '../../../types/orders.ts';
 
+function assertRealSessionToken(sessionToken: string, actionDesc: string): void {
+  if (!sessionToken || sessionToken.trim() === '') {
+    throw new ApiError(`Guest session token is required to ${actionDesc}.`, 401);
+  }
+  if (
+    sessionToken.startsWith('demo-token-') ||
+    ['101', '102', '103', '204', '999'].includes(sessionToken)
+  ) {
+    throw new ApiError(
+      'Demonstration session tokens cannot be transmitted to real API endpoints.',
+      401,
+    );
+  }
+}
+
 export class ApiOrdersProvider implements OrdersProvider {
   async fetchGuestOrders(sessionToken: string): Promise<FoodOrderResponse[]> {
-    if (!sessionToken || sessionToken.trim() === '') {
-      throw new ApiError('Guest session token is required to fetch orders.', 401);
-    }
+    assertRealSessionToken(sessionToken, 'fetch orders');
 
     try {
       const response = await fetch(`${API_URL}/food-orders`, {
@@ -45,9 +58,7 @@ export class ApiOrdersProvider implements OrdersProvider {
   }
 
   async fetchGuestOrderById(sessionToken: string, orderId: string): Promise<FoodOrderResponse> {
-    if (!sessionToken || sessionToken.trim() === '') {
-      throw new ApiError('Guest session token is required to fetch order details.', 401);
-    }
+    assertRealSessionToken(sessionToken, 'fetch order details');
 
     try {
       const response = await fetch(`${API_URL}/food-orders/${encodeURIComponent(orderId)}`, {
@@ -80,9 +91,7 @@ export class ApiOrdersProvider implements OrdersProvider {
     payload: CreateFoodOrderPayload,
     idempotencyKey: string,
   ): Promise<FoodOrderResponse> {
-    if (!sessionToken || sessionToken.trim() === '') {
-      throw new ApiError('Guest session token is required to place an order.', 401);
-    }
+    assertRealSessionToken(sessionToken, 'place an order');
 
     const requestBody = {
       items: payload.items,
@@ -128,9 +137,7 @@ export class ApiOrdersProvider implements OrdersProvider {
     orderId: string,
     reason?: string,
   ): Promise<FoodOrderResponse> {
-    if (!sessionToken || sessionToken.trim() === '') {
-      throw new ApiError('Guest session token is required to cancel an order.', 401);
-    }
+    assertRealSessionToken(sessionToken, 'cancel an order');
 
     try {
       const response = await fetch(`${API_URL}/food-orders/${encodeURIComponent(orderId)}/cancel`, {

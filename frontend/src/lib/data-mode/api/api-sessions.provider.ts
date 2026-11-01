@@ -5,6 +5,17 @@ import type { GuestContext, GuestSessionResponse } from '../../../types/guest-se
 
 export class ApiSessionsProvider implements SessionsProvider {
   async redeemQrToken(qrToken: string): Promise<GuestSessionResponse> {
+    if (!qrToken || qrToken.trim() === '') {
+      throw new ApiError('QR activation code is required.', 400);
+    }
+    if (
+      qrToken.startsWith('act-demo-') ||
+      qrToken.startsWith('qr-token-demo-') ||
+      ['101', '102', '103', '204', '999'].includes(qrToken)
+    ) {
+      throw new ApiError('Demonstration QR tokens cannot be redeemed against the real API.', 400);
+    }
+
     const response = await fetch(`${API_URL}/guest-sessions/qr`, {
       method: 'POST',
       headers: {
@@ -25,6 +36,16 @@ export class ApiSessionsProvider implements SessionsProvider {
   }
 
   async fetchCurrentSession(sessionToken: string): Promise<GuestContext> {
+    if (!sessionToken || sessionToken.trim() === '') {
+      throw new ApiError('Guest session token is required to fetch session context.', 401);
+    }
+    if (sessionToken.startsWith('demo-token-')) {
+      throw new ApiError(
+        'Demonstration session tokens cannot be transmitted to real API endpoints.',
+        401,
+      );
+    }
+
     const response = await fetch(`${API_URL}/guest-sessions/me`, {
       method: 'GET',
       headers: {
