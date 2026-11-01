@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Button, Input, message } from 'antd';
+import { App, Button, Input } from 'antd';
 
 interface ManualEntryFormProps {
   loading: boolean;
@@ -10,6 +10,7 @@ interface ManualEntryFormProps {
 }
 
 export function ManualEntryForm({ loading, onSubmit, demoTokens = {} }: ManualEntryFormProps) {
+  const { message } = App.useApp();
   const [code, setCode] = useState('');
   const [showDemoChips, setShowDemoChips] = useState(false);
 
