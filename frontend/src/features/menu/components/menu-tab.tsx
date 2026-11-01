@@ -139,16 +139,33 @@ export function MenuTab() {
     return <MenuItemDetail item={selectedItem} onBack={handleBackToMenu} />;
   }
 
-  // Active meal window banner calculation (Figure 32)
-  const activeWindow = catalog?.mealWindows.find((w) => w.isActive) || catalog?.mealWindows[1];
-  const cutoffTimeDisplay = activeWindow ? activeWindow.cutoffTime.slice(0, 5) : '14:30';
-  const remainingMinutes = activeWindow ? Math.floor(activeWindow.secondsRemaining / 60) : 136;
+  // Dynamic meal window banner calculation for selected category (Figure 32)
+  const categoryPeriodMap: Record<string, string> = {
+    Breakfast: 'BREAKFAST',
+    Lunch: 'LUNCH',
+    Dinner: 'DINNER',
+    Tea: 'ALL_DAY',
+  };
+
+  const targetPeriod = categoryPeriodMap[selectedCategory] || 'ALL_DAY';
+  const categoryWindow =
+    catalog?.mealWindows.find(
+      (w) => w.period === targetPeriod || w.name.toLowerCase() === selectedCategory.toLowerCase(),
+    ) ||
+    catalog?.mealWindows.find((w) => w.isActive) ||
+    catalog?.mealWindows[0];
+
+  const cutoffTimeDisplay = categoryWindow ? categoryWindow.cutoffTime.slice(0, 5) : '14:30';
+  const remainingMinutes = categoryWindow ? Math.floor(categoryWindow.secondsRemaining / 60) : 0;
   const hoursLeft = Math.floor(remainingMinutes / 60);
   const minsLeft = remainingMinutes % 60;
   const timeLeftDisplay =
     remainingMinutes > 0
       ? `${hoursLeft > 0 ? `${hoursLeft}h ` : ''}${minsLeft}m left`
-      : 'Cutoff reached';
+      : 'service ended';
+
+  const isCategoryActive = categoryWindow?.isActive ?? false;
+  const isCutoffReached = categoryWindow?.isCutoffReached ?? false;
 
   const displayedItems = (catalog?.items || []).filter((item) => {
     if (selectedCategory === 'Tea') {
@@ -194,17 +211,37 @@ export function MenuTab() {
         })}
       </div>
 
-      {/* Meal Period Cutoff Banner (Figure 32: "Lunch orders close at 14:30 — 2h 16m left") */}
+      {/* Meal Period Banner (Figure 32: "Lunch orders close at 14:30 — 2h 16m left") */}
       <Alert
-        type="warning"
+        type={isCutoffReached ? 'info' : 'warning'}
         showIcon
         title={
-          <span className="text-xs font-medium text-amber-950">
-            {selectedCategory} orders close at{' '}
-            <strong className="font-bold">{cutoffTimeDisplay}</strong> — {timeLeftDisplay}
+          <span className="text-xs font-medium">
+            {isCutoffReached ? (
+              <span className="text-slate-700">
+                {selectedCategory} service has ended for today (served until{' '}
+                <strong className="font-bold">{cutoffTimeDisplay}</strong>). Please check our active
+                dining options above.
+              </span>
+            ) : isCategoryActive ? (
+              <span className="text-amber-950">
+                {selectedCategory} orders close at{' '}
+                <strong className="font-bold">{cutoffTimeDisplay}</strong> — {timeLeftDisplay}
+              </span>
+            ) : (
+              <span className="text-slate-700">
+                {selectedCategory} service opens at{' '}
+                <strong className="font-bold">
+                  {categoryWindow?.startTime.slice(0, 5) || '18:30'}
+                </strong>{' '}
+                (orders close at {cutoffTimeDisplay})
+              </span>
+            )}
           </span>
         }
-        className="!rounded-xl !border-amber-200 !bg-amber-50 shadow-xs"
+        className={`!rounded-xl shadow-xs ${
+          isCutoffReached ? '!border-slate-200 !bg-slate-50' : '!border-amber-200 !bg-amber-50'
+        }`}
       />
 
       {/* Error state with retry */}
