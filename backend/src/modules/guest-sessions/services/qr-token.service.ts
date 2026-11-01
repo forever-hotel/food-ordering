@@ -170,22 +170,10 @@ export class QrTokenService {
         '999',
         -24 * 60 * 60 * 1000,
       ),
-      '101': this.createToken(
-        'b1010000-0000-4000-8000-000000000101',
-        '101',
-      ),
-      '102': this.createToken(
-        'b1020000-0000-4000-8000-000000000102',
-        '102',
-      ),
-      '103': this.createToken(
-        'b1030000-0000-4000-8000-000000000103',
-        '103',
-      ),
-      '204': this.createToken(
-        'b2040000-0000-4000-8000-000000000204',
-        '204',
-      ),
+      '101': this.createToken('b1010000-0000-4000-8000-000000000101', '101'),
+      '102': this.createToken('b1020000-0000-4000-8000-000000000102', '102'),
+      '103': this.createToken('b1030000-0000-4000-8000-000000000103', '103'),
+      '204': this.createToken('b2040000-0000-4000-8000-000000000204', '204'),
       '999': this.createToken(
         'b9990000-0000-4000-8000-000000000999',
         '999',
@@ -212,6 +200,13 @@ export class QrTokenService {
         '105',
       ),
     };
+  }
+
+  /**
+   * Cleans up all in-memory redeemed nonces (used during authorized demo reset).
+   */
+  public reset(): void {
+    this.seenNonces.clear();
   }
 
   private generateSignature(data: string): string {

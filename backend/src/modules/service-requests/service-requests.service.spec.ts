@@ -565,4 +565,57 @@ describe('ServiceRequestsService', () => {
       expect(result.request?.status).toBe(ServiceRequestStatus.COMPLETED);
     });
   });
+
+  describe('advanceServiceRequestStatus() [DEMO_MODE]', () => {
+    it('advances service request status when DEMO_MODE is true in test/dev', async () => {
+      const req = new FossServiceRequest();
+      req.requestId = 'req-demo-001';
+      req.bookingId = sampleGuest.bookingId;
+      req.roomNumber = sampleGuest.roomNumber;
+      req.status = ServiceRequestStatus.SUBMITTED;
+      req.createdAt = new Date();
+      req.updatedAt = new Date();
+
+      mockRequestRepository.findById.mockResolvedValue(req);
+      mockRequestRepository.save.mockResolvedValue(req);
+
+      const result = await service.advanceServiceRequestStatus(
+        sampleGuest,
+        'req-demo-001',
+        ServiceRequestStatus.ASSIGNED,
+        'Staff #1',
+      );
+
+      expect(result.status).toBe(ServiceRequestStatus.ASSIGNED);
+      expect(result.assignedStaff).toBe('Staff #1');
+      expect(mockRequestRepository.save).toHaveBeenCalled();
+    });
+
+    it('rejects status advancement when DEMO_MODE is false with 403 Forbidden', async () => {
+      mockConfigService.get.mockReturnValueOnce('false');
+
+      await expect(
+        service.advanceServiceRequestStatus(
+          sampleGuest,
+          'req-demo-001',
+          ServiceRequestStatus.IN_PROGRESS,
+        ),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('strictly rejects status advancement when NODE_ENV is production', async () => {
+      process.env.NODE_ENV = 'production';
+      try {
+        await expect(
+          service.advanceServiceRequestStatus(
+            sampleGuest,
+            'req-demo-001',
+            ServiceRequestStatus.IN_PROGRESS,
+          ),
+        ).rejects.toThrow(ForbiddenException);
+      } finally {
+        process.env.NODE_ENV = 'test';
+      }
+    });
+  });
 });

@@ -1,5 +1,5 @@
 import { jest } from '@jest/globals';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 
 import { GuestSessionResponseDto } from './dto/guest-session-response.dto.js';
 import { IssueQrDto, IssueQrResponseDto } from './dto/issue-qr.dto.js';
@@ -27,6 +27,13 @@ describe('GuestSessionsController', () => {
   };
   let mockQrTokenService: {
     getDemoTokens: jest.MockedFunction<() => Record<string, string>>;
+    reset: jest.MockedFunction<() => void>;
+  };
+  let mockDemoOrderRepository: {
+    reset: jest.MockedFunction<() => void>;
+  };
+  let mockRealtimeService: {
+    clearAll: jest.MockedFunction<() => void>;
   };
   let mockQrActivationService: {
     issueActivationCredential: jest.MockedFunction<
@@ -53,6 +60,15 @@ describe('GuestSessionsController', () => {
       getDemoTokens: jest.fn<() => Record<string, string>>().mockReturnValue({
         '101-checked-in': 'demo-qr-token-101',
       }),
+      reset: jest.fn<() => void>(),
+    };
+
+    mockDemoOrderRepository = {
+      reset: jest.fn<() => void>(),
+    };
+
+    mockRealtimeService = {
+      clearAll: jest.fn<() => void>(),
     };
 
     mockQrActivationService = {
@@ -62,10 +78,15 @@ describe('GuestSessionsController', () => {
       revokeBookingActivations: jest.fn<() => Promise<number>>(),
     };
 
+    process.env.NODE_ENV = 'test';
+    process.env.DEMO_MODE = 'true';
+
     controller = new GuestSessionsController(
       mockGuestSessionsService as unknown as GuestSessionsService,
       mockQrTokenService as unknown as QrTokenService,
       mockQrActivationService as unknown as QrActivationService,
+      mockDemoOrderRepository as any,
+      mockRealtimeService as any,
     );
   });
 
@@ -273,11 +294,54 @@ describe('GuestSessionsController', () => {
   });
 
   describe('getDemoTokens', () => {
-    it('returns demo tokens record from service in dev', () => {
+    it('returns demo tokens record from service in test/dev with DEMO_MODE=true', () => {
       const result = controller.getDemoTokens();
       expect(result).toEqual({
         tokens: { '101-checked-in': 'demo-qr-token-101' },
       });
+    });
+
+    it('rejects demo tokens with UnauthorizedException when NODE_ENV is production', () => {
+      process.env.NODE_ENV = 'production';
+      expect(() => controller.getDemoTokens()).toThrow(UnauthorizedException);
+    });
+
+    it('rejects demo tokens with UnauthorizedException when DEMO_MODE is not true', () => {
+      process.env.DEMO_MODE = 'false';
+      expect(() => controller.getDemoTokens()).toThrow(UnauthorizedException);
+    });
+
+    it('strictly rejects in production even if ALLOW_DEMO_TOKENS=true is set (no backdoor)', () => {
+      process.env.NODE_ENV = 'production';
+      process.env.ALLOW_DEMO_TOKENS = 'true';
+      expect(() => controller.getDemoTokens()).toThrow(UnauthorizedException);
+      delete process.env.ALLOW_DEMO_TOKENS;
+    });
+  });
+
+  describe('resetDemoState', () => {
+    it('executes in-memory demo reset on qrTokenService, orderRepository, and realtimeService', () => {
+      const result = controller.resetDemoState();
+
+      expect(result.success).toBe(true);
+      expect(result.cleared).toEqual({
+        inMemoryOrders: true,
+        qrSeenNonces: true,
+        realtimeChannels: true,
+      });
+      expect(mockQrTokenService.reset).toHaveBeenCalledTimes(1);
+      expect(mockDemoOrderRepository.reset).toHaveBeenCalledTimes(1);
+      expect(mockRealtimeService.clearAll).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects demo reset with UnauthorizedException when NODE_ENV is production', () => {
+      process.env.NODE_ENV = 'production';
+      expect(() => controller.resetDemoState()).toThrow(UnauthorizedException);
+    });
+
+    it('rejects demo reset with UnauthorizedException when DEMO_MODE is not true', () => {
+      process.env.DEMO_MODE = 'false';
+      expect(() => controller.resetDemoState()).toThrow(UnauthorizedException);
     });
   });
 

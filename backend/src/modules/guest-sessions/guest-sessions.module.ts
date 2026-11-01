@@ -1,10 +1,12 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { InternalServiceGuard } from '../../common/auth/internal-service.guard.js';
 import { RoomOwnershipGuard } from '../../common/auth/room-ownership.guard.js';
 import { BookingInternalModule } from '../../integrations/internal-services/booking/booking-internal.module.js';
+import { RealtimeModule } from '../../realtime/realtime.module.js';
+import { FoodOrdersModule } from '../food-orders/food-orders.module.js';
 import { FossQrActivation } from './entities/foss-qr-activation.entity.js';
 import { FossSession } from './entities/foss-session.entity.js';
 import { GuestAuthGuard } from './guards/guest-auth.guard.js';
@@ -20,6 +22,8 @@ import { QrTokenService } from './services/qr-token.service.js';
     TypeOrmModule.forFeature([FossSession, FossQrActivation]),
     BookingInternalModule,
     ConfigModule,
+    forwardRef(() => FoodOrdersModule),
+    forwardRef(() => RealtimeModule),
   ],
   controllers: [GuestSessionsController],
   providers: [

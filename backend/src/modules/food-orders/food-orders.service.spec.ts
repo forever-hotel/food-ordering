@@ -528,5 +528,20 @@ describe('FoodOrdersService', () => {
         ),
       ).rejects.toThrow(ForbiddenException);
     });
+
+    it('strictly rejects status advancement when NODE_ENV is production even if DEMO_MODE is true', async () => {
+      process.env.NODE_ENV = 'production';
+      try {
+        await expect(
+          service.advanceOrderStatus(
+            sampleGuest,
+            'order-demo-001',
+            FoodOrderStatus.READY,
+          ),
+        ).rejects.toThrow(ForbiddenException);
+      } finally {
+        process.env.NODE_ENV = 'test';
+      }
+    });
   });
 });

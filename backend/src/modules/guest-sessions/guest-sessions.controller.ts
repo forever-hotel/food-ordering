@@ -2,10 +2,12 @@ import {
   BadRequestException,
   Body,
   Controller,
+  forwardRef,
   Get,
   Header,
   HttpCode,
   HttpStatus,
+  Inject,
   Optional,
   Param,
   Post,
@@ -18,6 +20,8 @@ import type { Request } from 'express';
 
 import { InternalServiceGuard } from '../../common/auth/internal-service.guard.js';
 import { RoomOwnershipGuard } from '../../common/auth/room-ownership.guard.js';
+import { RealtimeService } from '../../realtime/realtime.service.js';
+import { FossDemoOrderRepository } from '../food-orders/repositories/foss-demo-order.repository.js';
 import { CurrentGuest } from './decorators/current-guest.decorator.js';
 import {
   FdsCheckoutEventDto,
@@ -44,6 +48,12 @@ export class GuestSessionsController {
     private readonly guestSessionsService: GuestSessionsService,
     private readonly qrTokenService: QrTokenService,
     @Optional() private readonly qrActivationService?: QrActivationService,
+    @Optional()
+    @Inject(forwardRef(() => FossDemoOrderRepository))
+    private readonly demoOrderRepository?: FossDemoOrderRepository,
+    @Optional()
+    @Inject(forwardRef(() => RealtimeService))
+    private readonly realtimeService?: RealtimeService,
   ) {}
 
   /**
@@ -195,16 +205,18 @@ export class GuestSessionsController {
 
   /**
    * Helper endpoint providing pre-signed QR tokens for demo rooms.
-   * Disabled in production environments.
+   * Strictly disabled in production and unauthorized environments.
+   * Backdoor bypass ALLOW_DEMO_TOKENS has been permanently removed.
    */
   @Get('demo-tokens')
   getDemoTokens(): { tokens: Record<string, string> } {
-    if (
-      process.env.NODE_ENV === 'production' &&
-      process.env.ALLOW_DEMO_TOKENS !== 'true'
-    ) {
+    const isDevOrTest =
+      process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test';
+    const isDemo = process.env.DEMO_MODE === 'true';
+
+    if (!isDevOrTest || !isDemo || process.env.NODE_ENV === 'production') {
       throw new UnauthorizedException(
-        'Demo tokens are disabled in production.',
+        'Demo tokens are strictly disabled in production and unauthorized environments.',
       );
     }
     return {
@@ -214,20 +226,52 @@ export class GuestSessionsController {
 
   /**
    * Development-only demo reset endpoint.
-   * Gated strictly by DEMO_MODE=true and non-production environment.
+   * Cleans authorized demo in-memory state:
+   * 1. QrTokenService redeemed nonces
+   * 2. FossDemoOrderRepository in-memory demonstration food orders
+   * 3. RealtimeService stay channels, subscriptions, and buffered events
+   *
+   * Gated strictly by DEMO_MODE=true and non-production development/test environment.
    */
   @Post('demo-reset')
   @HttpCode(HttpStatus.OK)
-  resetDemoState(): { success: boolean; message: string } {
-    if (
-      process.env.NODE_ENV === 'production' ||
-      process.env.DEMO_MODE !== 'true'
-    ) {
-      throw new UnauthorizedException('Demo reset is disabled in production.');
+  resetDemoState(): {
+    success: boolean;
+    message: string;
+    cleared: {
+      inMemoryOrders: boolean;
+      qrSeenNonces: boolean;
+      realtimeChannels: boolean;
+    };
+  } {
+    const isDevOrTest =
+      process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test';
+    const isDemo = process.env.DEMO_MODE === 'true';
+
+    if (!isDevOrTest || !isDemo || process.env.NODE_ENV === 'production') {
+      throw new UnauthorizedException(
+        'Demo reset is strictly disabled in production and unauthorized environments.',
+      );
     }
+
+    // 1. Reset in-memory QR replay nonces so demo QR tokens can be re-redeemed
+    this.qrTokenService.reset();
+
+    // 2. Reset in-memory demonstration food orders
+    this.demoOrderRepository?.reset();
+
+    // 3. Reset in-memory realtime channels, active stream subjects, and buffered events
+    this.realtimeService?.clearAll();
+
     return {
       success: true,
-      message: 'Demo state and fixtures reset successfully.',
+      message:
+        'Authorized demo in-memory state and fixture channels reset successfully.',
+      cleared: {
+        inMemoryOrders: true,
+        qrSeenNonces: true,
+        realtimeChannels: true,
+      },
     };
   }
 
