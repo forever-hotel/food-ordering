@@ -276,7 +276,7 @@ export function MenuItemDetail({ item, onBack }: MenuItemDetailProps) {
           {isSoldOut
             ? 'Item Sold Out'
             : isCutoff
-              ? 'Cutoff Passed'
+              ? 'Outside Ordering Hours'
               : remainingAllowance <= 0
                 ? 'Max Portion in Cart'
                 : 'Add to Cart'}

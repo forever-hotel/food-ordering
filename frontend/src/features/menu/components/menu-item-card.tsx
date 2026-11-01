@@ -31,7 +31,7 @@ export function MenuItemCard({ item, onSelect, onQuickAdd }: MenuItemCardProps) 
       role="button"
       tabIndex={0}
       aria-label={`${item.name}, ${formatLkrPrice(item.price)}. ${
-        isSoldOut ? 'Sold out.' : isCutoff ? 'Cutoff reached.' : 'Available to order.'
+        isSoldOut ? 'Sold out.' : isCutoff ? 'Outside ordering hours.' : 'Available to order.'
       } Click for details.`}
       onClick={() => onSelect(item)}
       onKeyDown={(e) => {
@@ -79,8 +79,8 @@ export function MenuItemCard({ item, onSelect, onQuickAdd }: MenuItemCardProps) 
                 Unavailable
               </Tag>
             ) : isCutoff ? (
-              <Tag color="warning" className="text-[10px] font-semibold mr-0">
-                Cutoff
+              <Tag color="default" className="text-[10px] font-semibold mr-0 text-slate-500">
+                Outside Hours
               </Tag>
             ) : null}
           </div>
@@ -131,7 +131,7 @@ export function MenuItemCard({ item, onSelect, onQuickAdd }: MenuItemCardProps) 
               </button>
             ) : (
               <span className="text-xs text-slate-400 font-medium">
-                {isSoldOut ? 'Sold Out' : 'Cutoff Reached'}
+                {isSoldOut ? 'Sold Out' : 'Outside Hours'}
               </span>
             )}
           </div>
