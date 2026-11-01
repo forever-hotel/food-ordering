@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { Button, Card, Modal, Typography, message } from 'antd';
+import { App, Button, Card, Modal, Typography } from 'antd';
 import type { FoodOrderResponse, FoodOrderStatus } from '../../../types/orders.ts';
 import {
   advanceOrderStatusDemo,
@@ -28,6 +28,7 @@ interface OrderStatusTrackerProps {
 }
 
 export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps) {
+  const { message } = App.useApp();
   const { sessionToken, guest } = useAuth();
   const { setPageHeader, resetHeaderForTab } = useNavigation();
 

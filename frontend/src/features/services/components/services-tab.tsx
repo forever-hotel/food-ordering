@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { Button, Card, Input, Tag, Typography, message } from 'antd';
+import { App, Button, Card, Input, Tag, Typography } from 'antd';
 import type {
   ServiceRequestResponse,
   ServiceRequestStatus,
@@ -29,6 +29,7 @@ const { Title, Text, Paragraph } = Typography;
 const { TextArea } = Input;
 
 export function ServicesTab() {
+  const { message } = App.useApp();
   const { sessionToken, guest } = useAuth();
 
   const [selectedType, setSelectedType] = useState<ServiceTypeOption>(
