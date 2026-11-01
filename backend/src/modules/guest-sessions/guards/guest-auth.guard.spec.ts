@@ -19,13 +19,19 @@ describe('GuestAuthGuard', () => {
 
   const createMockContext = (
     headers: Record<string, string>,
+    query?: Record<string, string>,
+    path?: string,
+    url?: string,
   ): ExecutionContext => {
     const request: {
       headers: Record<string, string>;
+      query?: Record<string, string>;
+      path?: string;
+      url?: string;
       guest?: unknown;
       sessionRecord?: unknown;
       sessionToken?: unknown;
-    } = { headers };
+    } = { headers, query, path, url };
 
     return {
       switchToHttp: () => ({
@@ -128,5 +134,81 @@ describe('GuestAuthGuard', () => {
     await expect(guard.canActivate(context)).rejects.toThrow(
       UnauthorizedException,
     );
+  });
+
+  it('allows access for SSE stream endpoint with query token when Bearer header is absent', async () => {
+    const session = new FossSession();
+    session.sessionId = 'sess-sse-1';
+    session.bookingId = 'book-sse-1';
+    session.roomNumber = '102';
+
+    const stay: BookingVerificationResultDto = {
+      valid: true,
+      bookingId: 'book-sse-1',
+      roomNumber: '102',
+      status: 'CHECKED_IN',
+      stayStart: '2026-10-27T10:00:00Z',
+      stayEnd: '2026-10-30T10:00:00Z',
+      guestName: 'Jane Doe',
+      verifiedAt: new Date().toISOString(),
+    };
+
+    mockGuestSessionsService.validateSessionToken.mockResolvedValue({
+      session,
+      stay,
+    });
+
+    const context = createMockContext(
+      { accept: 'text/event-stream' },
+      { token: 'valid-sse-token' },
+      '/realtime/events/stream',
+    );
+
+    const canActivate = await guard.canActivate(context);
+
+    expect(canActivate).toBe(true);
+    const request = context.switchToHttp().getRequest();
+    expect(request.guest).toEqual({
+      sessionId: 'sess-sse-1',
+      bookingId: 'book-sse-1',
+      guestId: 'sess-sse-1',
+      roomNumber: '102',
+      guestName: 'Jane Doe',
+      stayStart: '2026-10-27T10:00:00Z',
+      stayEnd: '2026-10-30T10:00:00Z',
+      role: 'GUEST',
+    });
+    expect(request.sessionToken).toBe('valid-sse-token');
+  });
+
+  it('throws UnauthorizedException when query token is passed to a non-SSE endpoint', async () => {
+    const context = createMockContext(
+      {},
+      { token: 'valid-token' },
+      '/orders',
+      '/orders?token=valid-token',
+    );
+
+    await expect(guard.canActivate(context)).rejects.toThrow(
+      UnauthorizedException,
+    );
+    expect(
+      mockGuestSessionsService.validateSessionToken,
+    ).not.toHaveBeenCalled();
+  });
+
+  it('throws UnauthorizedException when query token is empty string on SSE endpoint', async () => {
+    const context = createMockContext(
+      { accept: 'text/event-stream' },
+      { token: '   ' },
+      '/realtime/events/stream',
+    );
+
+    await expect(guard.canActivate(context)).rejects.toThrow(
+      UnauthorizedException,
+    );
+    expect(
+      mockGuestSessionsService.validateSessionToken,
+    ).not.toHaveBeenCalled();
   });
 });
