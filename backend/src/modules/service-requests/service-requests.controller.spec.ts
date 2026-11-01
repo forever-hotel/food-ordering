@@ -66,7 +66,7 @@ describe('ServiceRequestsController', () => {
   });
 
   describe('createServiceRequest()', () => {
-    it('delegates service request creation to ServiceRequestsService', async () => {
+    it('delegates service request creation to ServiceRequestsService using standard idempotency-key', async () => {
       const dto: CreateServiceRequestDto = {
         requestType: TaskType.EXTRA_TOWELS,
         description: 'Please bring 2 extra towels',
@@ -83,6 +83,48 @@ describe('ServiceRequestsController', () => {
         sampleGuest,
         dto,
         'idemp-sr-001',
+      );
+    });
+
+    it('falls back to x-idempotency-key when idempotency-key is not provided', async () => {
+      const dto: CreateServiceRequestDto = {
+        requestType: TaskType.EXTRA_TOWELS,
+        description: 'Please bring 2 extra towels',
+      };
+
+      const result = await controller.createServiceRequest(
+        sampleGuest,
+        dto,
+        undefined,
+        'idemp-sr-legacy-002',
+      );
+
+      expect(result).toEqual(sampleResponse);
+      expect(service.createServiceRequest).toHaveBeenCalledWith(
+        sampleGuest,
+        dto,
+        'idemp-sr-legacy-002',
+      );
+    });
+
+    it('prioritizes standard idempotency-key over x-idempotency-key when both are supplied', async () => {
+      const dto: CreateServiceRequestDto = {
+        requestType: TaskType.EXTRA_TOWELS,
+        description: 'Please bring 2 extra towels',
+      };
+
+      const result = await controller.createServiceRequest(
+        sampleGuest,
+        dto,
+        'idemp-sr-standard-003',
+        'idemp-sr-legacy-003',
+      );
+
+      expect(result).toEqual(sampleResponse);
+      expect(service.createServiceRequest).toHaveBeenCalledWith(
+        sampleGuest,
+        dto,
+        'idemp-sr-standard-003',
       );
     });
   });

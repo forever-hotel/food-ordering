@@ -172,6 +172,14 @@ export class ServiceRequestsService {
         const raceExisting =
           await this.requestRepository.findByIdempotencyKey(idempotencyKey);
         if (raceExisting) {
+          if (
+            raceExisting.roomNumber !== guest.roomNumber ||
+            raceExisting.bookingId !== guest.bookingId
+          ) {
+            throw new ForbiddenException(
+              'Idempotency key has already been used by a different room or booking.',
+            );
+          }
           return this.mapToResponse(raceExisting);
         }
       }

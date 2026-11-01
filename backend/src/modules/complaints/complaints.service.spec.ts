@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { UpstreamServiceUnavailableException } from '../../integrations/contracts/upstream-integration.exception.js';
+import { KmsProvider } from '../../integrations/internal-services/kms/interfaces/kms-provider.interface.js';
 import { MadComplaintProvider } from '../../integrations/internal-services/mad/interfaces/mad-complaint-provider.interface.js';
 import { RealtimeEventType } from '../../realtime/enums/realtime-event-type.enum.js';
 import { RealtimeService } from '../../realtime/realtime.service.js';
@@ -27,6 +29,7 @@ describe('ComplaintsService', () => {
   let serviceRequestRepo: jest.Mocked<FossServiceRequestRepository>;
   let configService: jest.Mocked<ConfigService>;
   let realtimeService: jest.Mocked<RealtimeService>;
+  let kmsProvider: jest.Mocked<KmsProvider>;
 
   const mockGuest: GuestContext = {
     sessionId: 'session-uuid-101',
@@ -111,6 +114,14 @@ describe('ComplaintsService', () => {
       emitToStay: jest.fn() as any,
     } as unknown as jest.Mocked<RealtimeService>;
 
+    kmsProvider = {
+      getOrder: jest.fn() as any,
+      getMenuCatalog: jest.fn() as any,
+      createOrder: jest.fn() as any,
+      cancelOrder: jest.fn() as any,
+      transitionOrderStatus: jest.fn() as any,
+    } as unknown as jest.Mocked<KmsProvider>;
+
     service = new ComplaintsService(
       complaintRepo,
       madProvider,
@@ -118,6 +129,7 @@ describe('ComplaintsService', () => {
       serviceRequestRepo,
       configService,
       realtimeService,
+      kmsProvider,
     );
   });
 
@@ -158,7 +170,7 @@ describe('ComplaintsService', () => {
       );
     });
 
-    it('returns existing complaint when duplicate idempotency key is replayed', async () => {
+    it('returns existing complaint when duplicate idempotency key is replayed by same room and booking', async () => {
       (complaintRepo.findByIdempotencyKey as any).mockResolvedValueOnce(
         existingComplaint,
       );
@@ -177,6 +189,215 @@ describe('ComplaintsService', () => {
       expect(complaintRepo.save).not.toHaveBeenCalled();
       expect(madProvider.fileComplaint).not.toHaveBeenCalled();
       expect(result.complaintId).toBe(existingComplaint.complaintId);
+    });
+
+    it('rejects duplicate idempotency key replayed by a different room with 403 Forbidden without disclosing details', async () => {
+      (complaintRepo.findByIdempotencyKey as any).mockResolvedValueOnce(
+        existingComplaint,
+      );
+
+      const crossRoomGuest: GuestContext = {
+        ...mockGuest,
+        roomNumber: '102',
+      };
+
+      await expect(
+        service.fileComplaint(
+          crossRoomGuest,
+          {
+            category: ComplaintCategory.FOOD,
+            severity: ComplaintSeverity.MEDIUM,
+            subject: 'Cold soup delivered',
+            description: 'The mushroom soup was completely cold.',
+          },
+          'idemp-existing-001',
+        ),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(complaintRepo.save).not.toHaveBeenCalled();
+      expect(madProvider.fileComplaint).not.toHaveBeenCalled();
+    });
+
+    it('rejects duplicate idempotency key replayed by a different booking with 403 Forbidden without disclosing details', async () => {
+      (complaintRepo.findByIdempotencyKey as any).mockResolvedValueOnce(
+        existingComplaint,
+      );
+
+      const crossBookingGuest: GuestContext = {
+        ...mockGuest,
+        bookingId: '660e8400-e29b-41d4-a716-446655440001',
+      };
+
+      await expect(
+        service.fileComplaint(
+          crossBookingGuest,
+          {
+            category: ComplaintCategory.FOOD,
+            severity: ComplaintSeverity.MEDIUM,
+            subject: 'Cold soup delivered',
+            description: 'The mushroom soup was completely cold.',
+          },
+          'idemp-existing-001',
+        ),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(complaintRepo.save).not.toHaveBeenCalled();
+      expect(madProvider.fileComplaint).not.toHaveBeenCalled();
+    });
+
+    it('rejects duplicate idempotency key replayed with changed payload with 409 Conflict', async () => {
+      (complaintRepo.findByIdempotencyKey as any).mockResolvedValueOnce(
+        existingComplaint,
+      );
+
+      await expect(
+        service.fileComplaint(
+          mockGuest,
+          {
+            category: ComplaintCategory.NOISE,
+            severity: ComplaintSeverity.HIGH,
+            subject: 'Loud music from next door',
+            description: 'Cannot sleep due to loud party.',
+          },
+          'idemp-existing-001',
+        ),
+      ).rejects.toThrow(ConflictException);
+
+      expect(complaintRepo.save).not.toHaveBeenCalled();
+      expect(madProvider.fileComplaint).not.toHaveBeenCalled();
+    });
+
+    it('handles concurrent race condition on UQ_foss_complaints_idempotency_key returning persisted complaint', async () => {
+      const dbUniqueError = Object.assign(
+        new Error(
+          'duplicate key value violates unique constraint "UQ_foss_complaints_idempotency_key"',
+        ),
+        {
+          code: '23505',
+        },
+      );
+      (complaintRepo.save as any).mockRejectedValueOnce(dbUniqueError);
+      (complaintRepo.findByIdempotencyKey as any)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(existingComplaint);
+
+      const result = await service.fileComplaint(
+        mockGuest,
+        {
+          category: ComplaintCategory.FOOD,
+          severity: ComplaintSeverity.MEDIUM,
+          subject: 'Cold soup delivered',
+          description: 'The mushroom soup was completely cold.',
+        },
+        'idemp-race-001',
+      );
+
+      expect(result.complaintId).toBe(existingComplaint.complaintId);
+    });
+
+    it('rejects concurrent race condition if race winner belongs to different room', async () => {
+      const dbUniqueError = Object.assign(
+        new Error(
+          'duplicate key value violates unique constraint "UQ_foss_complaints_idempotency_key"',
+        ),
+        {
+          code: '23505',
+        },
+      );
+      (complaintRepo.save as any).mockRejectedValueOnce(dbUniqueError);
+      (complaintRepo.findByIdempotencyKey as any)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          ...existingComplaint,
+          roomNumber: '999',
+        });
+
+      await expect(
+        service.fileComplaint(
+          mockGuest,
+          {
+            category: ComplaintCategory.FOOD,
+            severity: ComplaintSeverity.MEDIUM,
+            subject: 'Cold soup delivered',
+            description: 'The mushroom soup was completely cold.',
+          },
+          'idemp-race-002',
+        ),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('rejects concurrent race condition if race winner has different payload', async () => {
+      const dbUniqueError = Object.assign(
+        new Error(
+          'duplicate key value violates unique constraint "UQ_foss_complaints_idempotency_key"',
+        ),
+        {
+          code: '23505',
+        },
+      );
+      (complaintRepo.save as any).mockRejectedValueOnce(dbUniqueError);
+      (complaintRepo.findByIdempotencyKey as any)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          ...existingComplaint,
+          category: ComplaintCategory.STAFF,
+        });
+
+      await expect(
+        service.fileComplaint(
+          mockGuest,
+          {
+            category: ComplaintCategory.FOOD,
+            severity: ComplaintSeverity.MEDIUM,
+            subject: 'Cold soup delivered',
+            description: 'The mushroom soup was completely cold.',
+          },
+          'idemp-race-003',
+        ),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('does not swallow unrelated unique violations (e.g., PK collision)', async () => {
+      const dbPkError = Object.assign(
+        new Error(
+          'duplicate key value violates unique constraint "foss_complaints_pkey"',
+        ),
+        {
+          code: '23505',
+        },
+      );
+      (complaintRepo.save as any).mockRejectedValueOnce(dbPkError);
+
+      await expect(
+        service.fileComplaint(
+          mockGuest,
+          {
+            category: ComplaintCategory.FOOD,
+            severity: ComplaintSeverity.MEDIUM,
+            subject: 'Cold soup delivered',
+            description: 'The mushroom soup was completely cold.',
+          },
+          'idemp-pk-collision',
+        ),
+      ).rejects.toThrow('foss_complaints_pkey');
+    });
+
+    it('does not convert non-unique database errors into false successes', async () => {
+      const dbConnError = new Error('Connection terminated unexpectedly');
+      (complaintRepo.save as any).mockRejectedValueOnce(dbConnError);
+
+      await expect(
+        service.fileComplaint(
+          mockGuest,
+          {
+            category: ComplaintCategory.FOOD,
+            severity: ComplaintSeverity.MEDIUM,
+            subject: 'Cold soup delivered',
+            description: 'The mushroom soup was completely cold.',
+          },
+          'idemp-conn-err',
+        ),
+      ).rejects.toThrow('Connection terminated unexpectedly');
     });
 
     it('rejects complaint referencing foreign food order belonging to another room', async () => {
@@ -227,6 +448,110 @@ describe('ComplaintsService', () => {
           relatedRequestId: 'req-foreign-999',
         }),
       ).rejects.toThrow(BadRequestException);
+    });
+
+    it('validates canonical order reference via KMS provider when not in demo repository', async () => {
+      const canonicalOrderUuid = 'a1b2c3d4-e5f6-4a1b-8c2d-3e4f5a6b7c8d';
+      (orderRepo.findById as any).mockResolvedValueOnce(null);
+      (kmsProvider.getOrder as any).mockResolvedValueOnce({
+        orderId: canonicalOrderUuid,
+        roomNumber: mockGuest.roomNumber,
+        bookingId: mockGuest.bookingId,
+        status: 'DELIVERED',
+        totalAmount: 45,
+        items: [],
+        createdAt: '2026-10-29T20:00:00.000Z',
+        updatedAt: '2026-10-29T20:00:00.000Z',
+        version: '1.0',
+      });
+
+      await service.fileComplaint(mockGuest, {
+        category: ComplaintCategory.FOOD,
+        severity: ComplaintSeverity.LOW,
+        subject: 'Missing cutlery',
+        description: 'No spoon delivered with meal.',
+        relatedOrderId: canonicalOrderUuid,
+      });
+
+      expect(kmsProvider.getOrder).toHaveBeenCalledWith(canonicalOrderUuid);
+      expect(complaintRepo.save).toHaveBeenCalledTimes(1);
+      const saved = (complaintRepo.save as any).mock.calls[0][0];
+      expect(saved.referencedOrderId).toBe(canonicalOrderUuid);
+    });
+
+    it('rejects complaint referencing canonical KMS order belonging to a different room', async () => {
+      const canonicalOrderUuid = 'a1b2c3d4-e5f6-4a1b-8c2d-3e4f5a6b7c8d';
+      (orderRepo.findById as any).mockResolvedValueOnce(null);
+      (kmsProvider.getOrder as any).mockResolvedValueOnce({
+        orderId: canonicalOrderUuid,
+        roomNumber: '999',
+        bookingId: mockGuest.bookingId,
+        status: 'DELIVERED',
+        totalAmount: 45,
+        items: [],
+        createdAt: '2026-10-29T20:00:00.000Z',
+        updatedAt: '2026-10-29T20:00:00.000Z',
+        version: '1.0',
+      });
+
+      await expect(
+        service.fileComplaint(mockGuest, {
+          category: ComplaintCategory.FOOD,
+          severity: ComplaintSeverity.LOW,
+          subject: 'Foreign KMS order test',
+          description: 'Testing KMS room isolation.',
+          relatedOrderId: canonicalOrderUuid,
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects complaint referencing canonical KMS order belonging to a different booking', async () => {
+      const canonicalOrderUuid = 'a1b2c3d4-e5f6-4a1b-8c2d-3e4f5a6b7c8d';
+      (orderRepo.findById as any).mockResolvedValueOnce(null);
+      (kmsProvider.getOrder as any).mockResolvedValueOnce({
+        orderId: canonicalOrderUuid,
+        roomNumber: mockGuest.roomNumber,
+        bookingId: '770e8400-e29b-41d4-a716-446655440002',
+        status: 'DELIVERED',
+        totalAmount: 45,
+        items: [],
+        createdAt: '2026-10-29T20:00:00.000Z',
+        updatedAt: '2026-10-29T20:00:00.000Z',
+        version: '1.0',
+      });
+
+      await expect(
+        service.fileComplaint(mockGuest, {
+          category: ComplaintCategory.FOOD,
+          severity: ComplaintSeverity.LOW,
+          subject: 'Foreign KMS booking test',
+          description: 'Testing KMS booking isolation.',
+          relatedOrderId: canonicalOrderUuid,
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('resolves service request reference to canonical UUID and validates ownership', async () => {
+      const canonicalUuid = 'c0a80101-0000-4000-8000-000000000001';
+      (serviceRequestRepo.findById as any).mockResolvedValueOnce({
+        requestId: canonicalUuid,
+        bookingId: mockGuest.bookingId,
+        roomNumber: mockGuest.roomNumber,
+      });
+
+      await service.fileComplaint(mockGuest, {
+        category: ComplaintCategory.SERVICE,
+        severity: ComplaintSeverity.LOW,
+        subject: 'Towels delayed',
+        description: 'Towels took 1 hour to arrive.',
+        relatedRequestId: 'req-public-ref-101',
+      });
+
+      expect(serviceRequestRepo.findById).toHaveBeenCalledWith(
+        'req-public-ref-101',
+      );
+      const saved = (complaintRepo.save as any).mock.calls[0][0];
+      expect(saved.referencedRequestId).toBe(canonicalUuid);
     });
 
     it('persists complaint safely in Neon even when MAD upstream is unavailable', async () => {
