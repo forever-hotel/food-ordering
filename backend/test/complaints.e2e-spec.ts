@@ -83,6 +83,9 @@ describe('Guest Complaints Management (e2e)', () => {
         if (!toSave.createdAt) toSave.createdAt = new Date();
         toSave.updatedAt = new Date();
         inMemoryComplaints.set(toSave.complaintId, toSave);
+        if (toSave.publicReference) {
+          inMemoryComplaints.set(toSave.publicReference, toSave);
+        }
         return toSave;
       },
       findById: async (id: string) => inMemoryComplaints.get(id) ?? null,

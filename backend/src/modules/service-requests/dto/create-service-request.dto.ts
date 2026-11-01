@@ -20,7 +20,7 @@ export class CreateServiceRequestDto {
   @IsNotEmpty({ message: 'requestType is required' })
   @IsEnum(TaskType, {
     message:
-      'requestType must be one of the approved categories: EXTRA_TOWELS, ROOM_CLEANING, TOILETRIES, MAINTENANCE, LUGGAGE_ASSISTANCE, OTHER',
+      'requestType must be one of the approved categories: EXTRA_TOWELS, ROOM_CLEANING, TOILETRIES, MAINTENANCE, LUGGAGE_ASSISTANCE, LAUNDRY_PICKUP, OTHER',
   })
   requestType!: string;
 

@@ -1,43 +1,92 @@
-import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Injectable, Logger } from '@nestjs/common';
 import { FossDemoOrder } from '../entities/foss-demo-order.entity.js';
 
+/**
+ * In-memory repository for demonstration food orders.
+ *
+ * NOTE: In accordance with Organization ADR-003, KMS (Kitchen Management System) is the sole
+ * authoritative owner of food orders (kms_food_orders). FOSS maintains demonstration food order
+ * state purely in-memory for local development, demo flows, and automated testing.
+ *
+ * PERSISTENCE LIFECYCLE:
+ * - Orders remain in memory across API requests while the NestJS backend process is running.
+ * - Demonstration orders reset and disappear when the backend service restarts.
+ * - Canonical food ordering in production is delegated directly to KMS via RealKmsAdapter.
+ */
 @Injectable()
 export class FossDemoOrderRepository {
-  constructor(
-    @InjectRepository(FossDemoOrder)
-    private readonly repository: Repository<FossDemoOrder>,
-  ) {}
+  private readonly logger = new Logger(FossDemoOrderRepository.name);
+  private readonly orders: Map<string, FossDemoOrder> = new Map();
 
   public async findById(orderId: string): Promise<FossDemoOrder | null> {
-    return this.repository.findOne({
-      where: { orderId },
-      relations: { items: true },
-    });
+    const order = this.orders.get(orderId);
+    return order ? this.clone(order) : null;
   }
 
   public async findByIdempotencyKey(
     idempotencyKey: string,
   ): Promise<FossDemoOrder | null> {
-    return this.repository.findOne({
-      where: { idempotencyKey },
-      relations: { items: true },
-    });
+    for (const order of this.orders.values()) {
+      if (order.idempotencyKey === idempotencyKey) {
+        return this.clone(order);
+      }
+    }
+    return null;
   }
 
   public async findByBookingAndRoom(
     bookingId: string,
     roomNumber: string,
   ): Promise<FossDemoOrder[]> {
-    return this.repository.find({
-      where: { bookingId, roomNumber },
-      relations: { items: true },
-      order: { createdAt: 'DESC' },
+    const results: FossDemoOrder[] = [];
+    for (const order of this.orders.values()) {
+      if (order.bookingId === bookingId && order.roomNumber === roomNumber) {
+        results.push(this.clone(order));
+      }
+    }
+    return results.sort((a, b) => {
+      const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return bTime - aTime;
     });
   }
 
   public async save(order: FossDemoOrder): Promise<FossDemoOrder> {
-    return this.repository.save(order);
+    if (!order.orderId) {
+      throw new Error('Cannot save an order without an orderId.');
+    }
+
+    // Check for duplicate idempotency key on a different orderId (simulate unique constraint)
+    for (const existing of this.orders.values()) {
+      if (
+        existing.idempotencyKey === order.idempotencyKey &&
+        existing.orderId !== order.orderId
+      ) {
+        const error = new Error(
+          `duplicate key value violates unique constraint "UQ_foss_demo_orders_idempotency_key"`,
+        ) as Error & { code?: string };
+        error.code = '23505';
+        throw error;
+      }
+    }
+
+    const cloned = this.clone(order);
+    this.orders.set(order.orderId, cloned);
+    return this.clone(cloned);
+  }
+
+  /**
+   * Resets the in-memory state cleanly for unit and integration testing.
+   */
+  public reset(): void {
+    this.orders.clear();
+  }
+
+  private clone(order: FossDemoOrder): FossDemoOrder {
+    const copy = Object.assign(new FossDemoOrder(), order);
+    if (order.items) {
+      copy.items = order.items.map((i) => Object.assign({}, i));
+    }
+    return copy;
   }
 }

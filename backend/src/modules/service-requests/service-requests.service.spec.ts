@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   NotFoundException,
@@ -136,6 +137,23 @@ describe('ServiceRequestsService', () => {
       await expect(
         service.createServiceRequest(sampleGuest, validDto),
       ).rejects.toThrow(UpstreamServiceUnavailableException);
+    });
+
+    it('rejects unsupported categories pending cross-subsystem enum approval safely', async () => {
+      mockConfigService.get.mockReturnValue('false');
+      await expect(
+        service.createServiceRequest(sampleGuest, {
+          requestType: 'TOILETRIES',
+          description: 'Need shampoo',
+        }),
+      ).rejects.toThrow(BadRequestException);
+
+      await expect(
+        service.createServiceRequest(sampleGuest, {
+          requestType: 'LUGGAGE_ASSISTANCE',
+          description: 'Help with bags',
+        }),
+      ).rejects.toThrow(BadRequestException);
     });
 
     it('handles concurrent duplicate key race condition gracefully', async () => {

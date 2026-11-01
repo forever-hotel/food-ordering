@@ -1,4 +1,6 @@
+import { randomUUID } from 'node:crypto';
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Inject,
@@ -65,6 +67,21 @@ export class ServiceRequestsService {
       dto.idempotencyKey ||
       `idemp-sr-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
 
+    // Validate that category is supported in the shared Neon schema (reject in production / real integration)
+    const isMock =
+      this.configService.get<string>('MOCK_EXTERNAL_SERVICES') === 'true';
+    const isDemo = this.configService.get<string>('DEMO_MODE') === 'true';
+    if (!isMock && !isDemo) {
+      if (
+        dto.requestType === 'TOILETRIES' ||
+        dto.requestType === 'LUGGAGE_ASSISTANCE'
+      ) {
+        throw new BadRequestException(
+          `Service request category [${dto.requestType}] is pending cross-subsystem enum approval in shared database schema.`,
+        );
+      }
+    }
+
     // Check for existing request with this idempotency key
     const existing =
       await this.requestRepository.findByIdempotencyKey(idempotencyKey);
@@ -111,19 +128,30 @@ export class ServiceRequestsService {
     }
 
     const now = new Date();
-    const requestId =
+    const publicRef =
       wkmsResult.taskId ||
       `req-sr-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    const isUuid = (val?: string): boolean =>
+      Boolean(
+        val &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          val,
+        ),
+      );
+    const requestUuid = isUuid(wkmsResult.taskId)
+      ? (wkmsResult.taskId as string)
+      : randomUUID();
 
     const entity = new FossServiceRequest();
-    entity.requestId = requestId;
+    entity.requestId = requestUuid;
+    entity.publicReference = publicRef;
     entity.bookingId = guest.bookingId;
     entity.roomNumber = guest.roomNumber;
-    entity.requestType = dto.requestType;
+    entity.category = dto.requestType;
     entity.description = dto.description ?? null;
     entity.status = wkmsResult.status || ServiceRequestStatus.SUBMITTED;
     entity.priority = priority;
-    entity.taskId = wkmsResult.taskId || requestId;
+    entity.taskId = wkmsResult.taskId || requestUuid;
     entity.assignedStaff = wkmsResult.assignedStaff ?? null;
     entity.estimatedCompletionMinutes =
       wkmsResult.estimatedCompletionMinutes ?? 20;
@@ -400,7 +428,7 @@ export class ServiceRequestsService {
         : now;
 
     return {
-      requestId: request.requestId,
+      requestId: request.publicReference || request.requestId,
       roomNumber: request.roomNumber,
       bookingId: request.bookingId,
       requestType: request.requestType,
@@ -410,7 +438,7 @@ export class ServiceRequestsService {
       assignedStaff: request.assignedStaff ?? null,
       estimatedCompletionMinutes: request.estimatedCompletionMinutes,
       taskId: request.taskId ?? null,
-      idempotencyKey: request.idempotencyKey,
+      idempotencyKey: request.idempotencyKey || '',
       createdAt: createdAtDate.toISOString(),
       updatedAt: updatedAtDate.toISOString(),
       timeline: this.buildTimeline(request, createdAtDate, updatedAtDate),

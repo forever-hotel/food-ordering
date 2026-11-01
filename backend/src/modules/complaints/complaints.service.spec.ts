@@ -135,7 +135,8 @@ describe('ComplaintsService', () => {
 
       expect(complaintRepo.save).toHaveBeenCalledTimes(1);
       const saved = (complaintRepo.save as any).mock.calls[0][0];
-      expect(saved.complaintId).toMatch(/^CMP-\d{8}-[A-F0-9]{6}$/);
+      expect(saved.publicReference).toMatch(/^CMP-\d{8}-[A-F0-9]{6}$/);
+      expect(saved.complaintId).toBeDefined();
       expect(saved.subject).toBe('Spoiled dessert delivered');
       expect(saved.description).toContain('[REDACTED_CARD]');
       expect(saved.assignedManager).toBe('Manager Sarah');
@@ -147,12 +148,14 @@ describe('ComplaintsService', () => {
         mockGuest.roomNumber,
         RealtimeEventType.COMPLAINT_STATUS_UPDATED,
         expect.objectContaining({
-          complaintId: saved.complaintId,
+          complaintId: saved.publicReference || saved.complaintId,
           subject: 'Spoiled dessert delivered',
         }),
       );
 
-      expect(result.complaintId).toBe(saved.complaintId);
+      expect(result.complaintId).toBe(
+        saved.publicReference || saved.complaintId,
+      );
     });
 
     it('returns existing complaint when duplicate idempotency key is replayed', async () => {
@@ -236,7 +239,7 @@ describe('ComplaintsService', () => {
 
       const result = await service.fileComplaint(mockGuest, {
         category: ComplaintCategory.CLEANLINESS,
-        severity: ComplaintSeverity.URGENT,
+        severity: ComplaintSeverity.HIGH,
         subject: 'Bathroom leak detected',
         description: 'Water leaking under the bathroom vanity.',
       });
@@ -246,6 +249,18 @@ describe('ComplaintsService', () => {
       expect(result.assignedManager).toBeNull();
       expect(result.resolutionNotes).toBeNull();
       expect(result.complaintId).toMatch(/^CMP-/);
+    });
+
+    it('rejects URGENT severity pending cross-subsystem enum approval safely', async () => {
+      (configService.get as any).mockReturnValue('false');
+      await expect(
+        service.fileComplaint(mockGuest, {
+          category: ComplaintCategory.CLEANLINESS,
+          severity: ComplaintSeverity.URGENT,
+          subject: 'Flooding emergency',
+          description: 'Water everywhere',
+        }),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 
@@ -393,6 +408,23 @@ describe('ComplaintsService', () => {
           existingComplaint.complaintId,
           {
             status: ComplaintStatus.SUBMITTED,
+          },
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects status advancement to ESCALATED pending shared enum approval', async () => {
+      (complaintRepo.findById as any).mockResolvedValueOnce({
+        ...existingComplaint,
+        status: ComplaintStatus.SUBMITTED,
+      });
+
+      await expect(
+        service.advanceComplaintStatus(
+          mockGuest,
+          existingComplaint.complaintId,
+          {
+            status: ComplaintStatus.ESCALATED,
           },
         ),
       ).rejects.toThrow(BadRequestException);

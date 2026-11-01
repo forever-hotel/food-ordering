@@ -13,7 +13,7 @@ export class CreateFossQrActivations1791900000004 implements MigrationInterface 
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
-      CREATE TABLE "foss_qr_activations" (
+      CREATE TABLE IF NOT EXISTS "foss_qr_activations" (
         "activation_id" UUID NOT NULL DEFAULT gen_random_uuid(),
         "booking_id" UUID NOT NULL,
         "room_number" VARCHAR(10) NOT NULL,

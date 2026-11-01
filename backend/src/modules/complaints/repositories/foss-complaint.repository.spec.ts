@@ -44,12 +44,27 @@ describe('FossComplaintRepository', () => {
     expect(result).toEqual(mockComplaint);
   });
 
-  it('finds a complaint by complaintId', async () => {
+  it('finds a complaint by public reference (non-UUID)', async () => {
     const result = await repository.findById('CMP-20261029-A1B2C3');
     expect(typeOrmRepo.findOne).toHaveBeenCalledWith({
-      where: { complaintId: 'CMP-20261029-A1B2C3' },
+      where: { publicReference: 'CMP-20261029-A1B2C3' },
     });
     expect(result).toEqual(mockComplaint);
+  });
+
+  it('finds a complaint by canonical UUID', async () => {
+    const validUuid = '550e8400-e29b-41d4-a716-446655440000';
+    const result = await repository.findById(validUuid);
+    expect(typeOrmRepo.findOne).toHaveBeenCalledWith({
+      where: [{ complaintId: validUuid }, { publicReference: validUuid }],
+    });
+    expect(result).toEqual(mockComplaint);
+  });
+
+  it('returns null for empty or invalid complaintId types', async () => {
+    expect(await repository.findById('')).toBeNull();
+    expect(await repository.findById('   ')).toBeNull();
+    expect(await repository.findById(null as any)).toBeNull();
   });
 
   it('finds a complaint by idempotencyKey', async () => {
