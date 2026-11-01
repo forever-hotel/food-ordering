@@ -5,8 +5,7 @@ export const RealtimeEventType = {
   SESSION_REVOKED: 'SESSION_REVOKED',
   HEARTBEAT: 'HEARTBEAT',
 } as const;
-export type RealtimeEventType =
-  (typeof RealtimeEventType)[keyof typeof RealtimeEventType];
+export type RealtimeEventType = (typeof RealtimeEventType)[keyof typeof RealtimeEventType];
 
 export interface FossRealtimeEvent<T = unknown> {
   eventId: string;
@@ -41,6 +40,9 @@ export interface RealtimeClientConfig {
   onStatusChange?: (status: ConnectionStatus) => void;
 }
 
+import { getDataMode } from '../data-mode/data-mode.ts';
+import { DemoStateStore } from '../data-mode/demo/demo-state-store.ts';
+
 export class FossRealtimeClient {
   private status: ConnectionStatus = 'DISCONNECTED';
   private reconnectAttempts = 0;
@@ -55,6 +57,7 @@ export class FossRealtimeClient {
   private lastVersion = 0;
   private readonly seenEventIds = new Set<string>();
   private readonly config: RealtimeClientConfig;
+  private demoUnsubscribe: (() => void) | null = null;
 
   constructor(config: RealtimeClientConfig) {
     this.config = config;
@@ -82,7 +85,21 @@ export class FossRealtimeClient {
 
     this.setStatus('CONNECTING');
 
-    // If EventSource is available in the environment (e.g. browser), attempt SSE
+    // In Demo Mode, hook directly into the deterministic DemoStateStore event emitter
+    if (getDataMode() === 'demo') {
+      this.setStatus('CONNECTED');
+      this.demoUnsubscribe = DemoStateStore.getInstance().addRealtimeListener((event) => {
+        if (
+          event.roomNumber === this.config.roomNumber &&
+          event.bookingId === this.config.bookingId
+        ) {
+          this.config.onEvent?.(event);
+        }
+      });
+      return;
+    }
+
+    // In API Mode: if EventSource is available, attempt real SSE stream
     if (typeof EventSource !== 'undefined') {
       this.initEventSource();
     } else {
@@ -94,6 +111,11 @@ export class FossRealtimeClient {
   public disconnect(): void {
     this.setStatus('DISCONNECTED');
     this.reconnectAttempts = 0;
+
+    if (this.demoUnsubscribe) {
+      this.demoUnsubscribe();
+      this.demoUnsubscribe = null;
+    }
 
     if (this.eventSource) {
       this.eventSource.close();
