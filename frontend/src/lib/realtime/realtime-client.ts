@@ -1,3 +1,6 @@
+import { getDataMode } from '../data-mode/data-mode.ts';
+import { DemoStateStore } from '../data-mode/demo/demo-state-store.ts';
+
 export const RealtimeEventType = {
   FOOD_ORDER_STATUS_UPDATED: 'FOOD_ORDER_STATUS_UPDATED',
   SERVICE_REQUEST_STATUS_UPDATED: 'SERVICE_REQUEST_STATUS_UPDATED',
@@ -40,8 +43,26 @@ export interface RealtimeClientConfig {
   onStatusChange?: (status: ConnectionStatus) => void;
 }
 
-import { getDataMode } from '../data-mode/data-mode.ts';
-import { DemoStateStore } from '../data-mode/demo/demo-state-store.ts';
+/**
+ * Global registry of active realtime clients across tabs and components.
+ * Enables immediate teardown when data mode switches or guests log out.
+ */
+const activeRealtimeClients = new Set<FossRealtimeClient>();
+
+/**
+ * Forcibly disconnects and cleans up all active SSE streams and demo subscribers.
+ * Prevents cross-room event contamination during mode and room transitions.
+ */
+export function disconnectAllRealtimeClients(): void {
+  for (const client of activeRealtimeClients) {
+    try {
+      client.disconnect();
+    } catch {
+      // Safe teardown isolation
+    }
+  }
+  activeRealtimeClients.clear();
+}
 
 export class FossRealtimeClient {
   private status: ConnectionStatus = 'DISCONNECTED';
@@ -83,6 +104,7 @@ export class FossRealtimeClient {
       return;
     }
 
+    activeRealtimeClients.add(this);
     this.setStatus('CONNECTING');
 
     // In Demo Mode, hook directly into the deterministic DemoStateStore event emitter
@@ -109,6 +131,7 @@ export class FossRealtimeClient {
   }
 
   public disconnect(): void {
+    activeRealtimeClients.delete(this);
     this.setStatus('DISCONNECTED');
     this.reconnectAttempts = 0;
 

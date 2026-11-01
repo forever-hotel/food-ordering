@@ -5,6 +5,7 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
   useSyncExternalStore,
 } from 'react';
@@ -14,21 +15,45 @@ import {
   fetchDemoTokens,
   logoutSession,
   redeemQrToken,
-} from '../api/guest-sessions';
-import type { AuthStatus, GuestContext, GuestSessionResponse } from '../../types/guest-session';
-
-const SESSION_STORAGE_KEY = 'foss_guest_session_token';
+} from '../api/guest-sessions.ts';
+import type { AuthStatus, GuestContext, GuestSessionResponse } from '../../types/guest-session.ts';
+import {
+  getDataMode,
+  getSessionStorageKey,
+  DATA_MODE_CHANGE_EVENT,
+  LEGACY_SESSION_STORAGE_KEY,
+} from '../data-mode/data-mode.ts';
+import { disconnectAllRealtimeClients } from '../realtime/realtime-client.ts';
 
 function subscribeStorage(callback: () => void) {
+  if (typeof window === 'undefined') return () => {};
   window.addEventListener('storage', callback);
-  return () => window.removeEventListener('storage', callback);
+  window.addEventListener(DATA_MODE_CHANGE_EVENT, callback);
+  return () => {
+    window.removeEventListener('storage', callback);
+    window.removeEventListener(DATA_MODE_CHANGE_EVENT, callback);
+  };
 }
 
 function getStoredToken(): string | null {
   try {
-    return typeof window !== 'undefined'
-      ? window.sessionStorage.getItem(SESSION_STORAGE_KEY)
-      : null;
+    if (typeof window === 'undefined') return null;
+    const mode = getDataMode();
+    const partitionedKey = getSessionStorageKey(mode);
+    const token = window.sessionStorage.getItem(partitionedKey);
+    if (token) return token;
+
+    // Check legacy unpartitioned key only if valid for mode
+    const legacy = window.sessionStorage.getItem(LEGACY_SESSION_STORAGE_KEY);
+    if (legacy) {
+      const isDemoToken = legacy.startsWith('demo-token-');
+      if ((mode === 'demo' && isDemoToken) || (mode === 'api' && !isDemoToken)) {
+        window.sessionStorage.setItem(partitionedKey, legacy);
+        window.sessionStorage.removeItem(LEGACY_SESSION_STORAGE_KEY);
+        return legacy;
+      }
+    }
+    return null;
   } catch {
     return null;
   }
@@ -56,21 +81,55 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const initialToken = useSyncExternalStore(subscribeStorage, getStoredToken, getServerStoredToken);
   const [explicitToken, setExplicitToken] = useState<string | null>(null);
-  const [status, setStatus] = useState<AuthStatus>('idle');
+  const [status, setStatus] = useState<AuthStatus>(() => (getStoredToken() ? 'loading' : 'idle'));
   const [guest, setGuest] = useState<GuestContext | null>(null);
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [demoTokens, setDemoTokens] = useState<Record<string, string>>({});
 
+  // Generation counter to eliminate asynchronous race conditions
+  const requestIdRef = useRef<number>(0);
+
   const sessionToken = explicitToken ?? initialToken;
 
   // Load demo tokens in background
   useEffect(() => {
+    const reqId = requestIdRef.current;
     fetchDemoTokens().then((tokens) => {
-      if (tokens && Object.keys(tokens).length > 0) {
+      if (reqId === requestIdRef.current && tokens && Object.keys(tokens).length > 0) {
         setDemoTokens(tokens);
       }
     });
+  }, []);
+
+  // Listen for data mode change events: invalidate in-flight requests, disconnect realtime, and reset state
+  useEffect(() => {
+    const handleModeChange = () => {
+      const reqId = ++requestIdRef.current;
+      disconnectAllRealtimeClients();
+      setExplicitToken(null);
+      setGuest(null);
+      setExpiresAt(null);
+      setError(null);
+      setStatus('idle');
+
+      // Re-read stored token for new mode
+      const newStoredToken = getStoredToken();
+      if (newStoredToken) {
+        setExplicitToken(newStoredToken);
+      }
+
+      fetchDemoTokens()
+        .then((tokens) => {
+          if (reqId === requestIdRef.current) {
+            setDemoTokens(tokens || {});
+          }
+        })
+        .catch(() => {});
+    };
+
+    window.addEventListener(DATA_MODE_CHANGE_EVENT, handleModeChange);
+    return () => window.removeEventListener(DATA_MODE_CHANGE_EVENT, handleModeChange);
   }, []);
 
   // Hydrate session if stored token was found
@@ -79,14 +138,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    const currentReqId = ++requestIdRef.current;
+
     fetchCurrentSession(sessionToken)
       .then((guestData) => {
+        if (currentReqId !== requestIdRef.current) {
+          // Stale hydration cancelled by subsequent user action
+          return;
+        }
         setGuest(guestData);
         setStatus('authenticated');
+        setError(null);
       })
       .catch((err) => {
+        if (currentReqId !== requestIdRef.current) {
+          return;
+        }
         if (typeof window !== 'undefined') {
-          window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
+          window.sessionStorage.removeItem(getSessionStorageKey(getDataMode()));
         }
         setExplicitToken(null);
         setGuest(null);
@@ -96,11 +165,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [sessionToken]);
 
   const loginWithQr = useCallback(async (qrToken: string): Promise<boolean> => {
+    const currentReqId = ++requestIdRef.current;
     setStatus('loading');
     setError(null);
 
     try {
       const response: GuestSessionResponse = await redeemQrToken(qrToken);
+      if (currentReqId !== requestIdRef.current) {
+        return false;
+      }
+
       setExplicitToken(response.sessionToken);
       setExpiresAt(response.expiresAt);
       setGuest({
@@ -109,12 +183,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (typeof window !== 'undefined') {
-        window.sessionStorage.setItem(SESSION_STORAGE_KEY, response.sessionToken);
+        window.sessionStorage.setItem(getSessionStorageKey(getDataMode()), response.sessionToken);
       }
 
       setStatus('authenticated');
       return true;
     } catch (err: unknown) {
+      if (currentReqId !== requestIdRef.current) {
+        return false;
+      }
       const errorMsg =
         err instanceof Error ? err.message : 'Failed to authenticate QR code. Please try again.';
       setError(errorMsg);
@@ -124,16 +201,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
-    if (sessionToken) {
-      try {
-        await logoutSession(sessionToken);
-      } catch {
-        // Safe fail-closed logout
-      }
-    }
+    ++requestIdRef.current;
+    disconnectAllRealtimeClients();
+
+    const tokenToRevoke = sessionToken;
 
     if (typeof window !== 'undefined') {
-      window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
+      window.sessionStorage.removeItem(getSessionStorageKey(getDataMode()));
+      window.sessionStorage.removeItem(LEGACY_SESSION_STORAGE_KEY);
     }
 
     setExplicitToken(null);
@@ -141,6 +216,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setExpiresAt(null);
     setError(null);
     setStatus('idle');
+
+    if (tokenToRevoke) {
+      try {
+        await logoutSession(tokenToRevoke);
+      } catch {
+        // Safe fail-closed logout
+      }
+    }
   }, [sessionToken]);
 
   const clearError = useCallback(() => {
@@ -152,14 +235,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const refreshSession = useCallback(async () => {
     if (!sessionToken) return;
+    const currentReqId = ++requestIdRef.current;
 
     try {
       const guestData = await fetchCurrentSession(sessionToken);
+      if (currentReqId !== requestIdRef.current) return;
       setGuest(guestData);
       setStatus('authenticated');
     } catch {
+      if (currentReqId !== requestIdRef.current) return;
       if (typeof window !== 'undefined') {
-        window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
+        window.sessionStorage.removeItem(getSessionStorageKey(getDataMode()));
       }
       setExplicitToken(null);
       setGuest(null);
