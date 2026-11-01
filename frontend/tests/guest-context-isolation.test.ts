@@ -46,7 +46,11 @@ describe('Regression Tests: Strict Guest Context Enforcement & Missing Context S
         oldRoomEvent.data.roomNumber === stay104Client.getSubscriptionContext().roomNumber &&
         oldRoomEvent.data.bookingId === stay104Client.getSubscriptionContext().bookingId;
 
-      assert.equal(isForCurrentStay, false, 'Event for previous room 103 must not be accepted by Room 104 stay');
+      assert.equal(
+        isForCurrentStay,
+        false,
+        'Event for previous room 103 must not be accepted by Room 104 stay',
+      );
     });
   });
 

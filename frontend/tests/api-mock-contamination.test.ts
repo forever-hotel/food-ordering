@@ -11,11 +11,7 @@ import {
   createComplaint,
   fetchGuestComplaintById,
 } from '../src/lib/api/complaints.ts';
-import {
-  fetchGuestMenu,
-  fetchMenuItem,
-  fetchMealWindows,
-} from '../src/lib/api/menu.ts';
+import { fetchGuestMenu, fetchMenuItem, fetchMealWindows } from '../src/lib/api/menu.ts';
 import { placeFoodOrder } from '../src/lib/api/orders.ts';
 
 describe('Regression Tests: Elimination of Mock Contamination in Authenticated Flows (#101, FUI-03)', () => {

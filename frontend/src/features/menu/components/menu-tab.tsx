@@ -244,7 +244,11 @@ export function MenuTab() {
           (item.category.toLowerCase().includes('tea') ||
             item.category.toLowerCase().includes('beverage')));
 
-      if (inPeriod && item.category && item.category.toLowerCase() !== selectedCategory.toLowerCase()) {
+      if (
+        inPeriod &&
+        item.category &&
+        item.category.toLowerCase() !== selectedCategory.toLowerCase()
+      ) {
         courseSet.add(item.category);
       }
     }

@@ -363,11 +363,7 @@ export function ComplaintsTab() {
     }
 
     try {
-      const result = await createComplaint(
-        payload,
-        sessionToken,
-        idempotencyKeyRef.current,
-      );
+      const result = await createComplaint(payload, sessionToken, idempotencyKeyRef.current);
 
       // Successfully submitted - update complaint list
       setComplaints((prev) => [

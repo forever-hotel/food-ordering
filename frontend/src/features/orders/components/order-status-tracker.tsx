@@ -230,11 +230,7 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
     setCancelModalVisible(false);
 
     try {
-      const updated = await cancelFoodOrder(
-        sessionToken,
-        orderId,
-        'Guest requested cancellation',
-      );
+      const updated = await cancelFoodOrder(sessionToken, orderId, 'Guest requested cancellation');
       setOrder(updated);
       message.success('Your order has been cancelled.');
     } catch (err: unknown) {
@@ -255,11 +251,7 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
 
     setAdvancingDemo(true);
     try {
-      const updated = await advanceOrderStatusDemo(
-        sessionToken,
-        orderId,
-        targetStatus,
-      );
+      const updated = await advanceOrderStatusDemo(sessionToken, orderId, targetStatus);
       setOrder(updated);
       message.info(`Demo: Order status advanced to ${targetStatus}`);
     } catch {

@@ -79,11 +79,7 @@ export function CartView({ onBack, onPlaceOrder }: CartViewProps) {
     }
 
     try {
-      const order = await placeFoodOrder(
-        sessionToken,
-        payload,
-        idempotencyKeyRef.current,
-      );
+      const order = await placeFoodOrder(sessionToken, payload, idempotencyKeyRef.current);
 
       // Confirmed success: clear cart from session and present Figure 35 Confirmation
       clearCart();

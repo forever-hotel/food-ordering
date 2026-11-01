@@ -195,21 +195,45 @@ describe('Regression Tests: Menu Contract Alignment Between KMS Course Categorie
     const lunchItems = filterItems(mockKmsCatalog.items, 'Lunch');
     const itemNames = lunchItems.map((i) => i.name);
 
-    assert.ok(itemNames.includes('Truffle Mushroom Arancini'), 'Arancini (Starters) must appear under Lunch');
-    assert.ok(itemNames.includes('Signature Wagyu Burger'), 'Wagyu Burger (Mains) must appear under Lunch');
+    assert.ok(
+      itemNames.includes('Truffle Mushroom Arancini'),
+      'Arancini (Starters) must appear under Lunch',
+    );
+    assert.ok(
+      itemNames.includes('Signature Wagyu Burger'),
+      'Wagyu Burger (Mains) must appear under Lunch',
+    );
     assert.ok(itemNames.includes('Ceylon Milk Tea'), 'All Day tea must appear under Lunch');
-    assert.ok(itemNames.includes('Grilled Chicken Rice'), 'Legacy lunch category item must appear under Lunch');
-    assert.ok(!itemNames.includes('Classic Eggs Benedict'), 'Breakfast item must not appear under Lunch');
-    assert.ok(!itemNames.includes('Wild Atlantic Salmon'), 'Dinner-only salmon must not appear under Lunch');
+    assert.ok(
+      itemNames.includes('Grilled Chicken Rice'),
+      'Legacy lunch category item must appear under Lunch',
+    );
+    assert.ok(
+      !itemNames.includes('Classic Eggs Benedict'),
+      'Breakfast item must not appear under Lunch',
+    );
+    assert.ok(
+      !itemNames.includes('Wild Atlantic Salmon'),
+      'Dinner-only salmon must not appear under Lunch',
+    );
   });
 
   it('correctly displays KMS items under Breakfast tab', () => {
     const breakfastItems = filterItems(mockKmsCatalog.items, 'Breakfast');
     const itemNames = breakfastItems.map((i) => i.name);
 
-    assert.ok(itemNames.includes('Classic Eggs Benedict'), 'Eggs Benedict must appear under Breakfast');
-    assert.ok(itemNames.includes('Ceylon Milk Tea'), 'All Day beverage must appear under Breakfast');
-    assert.ok(!itemNames.includes('Wild Atlantic Salmon'), 'Dinner salmon must not appear under Breakfast');
+    assert.ok(
+      itemNames.includes('Classic Eggs Benedict'),
+      'Eggs Benedict must appear under Breakfast',
+    );
+    assert.ok(
+      itemNames.includes('Ceylon Milk Tea'),
+      'All Day beverage must appear under Breakfast',
+    );
+    assert.ok(
+      !itemNames.includes('Wild Atlantic Salmon'),
+      'Dinner salmon must not appear under Breakfast',
+    );
   });
 
   it('correctly displays KMS items under Dinner tab', () => {
@@ -217,9 +241,15 @@ describe('Regression Tests: Menu Contract Alignment Between KMS Course Categorie
     const itemNames = dinnerItems.map((i) => i.name);
 
     assert.ok(itemNames.includes('Wild Atlantic Salmon'), 'Dinner salmon must appear under Dinner');
-    assert.ok(itemNames.includes('Signature Wagyu Burger'), 'All-day/dinner burger must appear under Dinner');
+    assert.ok(
+      itemNames.includes('Signature Wagyu Burger'),
+      'All-day/dinner burger must appear under Dinner',
+    );
     assert.ok(itemNames.includes('Truffle Mushroom Arancini'), 'Arancini must appear under Dinner');
-    assert.ok(!itemNames.includes('Classic Eggs Benedict'), 'Breakfast item must not appear under Dinner');
+    assert.ok(
+      !itemNames.includes('Classic Eggs Benedict'),
+      'Breakfast item must not appear under Dinner',
+    );
   });
 
   it('supports course category filtering (Starters vs Mains) within Lunch meal period', () => {
