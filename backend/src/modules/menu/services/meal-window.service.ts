@@ -81,14 +81,21 @@ export class MealWindowService {
 
     const { totalSecondsOfDay } = this.clockService.getColomboTimeParts(date);
 
+    const isDemo = process.env.DEMO_MODE === 'true';
+    const isAllDayDemo = isDemo && period === MealPeriod.ALL_DAY;
+
     const isActive =
-      totalSecondsOfDay >= def.startSeconds &&
-      totalSecondsOfDay < def.cutoffSeconds;
-    const isCutoffReached = totalSecondsOfDay >= def.cutoffSeconds;
+      isAllDayDemo ||
+      (totalSecondsOfDay >= def.startSeconds &&
+        totalSecondsOfDay < def.cutoffSeconds);
+    const isCutoffReached =
+      !isAllDayDemo && totalSecondsOfDay >= def.cutoffSeconds;
 
     let secondsRemaining = 0;
     if (isActive) {
-      secondsRemaining = def.cutoffSeconds - totalSecondsOfDay;
+      secondsRemaining = isAllDayDemo
+        ? 86400 - totalSecondsOfDay
+        : def.cutoffSeconds - totalSecondsOfDay;
     }
 
     return {

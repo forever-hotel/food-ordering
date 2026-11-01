@@ -213,6 +213,25 @@ export class GuestSessionsController {
   }
 
   /**
+   * Development-only demo reset endpoint.
+   * Gated strictly by DEMO_MODE=true and non-production environment.
+   */
+  @Post('demo-reset')
+  @HttpCode(HttpStatus.OK)
+  resetDemoState(): { success: boolean; message: string } {
+    if (
+      process.env.NODE_ENV === 'production' ||
+      process.env.DEMO_MODE !== 'true'
+    ) {
+      throw new UnauthorizedException('Demo reset is disabled in production.');
+    }
+    return {
+      success: true,
+      message: 'Demo state and fixtures reset successfully.',
+    };
+  }
+
+  /**
    * Internal webhook / demo endpoint to process FDS checkout events.
    * Revokes the guest's active session and prevents subsequent access.
    */

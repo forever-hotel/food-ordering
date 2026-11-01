@@ -17,25 +17,34 @@ export const MOCK_BOOKING_FIXTURES: Record<string, BookingRecord> = {
     status: BookingStatus.CHECKED_IN,
     stayStart: new Date(Date.now() - 24 * 60 * 60 * 1000), // Checked in yesterday
     stayEnd: new Date(Date.now() + 48 * 60 * 60 * 1000), // Checking out in 2 days
-    guestName: 'Demo Guest 101',
+    guestName: 'John Doe',
   },
-  // 102: Reserved Stay (Not yet checked in at Front Desk)
+  // 102: Active Checked-In Stay (Multi-room separation)
   'b1020000-0000-4000-8000-000000000102': {
     bookingId: 'b1020000-0000-4000-8000-000000000102',
     roomNumber: '102',
-    status: BookingStatus.RESERVED,
-    stayStart: new Date(Date.now() + 12 * 60 * 60 * 1000), // Arriving in 12 hours
-    stayEnd: new Date(Date.now() + 72 * 60 * 60 * 1000),
-    guestName: 'Demo Guest 102',
+    status: BookingStatus.CHECKED_IN,
+    stayStart: new Date(Date.now() - 12 * 60 * 60 * 1000),
+    stayEnd: new Date(Date.now() + 60 * 60 * 60 * 1000),
+    guestName: 'Jane Smith',
   },
-  // 103: Checked-Out Stay (Completed)
+  // 103: Active Checked-In Stay (Ordering & tracking rehearsal)
   'b1030000-0000-4000-8000-000000000103': {
     bookingId: 'b1030000-0000-4000-8000-000000000103',
     roomNumber: '103',
-    status: BookingStatus.CHECKED_OUT,
-    stayStart: new Date(Date.now() - 72 * 60 * 60 * 1000),
-    stayEnd: new Date(Date.now() - 12 * 60 * 60 * 1000), // Checked out 12 hours ago
-    guestName: 'Demo Guest 103',
+    status: BookingStatus.CHECKED_IN,
+    stayStart: new Date(Date.now() - 6 * 60 * 60 * 1000),
+    stayEnd: new Date(Date.now() + 72 * 60 * 60 * 1000),
+    guestName: 'Robert Frost',
+  },
+  // 204: Active Checked-In Stay (Empty-order state test)
+  'b2040000-0000-4000-8000-000000000204': {
+    bookingId: 'b2040000-0000-4000-8000-000000000204',
+    roomNumber: '204',
+    status: BookingStatus.CHECKED_IN,
+    stayStart: new Date(Date.now() - 4 * 60 * 60 * 1000),
+    stayEnd: new Date(Date.now() + 48 * 60 * 60 * 1000),
+    guestName: 'Alice Wong',
   },
   // 104: Cancelled Stay
   'b1040000-0000-4000-8000-000000000104': {
@@ -54,6 +63,24 @@ export const MOCK_BOOKING_FIXTURES: Record<string, BookingRecord> = {
     stayStart: new Date(Date.now() - 48 * 60 * 60 * 1000),
     stayEnd: new Date(Date.now() - 2 * 60 * 60 * 1000), // Stay expired 2 hours ago
     guestName: 'Demo Guest 105',
+  },
+  // 999: Intentionally Expired Stay
+  'b9990000-0000-4000-8000-000000000999': {
+    bookingId: 'b9990000-0000-4000-8000-000000000999',
+    roomNumber: '999',
+    status: BookingStatus.CHECKED_IN,
+    stayStart: new Date(Date.now() - 72 * 60 * 60 * 1000),
+    stayEnd: new Date(Date.now() - 24 * 60 * 60 * 1000),
+    guestName: 'Expired Session',
+  },
+  // 106: Reserved Stay (Not yet checked in at Front Desk)
+  'b1060000-0000-4000-8000-000000000106': {
+    bookingId: 'b1060000-0000-4000-8000-000000000106',
+    roomNumber: '106',
+    status: BookingStatus.RESERVED,
+    stayStart: new Date(Date.now() + 12 * 60 * 60 * 1000),
+    stayEnd: new Date(Date.now() + 72 * 60 * 60 * 1000),
+    guestName: 'Demo Guest 106',
   },
 };
 
