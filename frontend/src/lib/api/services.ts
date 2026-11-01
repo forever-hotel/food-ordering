@@ -131,7 +131,7 @@ export const FALLBACK_SERVICE_REQUESTS: ServiceRequestResponse[] = [
 export async function createServiceRequest(
   sessionToken: string,
   payload: CreateServiceRequestPayload,
-  idempotencyKey: string,
+  idempotencyKey?: string,
 ): Promise<ServiceRequestResponse> {
   const effectiveKey = idempotencyKey || payload.idempotencyKey || generateServiceIdempotencyKey();
 

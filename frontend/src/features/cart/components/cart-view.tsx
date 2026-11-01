@@ -21,7 +21,7 @@ interface CartViewProps {
 }
 
 export function CartView({ onBack, onPlaceOrder }: CartViewProps) {
-  const { sessionToken } = useAuth();
+  const { sessionToken, guest } = useAuth();
   const { setActiveTab } = useNavigation();
   const {
     items,

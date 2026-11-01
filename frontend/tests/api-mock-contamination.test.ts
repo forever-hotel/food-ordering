@@ -135,7 +135,7 @@ describe('Regression Tests: Elimination of Mock Contamination in Authenticated F
         async () => {
           await createComplaint(
             {
-              category: 'FOOD_QUALITY',
+              category: 'FOOD',
               severity: 'MEDIUM',
               subject: 'Cold soup',
               description: 'Soup was served cold',
