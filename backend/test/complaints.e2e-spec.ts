@@ -843,9 +843,7 @@ describe('Guest Complaints Management (e2e)', () => {
         })
         .expect(409);
 
-      expect(response.body.message).toContain(
-        'different complaint payload',
-      );
+      expect(response.body.message).toContain('different complaint payload');
     });
 
     it('accepts legacy x-idempotency-key header', async () => {

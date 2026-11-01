@@ -87,11 +87,7 @@ export class ServiceRequestsController {
     @Headers('x-idempotency-key') xIdempotencyKeyHeader?: string,
   ): Promise<ServiceRequestResponseDto> {
     const key = idempotencyKeyHeader?.trim() || xIdempotencyKeyHeader?.trim();
-    return this.serviceRequestsService.createServiceRequest(
-      guest,
-      dto,
-      key,
-    );
+    return this.serviceRequestsService.createServiceRequest(guest, dto, key);
   }
 
   @Get()
