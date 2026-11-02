@@ -82,6 +82,15 @@ export const MOCK_BOOKING_FIXTURES: Record<string, BookingRecord> = {
     stayEnd: new Date(Date.now() + 72 * 60 * 60 * 1000),
     guestName: 'Demo Guest 106',
   },
+  // 107: Checked-Out Stay (concluded stay)
+  'b1070000-0000-4000-8000-000000000107': {
+    bookingId: 'b1070000-0000-4000-8000-000000000107',
+    roomNumber: '107',
+    status: BookingStatus.CHECKED_OUT,
+    stayStart: new Date(Date.now() - 48 * 60 * 60 * 1000),
+    stayEnd: new Date(Date.now() - 1 * 60 * 60 * 1000),
+    guestName: 'Demo Guest 107',
+  },
 };
 
 /**

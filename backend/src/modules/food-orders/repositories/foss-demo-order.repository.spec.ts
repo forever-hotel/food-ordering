@@ -96,4 +96,29 @@ describe('FossDemoOrderRepository (In-Memory)', () => {
 
     expect(await repository.findById('order-001')).toBeNull();
   });
+
+  it('resets only orders matching authorized demo booking IDs (scoped reset)', async () => {
+    const demoOrder = new FossDemoOrder();
+    demoOrder.orderId = 'order-demo-1';
+    demoOrder.bookingId = 'b1010000-0000-4000-8000-000000000101';
+    demoOrder.roomNumber = '101';
+    demoOrder.idempotencyKey = 'idemp-demo-1';
+    await repository.save(demoOrder);
+
+    const otherOrder = new FossDemoOrder();
+    otherOrder.orderId = 'order-other-user';
+    otherOrder.bookingId = 'other-unrelated-booking-uuid';
+    otherOrder.roomNumber = '305';
+    otherOrder.idempotencyKey = 'idemp-other';
+    await repository.save(otherOrder);
+
+    const clearedCount = repository.resetScopedOrders(
+      new Set(['b1010000-0000-4000-8000-000000000101']),
+    );
+
+    expect(clearedCount).toBe(1);
+    expect(await repository.findById('order-demo-1')).toBeNull();
+    // Unrelated booking order MUST remain intact
+    expect(await repository.findById('order-other-user')).not.toBeNull();
+  });
 });

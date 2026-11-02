@@ -179,6 +179,28 @@ export class RealtimeService {
   }
 
   /**
+   * Resets only realtime channels, active subjects, and buffers for authorized demonstration stays,
+   * preserving active streams and buffers for unrelated sessions in shared environments.
+   */
+  public resetScopedChannels(
+    stays: Array<{ bookingId: string; roomNumber: string }>,
+  ): number {
+    let clearedCount = 0;
+    for (const stay of stays) {
+      const channelKey = this.getChannelKey(stay.bookingId, stay.roomNumber);
+      const subject = this.channelSubjects.get(channelKey);
+      if (subject) {
+        subject.complete();
+        this.channelSubjects.delete(channelKey);
+      }
+      this.channelBuffers.delete(channelKey);
+      this.channelVersions.delete(channelKey);
+      clearedCount++;
+    }
+    return clearedCount;
+  }
+
+  /**
    * Cleans up all state (primarily for test fixture resetting).
    */
   public clearAll(): void {

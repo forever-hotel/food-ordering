@@ -94,15 +94,15 @@ describe('Guest Sessions Lifecycle (e2e)', () => {
       );
       expect(response.body.roomNumber).toBe('101');
       expect(response.body.sessionToken).toBeDefined();
-      expect(response.body.guestName).toBe('Demo Guest 101');
+      expect(response.body.guestName).toBe('John Doe');
       expect(response.body.active).toBe(true);
       expect(response.body.sessionId).toBeDefined();
     });
 
-    it('TC-DDP-123-AC2: rejects reserved stay 102 with 403 Forbidden', async () => {
+    it('TC-DDP-123-AC2: rejects reserved stay 106 with 403 Forbidden', async () => {
       const qrToken = qrTokenService.createToken(
-        'b1020000-0000-4000-8000-000000000102',
-        '102',
+        'b1060000-0000-4000-8000-000000000106',
+        '106',
       );
 
       await request(app.getHttpServer())
@@ -111,10 +111,10 @@ describe('Guest Sessions Lifecycle (e2e)', () => {
         .expect(403);
     });
 
-    it('TC-DDP-123-AC2: rejects checked-out stay 103 with 403 Forbidden', async () => {
+    it('TC-DDP-123-AC2: rejects checked-out stay 107 with 403 Forbidden', async () => {
       const qrToken = qrTokenService.createToken(
-        'b1030000-0000-4000-8000-000000000103',
-        '103',
+        'b1070000-0000-4000-8000-000000000107',
+        '107',
       );
 
       await request(app.getHttpServer())
@@ -212,7 +212,7 @@ describe('Guest Sessions Lifecycle (e2e)', () => {
         'b1010000-0000-4000-8000-000000000101',
       );
       expect(response.body.roomNumber).toBe('101');
-      expect(response.body.guestName).toBe('Demo Guest 101');
+      expect(response.body.guestName).toBe('John Doe');
       expect(response.body.role).toBe('GUEST');
       expect(response.body.active).toBe(true);
     });
@@ -249,6 +249,21 @@ describe('Guest Sessions Lifecycle (e2e)', () => {
       expect(response.body.tokens).toBeDefined();
       expect(response.body.tokens['101-checked-in']).toBeDefined();
       expect(response.body.tokens['102-reserved']).toBeDefined();
+    });
+  });
+
+  describe('POST /guest-sessions/demo-reset', () => {
+    it('executes scoped demo reset and preserves database records', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/guest-sessions/demo-reset')
+        .expect(200);
+
+      expect(response.body.success).toBe(true);
+      expect(response.body.mode).toBe('scoped_fixtures');
+      expect(response.body.cleared.inMemoryOrders).toBe(true);
+      expect(response.body.cleared.qrSeenNonces).toBe(true);
+      expect(response.body.cleared.realtimeChannels).toBe(true);
+      expect(response.body.cleared.persistentDatabaseRecords).toBe(false);
     });
   });
 });

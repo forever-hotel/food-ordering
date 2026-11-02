@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  ForbiddenException,
   forwardRef,
   Get,
   Header,
@@ -36,6 +37,53 @@ import type { GuestContext } from './interfaces/guest-context.interface.js';
 import { GuestSessionsService } from './services/guest-sessions.service.js';
 import { QrActivationService } from './services/qr-activation.service.js';
 import { QrTokenService } from './services/qr-token.service.js';
+
+export const AUTHORIZED_DEMO_BOOKING_IDS = new Set<string>([
+  'b1010000-0000-4000-8000-000000000101',
+  'b1020000-0000-4000-8000-000000000102',
+  'b1030000-0000-4000-8000-000000000103',
+  'b2040000-0000-4000-8000-000000000204',
+  'b9990000-0000-4000-8000-000000000999',
+  'b1040000-0000-4000-8000-000000000104',
+  'b1050000-0000-4000-8000-000000000105',
+  'b1060000-0000-4000-8000-000000000106',
+]);
+
+export const AUTHORIZED_DEMO_STAYS: Array<{
+  bookingId: string;
+  roomNumber: string;
+}> = [
+  { bookingId: 'b1010000-0000-4000-8000-000000000101', roomNumber: '101' },
+  { bookingId: 'b1020000-0000-4000-8000-000000000102', roomNumber: '102' },
+  { bookingId: 'b1030000-0000-4000-8000-000000000103', roomNumber: '103' },
+  { bookingId: 'b2040000-0000-4000-8000-000000000204', roomNumber: '204' },
+  { bookingId: 'b9990000-0000-4000-8000-000000000999', roomNumber: '999' },
+  { bookingId: 'b1040000-0000-4000-8000-000000000104', roomNumber: '104' },
+  { bookingId: 'b1050000-0000-4000-8000-000000000105', roomNumber: '105' },
+  { bookingId: 'b1060000-0000-4000-8000-000000000106', roomNumber: '106' },
+];
+
+function isLoopbackOrLocal(req?: Request): boolean {
+  if (!req) return false;
+  const ip = req.ip || req.socket?.remoteAddress;
+  if (!ip) return false;
+  return (
+    ip === '127.0.0.1' ||
+    ip === '::1' ||
+    ip === '::ffff:127.0.0.1' ||
+    ip.startsWith('127.') ||
+    req.hostname === 'localhost'
+  );
+}
+
+function isDevAuthorized(req?: Request): boolean {
+  if (!req) return false;
+  const devKey =
+    (req.headers?.['x-developer-key'] as string) ||
+    (req.headers?.['x-demo-admin-key'] as string);
+  const expectedKey = process.env.DEV_DEMO_KEY;
+  return Boolean(expectedKey && devKey === expectedKey);
+}
 
 interface AuthenticatedRequest extends Request {
   guest: GuestContext;
@@ -206,10 +254,10 @@ export class GuestSessionsController {
   /**
    * Helper endpoint providing pre-signed QR tokens for demo rooms.
    * Strictly disabled in production and unauthorized environments.
-   * Backdoor bypass ALLOW_DEMO_TOKENS has been permanently removed.
+   * Requires trusted local-only access or valid developer authorization.
    */
   @Get('demo-tokens')
-  getDemoTokens(): { tokens: Record<string, string> } {
+  getDemoTokens(@Req() req?: Request): { tokens: Record<string, string> } {
     const isDevOrTest =
       process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test';
     const isDemo = process.env.DEMO_MODE === 'true';
@@ -219,6 +267,17 @@ export class GuestSessionsController {
         'Demo tokens are strictly disabled in production and unauthorized environments.',
       );
     }
+
+    if (
+      process.env.NODE_ENV !== 'test' &&
+      !isLoopbackOrLocal(req) &&
+      !isDevAuthorized(req)
+    ) {
+      throw new ForbiddenException(
+        'Demo utilities require trusted local-only access or valid developer authorization.',
+      );
+    }
+
     return {
       tokens: this.qrTokenService.getDemoTokens(),
     };
@@ -232,16 +291,22 @@ export class GuestSessionsController {
    * 3. RealtimeService stay channels, subscriptions, and buffered events
    *
    * Gated strictly by DEMO_MODE=true and non-production development/test environment.
+   * Destructive operation: requires trusted local-only access or developer authorization.
+   * Multi-tenant safety: global reset is disabled by default to protect unrelated sessions.
+   * Only authorized demonstration fixtures are reset unless explicitly overridden.
+   * Never modifies persistent PostgreSQL records.
    */
   @Post('demo-reset')
   @HttpCode(HttpStatus.OK)
-  resetDemoState(): {
+  resetDemoState(@Req() req?: Request): {
     success: boolean;
     message: string;
+    mode: 'global' | 'scoped_fixtures';
     cleared: {
       inMemoryOrders: boolean;
       qrSeenNonces: boolean;
       realtimeChannels: boolean;
+      persistentDatabaseRecords: boolean;
     };
   } {
     const isDevOrTest =
@@ -254,23 +319,40 @@ export class GuestSessionsController {
       );
     }
 
-    // 1. Reset in-memory QR replay nonces so demo QR tokens can be re-redeemed
-    this.qrTokenService.reset();
+    if (
+      process.env.NODE_ENV !== 'test' &&
+      !isLoopbackOrLocal(req) &&
+      !isDevAuthorized(req)
+    ) {
+      throw new ForbiddenException(
+        'Destructive demo operations require trusted local-only access or valid developer authorization.',
+      );
+    }
 
-    // 2. Reset in-memory demonstration food orders
-    this.demoOrderRepository?.reset();
+    const allowGlobal = process.env.ALLOW_GLOBAL_DEMO_RESET === 'true';
 
-    // 3. Reset in-memory realtime channels, active stream subjects, and buffered events
-    this.realtimeService?.clearAll();
+    if (allowGlobal) {
+      this.qrTokenService.reset();
+      this.demoOrderRepository?.reset();
+      this.realtimeService?.clearAll();
+    } else {
+      // Scoped reset: cleans only authorized demonstration fixtures to guarantee session isolation
+      this.qrTokenService.resetDemoNonces();
+      this.demoOrderRepository?.resetScopedOrders(AUTHORIZED_DEMO_BOOKING_IDS);
+      this.realtimeService?.resetScopedChannels(AUTHORIZED_DEMO_STAYS);
+    }
 
     return {
       success: true,
-      message:
-        'Authorized demo in-memory state and fixture channels reset successfully.',
+      message: allowGlobal
+        ? 'Global demo in-memory state reset successfully.'
+        : 'Authorized demo in-memory state and fixture channels reset successfully (scoped). Global reset is disabled to ensure isolation.',
+      mode: allowGlobal ? 'global' : 'scoped_fixtures',
       cleared: {
         inMemoryOrders: true,
         qrSeenNonces: true,
         realtimeChannels: true,
+        persistentDatabaseRecords: false,
       },
     };
   }

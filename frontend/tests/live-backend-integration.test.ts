@@ -69,11 +69,38 @@ describe('Phase 5 — Live NestJS Backend HTTP and SSE Integration Tests (#101)'
   let demoTokensMap: Record<string, string> = {};
   let createdOrderId = '';
 
-  it('1. Verifies NestJS backend health and retrieves signed demo tokens via API', async () => {
+  it('1. Verifies NestJS backend health, database isolation target, and retrieves demo tokens', async () => {
     const healthRes = await fetch(`${BACKEND_URL}/health`);
     assert.equal(healthRes.status, 200);
-    const healthBody = await healthRes.json();
+    const healthBody = (await healthRes.json()) as { status: string };
     assert.equal(healthBody.status, 'ok');
+
+    // Trustworthy Database Isolation Target Verification
+    const readyRes = await fetch(`${BACKEND_URL}/health/ready`);
+    assert.equal(readyRes.status, 200);
+    const readyBody = (await readyRes.json()) as {
+      database?: {
+        status: string;
+        isolation?: {
+          isDisposableTestDb: boolean;
+          isCloudShared: boolean;
+          sanitizedTarget: string;
+          classification: string;
+        };
+      };
+    };
+
+    const isolation = readyBody.database?.isolation;
+    if (!isolation || !isolation.isDisposableTestDb || isolation.isCloudShared) {
+      throw new Error(
+        `DATABASE SAFETY GATE BLOCKED: The backend at ${BACKEND_URL} is NOT connected to an approved isolated disposable test database.\n` +
+          `  Actual Target: ${isolation?.sanitizedTarget || 'unknown'}\n` +
+          `  Classification: ${isolation?.classification || 'unknown'}\n` +
+          `  isCloudShared: ${isolation?.isCloudShared}\n` +
+          `  isDisposableTestDb: ${isolation?.isDisposableTestDb}\n` +
+          `Refusing to execute write-capable integration tests against non-disposable database to protect shared data.`,
+      );
+    }
 
     demoTokensMap = await fetchDemoTokens();
     assert.ok(demoTokensMap);

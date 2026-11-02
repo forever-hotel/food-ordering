@@ -76,6 +76,21 @@ export class FossDemoOrderRepository {
   }
 
   /**
+   * Resets only orders matching authorized demonstration booking IDs,
+   * preventing destruction of unrelated sessions in shared development environments.
+   */
+  public resetScopedOrders(authorizedBookingIds: Set<string>): number {
+    let clearedCount = 0;
+    for (const [orderId, order] of this.orders.entries()) {
+      if (authorizedBookingIds.has(order.bookingId)) {
+        this.orders.delete(orderId);
+        clearedCount++;
+      }
+    }
+    return clearedCount;
+  }
+
+  /**
    * Resets the in-memory state cleanly for unit and integration testing.
    */
   public reset(): void {

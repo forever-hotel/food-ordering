@@ -1,5 +1,9 @@
 import { jest } from '@jest/globals';
-import { BadRequestException, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  UnauthorizedException,
+} from '@nestjs/common';
 
 import { GuestSessionResponseDto } from './dto/guest-session-response.dto.js';
 import { IssueQrDto, IssueQrResponseDto } from './dto/issue-qr.dto.js';
@@ -61,14 +65,17 @@ describe('GuestSessionsController', () => {
         '101-checked-in': 'demo-qr-token-101',
       }),
       reset: jest.fn<() => void>(),
+      resetDemoNonces: jest.fn<() => number>().mockReturnValue(5),
     };
 
     mockDemoOrderRepository = {
       reset: jest.fn<() => void>(),
+      resetScopedOrders: jest.fn<() => number>().mockReturnValue(3),
     };
 
     mockRealtimeService = {
       clearAll: jest.fn<() => void>(),
+      resetScopedChannels: jest.fn<() => number>().mockReturnValue(8),
     };
 
     mockQrActivationService = {
@@ -295,7 +302,7 @@ describe('GuestSessionsController', () => {
 
   describe('getDemoTokens', () => {
     it('returns demo tokens record from service in test/dev with DEMO_MODE=true', () => {
-      const result = controller.getDemoTokens();
+      const result = controller.getDemoTokens({ ip: '127.0.0.1' } as any);
       expect(result).toEqual({
         tokens: { '101-checked-in': 'demo-qr-token-101' },
       });
@@ -303,45 +310,111 @@ describe('GuestSessionsController', () => {
 
     it('rejects demo tokens with UnauthorizedException when NODE_ENV is production', () => {
       process.env.NODE_ENV = 'production';
-      expect(() => controller.getDemoTokens()).toThrow(UnauthorizedException);
+      expect(() =>
+        controller.getDemoTokens({ ip: '127.0.0.1' } as any),
+      ).toThrow(UnauthorizedException);
     });
 
     it('rejects demo tokens with UnauthorizedException when DEMO_MODE is not true', () => {
       process.env.DEMO_MODE = 'false';
-      expect(() => controller.getDemoTokens()).toThrow(UnauthorizedException);
+      expect(() =>
+        controller.getDemoTokens({ ip: '127.0.0.1' } as any),
+      ).toThrow(UnauthorizedException);
+    });
+
+    it('rejects demo tokens with ForbiddenException when called from untrusted non-local IP without dev key', () => {
+      process.env.NODE_ENV = 'development';
+      const nonLocalReq = { ip: '198.51.100.24', headers: {} } as any;
+      expect(() => controller.getDemoTokens(nonLocalReq)).toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it('allows demo tokens when caller supplies valid DEV_DEMO_KEY', () => {
+      process.env.NODE_ENV = 'development';
+      process.env.DEV_DEMO_KEY = 'secret-dev-key';
+      const authReq = {
+        ip: '198.51.100.24',
+        headers: { 'x-developer-key': 'secret-dev-key' },
+      } as any;
+      const result = controller.getDemoTokens(authReq);
+      expect(result.tokens).toBeDefined();
+      delete process.env.DEV_DEMO_KEY;
     });
 
     it('strictly rejects in production even if ALLOW_DEMO_TOKENS=true is set (no backdoor)', () => {
       process.env.NODE_ENV = 'production';
       process.env.ALLOW_DEMO_TOKENS = 'true';
-      expect(() => controller.getDemoTokens()).toThrow(UnauthorizedException);
+      expect(() =>
+        controller.getDemoTokens({ ip: '127.0.0.1' } as any),
+      ).toThrow(UnauthorizedException);
       delete process.env.ALLOW_DEMO_TOKENS;
     });
   });
 
   describe('resetDemoState', () => {
-    it('executes in-memory demo reset on qrTokenService, orderRepository, and realtimeService', () => {
-      const result = controller.resetDemoState();
+    it('executes scoped in-memory demo reset on qrTokenService, orderRepository, and realtimeService', () => {
+      const result = controller.resetDemoState({ ip: '127.0.0.1' } as any);
 
       expect(result.success).toBe(true);
+      expect(result.mode).toBe('scoped_fixtures');
       expect(result.cleared).toEqual({
         inMemoryOrders: true,
         qrSeenNonces: true,
         realtimeChannels: true,
+        persistentDatabaseRecords: false,
       });
+      expect(mockQrTokenService.resetDemoNonces).toHaveBeenCalledTimes(1);
+      expect(mockDemoOrderRepository.resetScopedOrders).toHaveBeenCalledTimes(
+        1,
+      );
+      expect(mockRealtimeService.resetScopedChannels).toHaveBeenCalledTimes(1);
+    });
+
+    it('executes global reset only when ALLOW_GLOBAL_DEMO_RESET=true is explicitly configured', () => {
+      process.env.ALLOW_GLOBAL_DEMO_RESET = 'true';
+      const result = controller.resetDemoState({ ip: '127.0.0.1' } as any);
+
+      expect(result.success).toBe(true);
+      expect(result.mode).toBe('global');
       expect(mockQrTokenService.reset).toHaveBeenCalledTimes(1);
       expect(mockDemoOrderRepository.reset).toHaveBeenCalledTimes(1);
       expect(mockRealtimeService.clearAll).toHaveBeenCalledTimes(1);
+      delete process.env.ALLOW_GLOBAL_DEMO_RESET;
+    });
+
+    it('rejects destructive demo reset with ForbiddenException when called from untrusted non-local IP without dev key', () => {
+      process.env.NODE_ENV = 'development';
+      const nonLocalReq = { ip: '198.51.100.24', headers: {} } as any;
+      expect(() => controller.resetDemoState(nonLocalReq)).toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it('allows destructive demo reset when caller supplies valid DEV_DEMO_KEY', () => {
+      process.env.NODE_ENV = 'development';
+      process.env.DEV_DEMO_KEY = 'secret-dev-key';
+      const authReq = {
+        ip: '198.51.100.24',
+        headers: { 'x-developer-key': 'secret-dev-key' },
+      } as any;
+      const result = controller.resetDemoState(authReq);
+      expect(result.success).toBe(true);
+      delete process.env.DEV_DEMO_KEY;
     });
 
     it('rejects demo reset with UnauthorizedException when NODE_ENV is production', () => {
       process.env.NODE_ENV = 'production';
-      expect(() => controller.resetDemoState()).toThrow(UnauthorizedException);
+      expect(() =>
+        controller.resetDemoState({ ip: '127.0.0.1' } as any),
+      ).toThrow(UnauthorizedException);
     });
 
     it('rejects demo reset with UnauthorizedException when DEMO_MODE is not true', () => {
       process.env.DEMO_MODE = 'false';
-      expect(() => controller.resetDemoState()).toThrow(UnauthorizedException);
+      expect(() =>
+        controller.resetDemoState({ ip: '127.0.0.1' } as any),
+      ).toThrow(UnauthorizedException);
     });
   });
 

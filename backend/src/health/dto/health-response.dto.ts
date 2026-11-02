@@ -20,6 +20,37 @@ export class LivenessResponseDto {
   timestamp!: string;
 }
 
+export class DatabaseIsolationDto {
+  @ApiProperty({
+    description:
+      'Whether the active database is confirmed as an approved isolated disposable test database',
+    example: false,
+  })
+  isDisposableTestDb!: boolean;
+
+  @ApiProperty({
+    description:
+      'Whether the active database targets a shared cloud environment (e.g. Neon dev/prod)',
+    example: true,
+  })
+  isCloudShared!: boolean;
+
+  @ApiProperty({
+    description:
+      'Sanitized database target (hostname and database name, no credentials)',
+    example:
+      'ep-long-fog-azwbvdgr-pooler.c-3.ap-southeast-1.aws.neon.tech/forever',
+  })
+  sanitizedTarget!: string;
+
+  @ApiProperty({
+    description: 'Explicit isolation environment classification',
+    example: 'shared_cloud_dev',
+  })
+  classification!:
+    'disposable_test' | 'shared_cloud_dev' | 'production' | 'unknown';
+}
+
 export class DatabaseHealthDto {
   @ApiProperty({
     description: 'Database connection status',
@@ -39,6 +70,14 @@ export class DatabaseHealthDto {
     example: null,
   })
   error?: string | null;
+
+  @ApiProperty({
+    description:
+      'Trustworthy database isolation metadata for integration test safety gate',
+    required: false,
+    type: DatabaseIsolationDto,
+  })
+  isolation?: DatabaseIsolationDto;
 }
 
 export class ReadinessResponseDto {
