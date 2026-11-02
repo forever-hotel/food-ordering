@@ -34,6 +34,16 @@ import {
   advanceDemoComplaintStatus,
 } from '../src/lib/api/complaints.ts';
 
+const proc = process as NodeJS.Process & { loadEnvFile?: (path?: string) => void };
+if (typeof proc.loadEnvFile === 'function') {
+  try {
+    proc.loadEnvFile('.env.local');
+  } catch {}
+  try {
+    proc.loadEnvFile('../backend/.env');
+  } catch {}
+}
+
 const BACKEND_URL = process.env.API_URL || 'http://localhost:4300';
 
 const isExplicitLiveAllowed = process.env.ALLOW_LIVE_DATABASE_INTEGRATION_TESTS === 'true';
