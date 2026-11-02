@@ -111,6 +111,22 @@ export class ApiSessionsProvider implements SessionsProvider {
 
   async fetchDemoTokens(): Promise<Record<string, string>> {
     try {
+      // 1. In browser environment, check same-origin server development proxy first
+      if (typeof window !== 'undefined') {
+        const devProxyRes = await fetch('/api/dev/demo-tokens', {
+          method: 'GET',
+          headers: { Accept: 'application/json' },
+        }).catch(() => null);
+
+        if (devProxyRes && devProxyRes.ok) {
+          const devBody = await devProxyRes.json().catch(() => null);
+          if (devBody?.tokens && Object.keys(devBody.tokens).length > 0) {
+            return devBody.tokens;
+          }
+        }
+      }
+
+      // 2. Direct backend endpoint (for Node.js integration tests or genuine loopback dev)
       const response = await fetch(`${API_URL}/guest-sessions/demo-tokens`, {
         method: 'GET',
       });

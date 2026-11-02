@@ -394,6 +394,78 @@ describe('GuestSessionsController', () => {
       delete process.env.DEV_DEMO_KEY;
     });
 
+    it('rejects demo tokens from unauthorized private-LAN clients (192.168.0.0/16, 10.0.0.0/8) without developer key', () => {
+      process.env.NODE_ENV = 'development';
+      const lanIps = ['192.168.1.100', '10.0.0.50', '192.168.1.1', '10.254.0.1'];
+      for (const ip of lanIps) {
+        const lanReq = {
+          socket: { remoteAddress: ip },
+          headers: {},
+        } as any;
+        expect(() => controller.getDemoTokens(lanReq)).toThrow(ForbiddenException);
+      }
+    });
+
+    it('rejects demo tokens from unauthorized Docker bridge clients (172.16-31.*, 192.168.65.1) without developer key', () => {
+      process.env.NODE_ENV = 'development';
+      const dockerIps = [
+        '172.17.0.1',
+        '172.18.0.1',
+        '172.20.0.5',
+        '192.168.65.1',
+        '::ffff:172.18.0.1',
+      ];
+      for (const ip of dockerIps) {
+        const dockerReq = {
+          socket: { remoteAddress: ip },
+          headers: {},
+        } as any;
+        expect(() => controller.getDemoTokens(dockerReq)).toThrow(ForbiddenException);
+      }
+    });
+
+    it('allows demo tokens from Docker bridge or private LAN when valid developer key is supplied', () => {
+      process.env.NODE_ENV = 'development';
+      process.env.DEV_DEMO_KEY = 'docker-dev-secret';
+
+      // Docker bridge with x-developer-key
+      const dockerReq = {
+        socket: { remoteAddress: '172.18.0.1' },
+        headers: { 'x-developer-key': 'docker-dev-secret' },
+      } as any;
+      expect(controller.getDemoTokens(dockerReq).tokens).toBeDefined();
+
+      // WSL2 gateway with x-demo-admin-key
+      const wslReq = {
+        socket: { remoteAddress: '192.168.65.1' },
+        headers: { 'x-demo-admin-key': 'docker-dev-secret' },
+      } as any;
+      expect(controller.getDemoTokens(wslReq).tokens).toBeDefined();
+
+      delete process.env.DEV_DEMO_KEY;
+    });
+
+    it('rejects demo tokens from Docker bridge when developer key is invalid or missing', () => {
+      process.env.NODE_ENV = 'development';
+      process.env.DEV_DEMO_KEY = 'docker-dev-secret';
+
+      // Wrong key from Docker bridge
+      const invalidKeyReq = {
+        socket: { remoteAddress: '172.18.0.1' },
+        headers: { 'x-developer-key': 'wrong-dev-key' },
+      } as any;
+      expect(() => controller.getDemoTokens(invalidKeyReq)).toThrow(ForbiddenException);
+
+      // Missing key from Docker bridge
+      const missingKeyReq = {
+        socket: { remoteAddress: '172.18.0.1' },
+        headers: {},
+      } as any;
+      expect(() => controller.getDemoTokens(missingKeyReq)).toThrow(ForbiddenException);
+
+      delete process.env.DEV_DEMO_KEY;
+    });
+
     it('strictly rejects in production even if ALLOW_DEMO_TOKENS=true is set (no backdoor)', () => {
       process.env.NODE_ENV = 'production';
       process.env.ALLOW_DEMO_TOKENS = 'true';
@@ -508,6 +580,38 @@ describe('GuestSessionsController', () => {
       } as any;
       const result = controller.resetDemoState(authReq);
       expect(result.success).toBe(true);
+      delete process.env.DEV_DEMO_KEY;
+    });
+
+    it('rejects destructive demo reset from unauthorized private-LAN and Docker bridge clients without developer key', () => {
+      process.env.NODE_ENV = 'development';
+      const unauthorizedIps = [
+        '192.168.1.100',
+        '10.0.0.50',
+        '172.17.0.1',
+        '172.18.0.1',
+        '192.168.65.1',
+      ];
+      for (const ip of unauthorizedIps) {
+        const req = {
+          socket: { remoteAddress: ip },
+          headers: {},
+        } as any;
+        expect(() => controller.resetDemoState(req)).toThrow(ForbiddenException);
+      }
+    });
+
+    it('allows destructive demo reset from Docker bridge when valid developer key is supplied', () => {
+      process.env.NODE_ENV = 'development';
+      process.env.DEV_DEMO_KEY = 'docker-reset-key';
+
+      const dockerReq = {
+        socket: { remoteAddress: '172.18.0.1' },
+        headers: { 'x-developer-key': 'docker-reset-key' },
+      } as any;
+      const result = controller.resetDemoState(dockerReq);
+      expect(result.success).toBe(true);
+
       delete process.env.DEV_DEMO_KEY;
     });
 
