@@ -33,17 +33,17 @@ export class CreateFossQrActivations1791900000004 implements MigrationInterface 
     `);
 
     await queryRunner.query(`
-      CREATE INDEX "IDX_foss_qr_activations_booking_id"
+      CREATE INDEX IF NOT EXISTS "IDX_foss_qr_activations_booking_id"
         ON "foss_qr_activations" ("booking_id")
     `);
 
     await queryRunner.query(`
-      CREATE INDEX "IDX_foss_qr_activations_room_number"
+      CREATE INDEX IF NOT EXISTS "IDX_foss_qr_activations_room_number"
         ON "foss_qr_activations" ("room_number")
     `);
 
     await queryRunner.query(`
-      CREATE INDEX "IDX_foss_qr_activations_active_lookup"
+      CREATE INDEX IF NOT EXISTS "IDX_foss_qr_activations_active_lookup"
         ON "foss_qr_activations" ("token_hash", "redeemed_at", "revoked_at", "expires_at")
     `);
   }
