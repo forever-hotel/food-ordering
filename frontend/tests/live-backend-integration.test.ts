@@ -110,7 +110,7 @@ async function ensureApprovedTestDatabaseVerified(): Promise<void> {
 
 describe(
   'Phase 5 — Live NestJS Backend HTTP and SSE Integration Tests (#101)',
-  { concurrency: 1 },
+  { concurrency: false },
   () => {
     if (isExplicitLiveAllowed && !isApprovedNeonTest) {
       it('DATABASE SAFETY GATE: Refuses to run without test branch authorization', () => {
@@ -149,6 +149,11 @@ describe(
     let room103Token = '';
     let demoTokensMap: Record<string, string> = {};
     let createdOrderId = '';
+    let tokensPromise: Promise<{
+      token101: string;
+      token102: string;
+      token103: string;
+    }> | null = null;
 
     beforeEach(async () => {
       // Condition 6: Guarantees every test depends on preflight verification
@@ -160,26 +165,26 @@ describe(
       token102: string;
       token103: string;
     }> {
-      await ensureApprovedTestDatabaseVerified();
-      if (!demoTokensMap['101'] && !demoTokensMap['Room 101 (John Doe)']) {
-        demoTokensMap = await fetchDemoTokens();
+      if (!tokensPromise) {
+        tokensPromise = (async () => {
+          await ensureApprovedTestDatabaseVerified();
+          demoTokensMap = await fetchDemoTokens();
+          const token101Qr = demoTokensMap['101'] || demoTokensMap['Room 101 (John Doe)'];
+          const session101 = await redeemQrToken(token101Qr);
+          room101Token = session101.sessionToken;
+
+          const token102Qr = demoTokensMap['102'] || demoTokensMap['Room 102 (Jane Smith)'];
+          const session102 = await redeemQrToken(token102Qr);
+          room102Token = session102.sessionToken;
+
+          const token103Qr = demoTokensMap['103'] || demoTokensMap['Room 103 (Robert Frost)'];
+          const session103 = await redeemQrToken(token103Qr);
+          room103Token = session103.sessionToken;
+
+          return { token101: room101Token, token102: room102Token, token103: room103Token };
+        })();
       }
-      if (!room101Token) {
-        const token101Qr = demoTokensMap['101'] || demoTokensMap['Room 101 (John Doe)'];
-        const session101 = await redeemQrToken(token101Qr);
-        room101Token = session101.sessionToken;
-      }
-      if (!room102Token) {
-        const token102Qr = demoTokensMap['102'] || demoTokensMap['Room 102 (Jane Smith)'];
-        const session102 = await redeemQrToken(token102Qr);
-        room102Token = session102.sessionToken;
-      }
-      if (!room103Token) {
-        const token103Qr = demoTokensMap['103'] || demoTokensMap['Room 103 (Robert Frost)'];
-        const session103 = await redeemQrToken(token103Qr);
-        room103Token = session103.sessionToken;
-      }
-      return { token101: room101Token, token102: room102Token, token103: room103Token };
+      return tokensPromise;
     }
 
     it('1. Verifies NestJS backend health, database isolation target, and retrieves demo tokens', async () => {
