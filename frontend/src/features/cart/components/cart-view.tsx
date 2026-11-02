@@ -4,7 +4,7 @@ import React, { useRef, useState } from 'react';
 import { Button, Card, Input, Typography } from 'antd';
 import type { CartItem } from '../../../types/menu.ts';
 import type { CreateFoodOrderPayload, FoodOrderResponse } from '../../../types/orders.ts';
-import { formatLkrPrice } from '../../../lib/api/menu.ts';
+import { formatLkrPrice, isValidImageUrl } from '../../../lib/api/menu.ts';
 import { generateIdempotencyKey, placeFoodOrder } from '../../../lib/api/orders.ts';
 import { useAuth } from '../../../lib/auth/auth-context.tsx';
 import { useNavigation } from '../../../lib/navigation/navigation-context.tsx';
@@ -20,18 +20,27 @@ interface CartViewProps {
   onPlaceOrder?: (order: FoodOrderResponse) => void;
 }
 
-function getLocalItemImage(item: CartItem['item']): string {
-  const n = (item.name || '').toLowerCase();
-  if (n.includes('chicken') || n.includes('arancini') || n.includes('wagyu')) {
-    return '/images/grilled-chicken-rice-thumb.png';
-  }
-  if (n.includes('kottu') || n.includes('egg') || n.includes('salmon') || n.includes('panna')) {
-    return '/images/vegetable-kottu-thumb.png';
-  }
-  if (n.includes('noodle') || n.includes('prawn') || n.includes('lobster') || n.includes('juice')) {
-    return '/images/prawn-noodles-thumb.png';
-  }
-  return '/images/grilled-chicken-rice-thumb.png';
+function CartItemThumbnail({ item }: { item: CartItem['item'] }) {
+  const [imgError, setImgError] = useState(false);
+  const hasValidImage = isValidImageUrl(item.imageUrl) && !imgError;
+
+  return (
+    <div className="w-14 h-14 rounded-2xl bg-slate-100 border border-slate-200/80 flex-shrink-0 flex items-center justify-center select-none overflow-hidden">
+      {hasValidImage ? (
+        /* eslint-disable-next-line @next/next/no-img-element */
+        <img
+          src={item.imageUrl!}
+          alt={item.name}
+          onError={() => setImgError(true)}
+          className="w-full h-full object-cover"
+        />
+      ) : (
+        <span className="text-2xl" role="img" aria-label={`${item.name} placeholder`}>
+          🍲
+        </span>
+      )}
+    </div>
+  );
 }
 
 export function CartView({ onBack, onPlaceOrder }: CartViewProps) {
@@ -158,19 +167,7 @@ export function CartView({ onBack, onPlaceOrder }: CartViewProps) {
             return (
               <div key={cartItem.id} className="py-3.5 flex items-center justify-between gap-3">
                 {/* Food Avatar / Thumbnail */}
-                <div className="w-14 h-14 rounded-2xl bg-slate-100 border border-slate-200/80 flex-shrink-0 flex items-center justify-center text-2xl select-none overflow-hidden">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={
-                      cartItem.item.imageUrl &&
-                      !cartItem.item.imageUrl.includes('cdn.foreverhotel.com')
-                        ? cartItem.item.imageUrl
-                        : getLocalItemImage(cartItem.item)
-                    }
-                    alt={cartItem.item.name}
-                    className="w-full h-full object-cover"
-                  />
-                </div>
+                <CartItemThumbnail item={cartItem.item} />
 
                 {/* Name & Unit Price */}
                 <div className="flex-1 min-w-0">

@@ -10,12 +10,6 @@ export interface MealWindowStatus {
   secondsRemaining: number;
 }
 
-export interface MenuItemNutrition {
-  calories: number;
-  proteinGrams: number;
-  fatGrams: number;
-}
-
 export interface GuestMenuItem {
   id: string;
   name: string;
@@ -32,7 +26,6 @@ export interface GuestMenuItem {
   dietaryFlags: string[];
   allergens: string[];
   portionCap?: number;
-  nutrition?: MenuItemNutrition;
 }
 
 export interface GuestMenuResponse {

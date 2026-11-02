@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { Card, Tag, Typography } from 'antd';
 import type { GuestMenuItem } from '../../../types/menu.ts';
-import { formatLkrPrice } from '../../../lib/api/menu.ts';
+import { formatLkrPrice, isValidImageUrl } from '../../../lib/api/menu.ts';
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -11,20 +11,6 @@ interface MenuItemCardProps {
   item: GuestMenuItem;
   onSelect: (item: GuestMenuItem) => void;
   onQuickAdd: (item: GuestMenuItem) => void;
-}
-
-function getLocalItemImage(item: GuestMenuItem): string {
-  const n = (item.name || '').toLowerCase();
-  if (n.includes('chicken') || n.includes('arancini') || n.includes('wagyu')) {
-    return '/images/grilled-chicken-rice-thumb.png';
-  }
-  if (n.includes('kottu') || n.includes('egg') || n.includes('salmon') || n.includes('panna')) {
-    return '/images/vegetable-kottu-thumb.png';
-  }
-  if (n.includes('noodle') || n.includes('prawn') || n.includes('lobster') || n.includes('juice')) {
-    return '/images/prawn-noodles-thumb.png';
-  }
-  return '/images/grilled-chicken-rice-thumb.png';
 }
 
 function formatDietaryTag(tag: string): string {
@@ -50,10 +36,7 @@ export function MenuItemCard({ item, onSelect, onQuickAdd }: MenuItemCardProps) 
     onQuickAdd(item);
   };
 
-  const imgSrc =
-    item.imageUrl && !imgError && !item.imageUrl.includes('cdn.foreverhotel.com')
-      ? item.imageUrl
-      : getLocalItemImage(item);
+  const hasValidImage = isValidImageUrl(item.imageUrl) && !imgError;
 
   return (
     <Card
@@ -78,15 +61,27 @@ export function MenuItemCard({ item, onSelect, onQuickAdd }: MenuItemCardProps) 
       styles={{ body: { padding: '12px 14px' } }}
     >
       <div className="flex gap-3.5 items-center">
-        {/* Food Thumbnail with Authentic Reference Imagery (Figure 32) */}
-        <div className="w-18 h-18 rounded-2xl bg-slate-100 border border-slate-200/80 flex-shrink-0 overflow-hidden relative shadow-2xs">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={imgSrc}
-            alt={item.name}
-            onError={() => setImgError(true)}
-            className="w-full h-full object-cover"
-          />
+        {/* Food Thumbnail (KMS image_url or neutral placeholder) */}
+        <div className="w-18 h-18 rounded-2xl bg-slate-100 border border-slate-200/80 flex-shrink-0 overflow-hidden relative shadow-2xs flex items-center justify-center">
+          {hasValidImage ? (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              src={item.imageUrl!}
+              alt={item.name}
+              onError={() => setImgError(true)}
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            <div
+              className="w-full h-full flex items-center justify-center bg-slate-100 text-slate-400 select-none"
+              role="img"
+              aria-label={`${item.name} placeholder`}
+            >
+              <span className="text-2xl" aria-hidden="true">
+                🍲
+              </span>
+            </div>
+          )}
         </div>
 
         <div className="flex-1 min-w-0">

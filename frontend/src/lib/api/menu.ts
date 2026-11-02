@@ -64,16 +64,10 @@ export const FALLBACK_MENU_RESPONSE: GuestMenuResponse = {
       isCutoff: false,
       secondsRemainingUntilCutoff: 8160,
       estimatedPrepMinutes: 20,
-      imageUrl:
-        'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600&auto=format&fit=crop&q=80',
+      imageUrl: 'https://cdn.foreverhotel.com/menu/grilled-chicken-rice.webp',
       dietaryFlags: ['Gluten-free', 'High protein', 'Dairy-free'],
       allergens: [],
       portionCap: 3,
-      nutrition: {
-        calories: 420,
-        proteinGrams: 38,
-        fatGrams: 12,
-      },
     },
     {
       id: 'item-102',
@@ -88,16 +82,10 @@ export const FALLBACK_MENU_RESPONSE: GuestMenuResponse = {
       isCutoff: false,
       secondsRemainingUntilCutoff: 8160,
       estimatedPrepMinutes: 15,
-      imageUrl:
-        'https://images.unsplash.com/photo-1589302168068-964664d93dc0?w=600&auto=format&fit=crop&q=80',
+      imageUrl: 'https://cdn.foreverhotel.com/menu/vegetable-kottu.webp',
       dietaryFlags: ['Vegan option'],
       allergens: ['Gluten'],
       portionCap: 4,
-      nutrition: {
-        calories: 510,
-        proteinGrams: 18,
-        fatGrams: 14,
-      },
     },
     {
       id: 'item-103',
@@ -112,16 +100,10 @@ export const FALLBACK_MENU_RESPONSE: GuestMenuResponse = {
       isCutoff: false,
       secondsRemainingUntilCutoff: 8160,
       estimatedPrepMinutes: 20,
-      imageUrl:
-        'https://images.unsplash.com/photo-1569718212165-3a8278d5f624?w=600&auto=format&fit=crop&q=80',
+      imageUrl: 'https://cdn.foreverhotel.com/menu/prawn-noodles.webp',
       dietaryFlags: [],
       allergens: ['Shellfish', 'Gluten', 'Eggs'],
       portionCap: 2,
-      nutrition: {
-        calories: 580,
-        proteinGrams: 32,
-        fatGrams: 16,
-      },
     },
     {
       id: 'item-104',
@@ -136,16 +118,10 @@ export const FALLBACK_MENU_RESPONSE: GuestMenuResponse = {
       isCutoff: true,
       secondsRemainingUntilCutoff: 0,
       estimatedPrepMinutes: 15,
-      imageUrl:
-        'https://images.unsplash.com/photo-1608039829572-78524f79c4c7?w=600&auto=format&fit=crop&q=80',
+      imageUrl: 'https://cdn.foreverhotel.com/menu/eggs-benedict.webp',
       dietaryFlags: ['High protein'],
       allergens: ['Eggs', 'Dairy', 'Gluten'],
       portionCap: 3,
-      nutrition: {
-        calories: 460,
-        proteinGrams: 24,
-        fatGrams: 28,
-      },
     },
     {
       id: 'item-105',
@@ -160,16 +136,10 @@ export const FALLBACK_MENU_RESPONSE: GuestMenuResponse = {
       isCutoff: true,
       secondsRemainingUntilCutoff: 0,
       estimatedPrepMinutes: 12,
-      imageUrl:
-        'https://images.unsplash.com/photo-1617093727343-374698b1b08d?w=600&auto=format&fit=crop&q=80',
+      imageUrl: 'https://cdn.foreverhotel.com/menu/egg-hoppers.webp',
       dietaryFlags: ['Vegetarian', 'Gluten-free'],
       allergens: ['Eggs'],
       portionCap: 4,
-      nutrition: {
-        calories: 340,
-        proteinGrams: 14,
-        fatGrams: 10,
-      },
     },
     {
       id: 'item-106',
@@ -184,16 +154,10 @@ export const FALLBACK_MENU_RESPONSE: GuestMenuResponse = {
       isCutoff: false,
       secondsRemainingUntilCutoff: 20760,
       estimatedPrepMinutes: 25,
-      imageUrl:
-        'https://images.unsplash.com/photo-1467003909585-2f8a72700288?w=600&auto=format&fit=crop&q=80',
+      imageUrl: 'https://cdn.foreverhotel.com/menu/salmon.webp',
       dietaryFlags: ['Gluten-free', 'Keto', 'High protein'],
       allergens: ['Fish', 'Dairy'],
       portionCap: 2,
-      nutrition: {
-        calories: 520,
-        proteinGrams: 44,
-        fatGrams: 22,
-      },
     },
     {
       id: 'item-107',
@@ -208,21 +172,30 @@ export const FALLBACK_MENU_RESPONSE: GuestMenuResponse = {
       isCutoff: false,
       secondsRemainingUntilCutoff: 9960,
       estimatedPrepMinutes: 8,
-      imageUrl:
-        'https://images.unsplash.com/photo-1544787219-7f47ccb76574?w=600&auto=format&fit=crop&q=80',
+      imageUrl: 'https://cdn.foreverhotel.com/menu/ceylon-tea.webp',
       dietaryFlags: ['Vegetarian'],
       allergens: ['Dairy', 'Gluten'],
       portionCap: 4,
-      nutrition: {
-        calories: 180,
-        proteinGrams: 4,
-        fatGrams: 8,
-      },
     },
   ],
   totalItems: 7,
   version: '1.0',
 };
+
+/**
+ * Validates image URL scheme to ensure safety against javascript: or invalid schemes.
+ */
+export function isValidImageUrl(url?: string | null): boolean {
+  if (!url || typeof url !== 'string') return false;
+  const trimmed = url.trim();
+  if (trimmed.startsWith('/') && !trimmed.startsWith('//')) return true;
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Formats a currency amount into Sri Lankan Rupee (LKR) display text.

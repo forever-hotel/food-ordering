@@ -141,7 +141,6 @@ export const DEMO_MENU_ITEMS: GuestMenuItem[] = [
     dietaryFlags: ['VEGETARIAN'],
     allergens: ['Dairy', 'Gluten'],
     portionCap: 3,
-    nutrition: { calories: 340, proteinGrams: 8, fatGrams: 14 },
   },
   {
     id: 'menu-item-002',
@@ -159,7 +158,6 @@ export const DEMO_MENU_ITEMS: GuestMenuItem[] = [
     dietaryFlags: ['VEGETARIAN', 'VEGAN'],
     allergens: ['Gluten'],
     portionCap: 4,
-    nutrition: { calories: 220, proteinGrams: 4, fatGrams: 6 },
   },
 
   // --- MAINS ---
@@ -180,7 +178,6 @@ export const DEMO_MENU_ITEMS: GuestMenuItem[] = [
     dietaryFlags: ['HALAL'],
     allergens: [],
     portionCap: 3,
-    nutrition: { calories: 680, proteinGrams: 42, fatGrams: 22 },
   },
   {
     id: 'menu-item-004',
@@ -198,7 +195,6 @@ export const DEMO_MENU_ITEMS: GuestMenuItem[] = [
     dietaryFlags: [],
     allergens: ['Dairy', 'Gluten'],
     portionCap: 3,
-    nutrition: { calories: 850, proteinGrams: 48, fatGrams: 45 },
   },
   {
     id: 'menu-item-005',
@@ -216,7 +212,6 @@ export const DEMO_MENU_ITEMS: GuestMenuItem[] = [
     dietaryFlags: [],
     allergens: ['Crustaceans', 'Gluten'],
     portionCap: 2,
-    nutrition: { calories: 590, proteinGrams: 35, fatGrams: 18 },
   },
   {
     id: 'menu-item-006',
@@ -234,7 +229,6 @@ export const DEMO_MENU_ITEMS: GuestMenuItem[] = [
     dietaryFlags: [],
     allergens: ['Egg', 'Dairy', 'Gluten'],
     portionCap: 3,
-    nutrition: { calories: 520, proteinGrams: 24, fatGrams: 32 },
   },
   {
     id: 'menu-item-007',
@@ -252,7 +246,6 @@ export const DEMO_MENU_ITEMS: GuestMenuItem[] = [
     dietaryFlags: ['VEGETARIAN'],
     allergens: ['Egg', 'Gluten'],
     portionCap: 3,
-    nutrition: { calories: 430, proteinGrams: 16, fatGrams: 12 },
   },
 
   // --- DESSERTS ---
@@ -272,7 +265,6 @@ export const DEMO_MENU_ITEMS: GuestMenuItem[] = [
     dietaryFlags: ['VEGETARIAN', 'GLUTEN_FREE'],
     allergens: ['Egg', 'Tree Nuts'],
     portionCap: 4,
-    nutrition: { calories: 310, proteinGrams: 6, fatGrams: 14 },
   },
   {
     id: 'menu-item-009',
@@ -290,7 +282,6 @@ export const DEMO_MENU_ITEMS: GuestMenuItem[] = [
     dietaryFlags: ['VEGETARIAN', 'VEGAN', 'GLUTEN_FREE'],
     allergens: [],
     portionCap: 4,
-    nutrition: { calories: 140, proteinGrams: 2, fatGrams: 1 },
   },
 
   // --- BEVERAGES & TEA ---
@@ -310,7 +301,6 @@ export const DEMO_MENU_ITEMS: GuestMenuItem[] = [
     dietaryFlags: ['VEGETARIAN', 'VEGAN', 'GLUTEN_FREE'],
     allergens: [],
     portionCap: 5,
-    nutrition: { calories: 25, proteinGrams: 1, fatGrams: 0 },
   },
   {
     id: 'menu-item-011',
@@ -328,7 +318,6 @@ export const DEMO_MENU_ITEMS: GuestMenuItem[] = [
     dietaryFlags: ['VEGAN', 'GLUTEN_FREE'],
     allergens: [],
     portionCap: 5,
-    nutrition: { calories: 60, proteinGrams: 0, fatGrams: 0 },
   },
 ];
 
