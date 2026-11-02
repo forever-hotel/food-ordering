@@ -14,7 +14,16 @@ describe('Health Checks (e2e)', () => {
 
   beforeAll(async () => {
     mockDataSource = {
-      query: jest.fn().mockResolvedValue([{ '?column?': 1 }]),
+      query: jest.fn().mockImplementation((query: any) => {
+        if (typeof query === 'string' && query.includes('pg_settings')) {
+          return Promise.resolve([
+            { name: 'neon.project_id', setting: 'weathered-voice-13361247' },
+            { name: 'neon.branch_id', setting: 'br-withered-unit-azl2if4y' },
+            { name: 'neon.endpoint_id', setting: 'ep-long-fog-azwbvdgr' },
+          ]);
+        }
+        return Promise.resolve([{ '?column?': 1 }]);
+      }),
       options: {
         host: '127.0.0.1',
         database: 'foss_disposable_test',
@@ -114,12 +123,14 @@ describe('Health Checks (e2e)', () => {
         .set('x-internal-service-key', 'test-internal-secret')
         .expect(200);
 
-      expect(response.body.isDisposableTestDb).toBeDefined();
-      expect(response.body.isCloudShared).toBeDefined();
-      expect(response.body.classification).toBeDefined();
-      // Ensure no credentials or connection string are leaked
+      expect(response.body.classification).toBe('dedicated_neon_test');
+      expect(response.body.isApprovedTestBranch).toBe(true);
+      expect(response.body.isCloudShared).toBe(false);
+      expect(response.body.isDisposableTestDb).toBe(false);
+      // Ensure no credentials, connection strings or internal branch IDs are leaked
       expect(response.body.sanitizedTarget).toBeUndefined();
       expect(response.body.url).toBeUndefined();
+      expect(response.body.branchId).toBeUndefined();
     });
   });
 });

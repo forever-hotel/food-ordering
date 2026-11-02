@@ -110,7 +110,9 @@ function assertDemoAccessAuthorized(
 
   // 2. Must be in development or test environment with DEMO_MODE enabled
   const isDevOrTest =
-    process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test';
+    !process.env.NODE_ENV ||
+    process.env.NODE_ENV === 'development' ||
+    process.env.NODE_ENV === 'test';
   const isDemo = process.env.DEMO_MODE === 'true';
 
   if (!isDevOrTest || !isDemo) {

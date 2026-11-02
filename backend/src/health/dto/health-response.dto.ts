@@ -31,16 +31,28 @@ export class DatabaseIsolationDto {
   @ApiProperty({
     description:
       'Whether the active database targets a shared cloud environment (e.g. Neon dev/prod)',
-    example: true,
+    example: false,
   })
   isCloudShared!: boolean;
 
   @ApiProperty({
     description: 'Explicit isolation environment classification',
-    example: 'shared_cloud_dev',
+    example: 'dedicated_neon_test',
   })
   classification!:
-    'disposable_test' | 'shared_cloud_dev' | 'production' | 'unknown';
+    | 'dedicated_neon_test'
+    | 'disposable_local_test'
+    | 'neon_parent_dev'
+    | 'shared_cloud_dev'
+    | 'production'
+    | 'unknown';
+
+  @ApiProperty({
+    description:
+      'Whether the active database branch matches the server-configured approved test branch allowlist',
+    example: true,
+  })
+  isApprovedTestBranch!: boolean;
 }
 
 export class DatabaseHealthDto {

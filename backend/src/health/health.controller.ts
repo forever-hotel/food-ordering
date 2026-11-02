@@ -90,7 +90,7 @@ export class HealthController {
     description: 'Database isolation classification',
     type: DatabaseIsolationDto,
   })
-  getDatabaseIsolation(): DatabaseIsolationDto {
-    return this.healthService.getDatabaseIsolationInfo();
+  async getDatabaseIsolation(): Promise<DatabaseIsolationDto> {
+    return await this.healthService.getDatabaseIsolationInfo();
   }
 }

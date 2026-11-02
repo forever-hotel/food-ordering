@@ -1,4 +1,5 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
 
 import {
@@ -11,7 +12,10 @@ import {
 export class HealthService {
   private readonly logger = new Logger(HealthService.name);
 
-  constructor(@Optional() private readonly dataSource?: DataSource) {}
+  constructor(
+    @Optional() private readonly dataSource?: DataSource,
+    @Optional() private readonly configService?: ConfigService,
+  ) {}
 
   /**
    * Evaluates process liveness.
@@ -26,18 +30,110 @@ export class HealthService {
 
   /**
    * Extracts trustworthy, non-sensitive database isolation metadata.
-   * Confirms whether target database is an explicitly approved disposable test database.
-   * Never prints credentials, passwords, or connection strings.
+   * Confirms whether target database is an explicitly approved test branch or disposable test database.
+   * Validates server-provided pg_settings against server-side configuration allowlist.
+   * Never prints credentials, passwords, branch IDs or connection strings.
    */
-  getDatabaseIsolationInfo(): DatabaseIsolationDto {
+  async getDatabaseIsolationInfo(): Promise<DatabaseIsolationDto> {
     if (!this.dataSource) {
       return {
         isDisposableTestDb: false,
         isCloudShared: false,
         classification: 'unknown',
+        isApprovedTestBranch: false,
       };
     }
 
+    if (process.env.NODE_ENV === 'production') {
+      return {
+        isDisposableTestDb: false,
+        isCloudShared: true,
+        classification: 'production',
+        isApprovedTestBranch: false,
+      };
+    }
+
+    // Server-side allowlist configuration (Conditions 2 & 3)
+    const approvedProjectId =
+      this.configService?.get<string>('APPROVED_NEON_PROJECT_ID') ||
+      process.env.APPROVED_NEON_PROJECT_ID ||
+      'weathered-voice-13361247';
+
+    const approvedTestBranchId =
+      this.configService?.get<string>('APPROVED_NEON_TEST_BRANCH_ID') ||
+      process.env.APPROVED_NEON_TEST_BRANCH_ID ||
+      'br-withered-unit-azl2if4y';
+
+    const approvedTestEndpointId =
+      this.configService?.get<string>('APPROVED_NEON_TEST_ENDPOINT_ID') ||
+      process.env.APPROVED_NEON_TEST_ENDPOINT_ID ||
+      'ep-long-fog-azwbvdgr';
+
+    const parentDevBranchId =
+      this.configService?.get<string>('PARENT_DEV_BRANCH_ID') ||
+      process.env.PARENT_DEV_BRANCH_ID ||
+      'br-cold-band-az0cv5vx';
+
+    try {
+      const rows = (await this.dataSource.query(
+        `SELECT name, setting 
+         FROM pg_settings 
+         WHERE name IN ('neon.project_id', 'neon.branch_id', 'neon.endpoint_id')`,
+      )) as Array<{ name: string; setting: string }>;
+
+      const settings: Record<string, string> = {};
+      for (const row of rows) {
+        settings[row.name] = row.setting;
+      }
+
+      const observedProjectId = settings['neon.project_id'];
+      const observedBranchId = settings['neon.branch_id'];
+      const observedEndpointId = settings['neon.endpoint_id'];
+
+      // If Neon server metadata is present, evaluate against trusted server-side allowlist
+      if (observedProjectId && observedBranchId) {
+        // Explicitly reject if connected to parent dev
+        if (observedBranchId === parentDevBranchId) {
+          return {
+            isDisposableTestDb: false,
+            isCloudShared: true,
+            classification: 'neon_parent_dev',
+            isApprovedTestBranch: false,
+          };
+        }
+
+        // Validate observed project, branch, and endpoint against server-side allowlist
+        const matchesProject = observedProjectId === approvedProjectId;
+        const matchesBranch = observedBranchId === approvedTestBranchId;
+        const matchesEndpoint =
+          !approvedTestEndpointId ||
+          observedEndpointId === approvedTestEndpointId;
+
+        if (matchesProject && matchesBranch && matchesEndpoint) {
+          // Condition 4: Classify as dedicated_neon_test, not unrestricted disposable
+          return {
+            isDisposableTestDb: false,
+            isCloudShared: false,
+            classification: 'dedicated_neon_test',
+            isApprovedTestBranch: true,
+          };
+        }
+
+        // Mismatched or unknown branch in cloud
+        return {
+          isDisposableTestDb: false,
+          isCloudShared: true,
+          classification: 'shared_cloud_dev',
+          isApprovedTestBranch: false,
+        };
+      }
+    } catch (err) {
+      this.logger.warn(
+        `Failed to query pg_settings for Neon isolation metadata: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
+    // Fallback: check for local test database (e.g. SQLite / local PostgreSQL)
     const options = (this.dataSource.options || {}) as unknown as Record<
       string,
       unknown
@@ -60,14 +156,6 @@ export class HealthService {
       host === '127.0.0.1' ||
       host === '::1' ||
       host === '';
-    const isNeonCloud =
-      typeof host === 'string' && host.toLowerCase().includes('neon.tech');
-    const isCloud =
-      isNeonCloud ||
-      host.includes('aws') ||
-      host.includes('azure') ||
-      host.includes('gcp');
-
     const dbLower = database.toLowerCase();
     const isTestDbName =
       dbLower.endsWith('_test') ||
@@ -75,25 +163,20 @@ export class HealthService {
       dbLower.includes('_test_') ||
       dbLower === 'foss_test';
 
-    const isDisposableTestDb =
-      isLocal && isTestDbName && !isCloud && process.env.NODE_ENV === 'test';
-
-    let classification:
-      'disposable_test' | 'shared_cloud_dev' | 'production' | 'unknown' =
-      'unknown';
-
-    if (process.env.NODE_ENV === 'production') {
-      classification = 'production';
-    } else if (isDisposableTestDb) {
-      classification = 'disposable_test';
-    } else if (isNeonCloud || isCloud) {
-      classification = 'shared_cloud_dev';
+    if (isLocal && isTestDbName && process.env.NODE_ENV === 'test') {
+      return {
+        isDisposableTestDb: true,
+        isCloudShared: false,
+        classification: 'disposable_local_test',
+        isApprovedTestBranch: false,
+      };
     }
 
     return {
-      isDisposableTestDb,
-      isCloudShared: isCloud,
-      classification,
+      isDisposableTestDb: false,
+      isCloudShared: host.includes('neon.tech') || host.includes('aws'),
+      classification: 'unknown',
+      isApprovedTestBranch: false,
     };
   }
 

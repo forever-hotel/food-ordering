@@ -34,10 +34,11 @@ describe('HealthController', () => {
             type: 'postgres',
           },
         }),
-      getDatabaseIsolationInfo: jest.fn<() => any>().mockReturnValue({
-        isDisposableTestDb: true,
+      getDatabaseIsolationInfo: jest.fn<() => any>().mockResolvedValue({
+        isDisposableTestDb: false,
         isCloudShared: false,
-        classification: 'disposable_test',
+        classification: 'dedicated_neon_test',
+        isApprovedTestBranch: true,
       }),
     };
 
@@ -98,12 +99,13 @@ describe('HealthController', () => {
   });
 
   describe('getDatabaseIsolation', () => {
-    it('returns database isolation diagnostics from healthService', () => {
-      const result = controller.getDatabaseIsolation();
+    it('returns database isolation diagnostics from healthService', async () => {
+      const result = await controller.getDatabaseIsolation();
       expect(result).toEqual({
-        isDisposableTestDb: true,
+        isDisposableTestDb: false,
         isCloudShared: false,
-        classification: 'disposable_test',
+        classification: 'dedicated_neon_test',
+        isApprovedTestBranch: true,
       });
       expect(mockHealthService.getDatabaseIsolationInfo).toHaveBeenCalled();
     });
