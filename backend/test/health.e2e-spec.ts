@@ -38,6 +38,10 @@ describe('Health Checks (e2e)', () => {
             () => ({
               DEMO_MODE: 'true',
               INTERNAL_SERVICE_KEY: 'test-internal-secret',
+              APPROVED_NEON_PROJECT_ID: 'weathered-voice-13361247',
+              APPROVED_NEON_TEST_BRANCH_ID: 'br-withered-unit-azl2if4y',
+              APPROVED_NEON_TEST_ENDPOINT_ID: 'ep-long-fog-azwbvdgr',
+              PARENT_DEV_BRANCH_ID: 'br-cold-band-az0cv5vx',
             }),
           ],
         }),
@@ -115,6 +119,13 @@ describe('Health Checks (e2e)', () => {
       await request(app.getHttpServer())
         .get('/health/internal/database-isolation')
         .expect(401);
+    });
+
+    it('regression: rejects invalid internal service key with 403 Forbidden', async () => {
+      await request(app.getHttpServer())
+        .get('/health/internal/database-isolation')
+        .set('x-internal-service-key', 'invalid-wrong-key')
+        .expect(403);
     });
 
     it('returns database isolation classification with valid internal service key', async () => {

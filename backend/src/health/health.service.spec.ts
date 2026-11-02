@@ -7,13 +7,32 @@ describe('HealthService', () => {
   let mockDataSource: {
     query: jest.MockedFunction<(q: string) => Promise<unknown>>;
   };
+  let mockConfigService: {
+    get: jest.MockedFunction<(k: string) => string | undefined>;
+  };
 
   beforeEach(() => {
     mockDataSource = {
       query: jest.fn<(q: string) => Promise<unknown>>(),
     };
 
-    service = new HealthService(mockDataSource as unknown as DataSource);
+    mockConfigService = {
+      get: jest.fn<(k: string) => string | undefined>((key: string) => {
+        if (key === 'APPROVED_NEON_PROJECT_ID')
+          return 'weathered-voice-13361247';
+        if (key === 'APPROVED_NEON_TEST_BRANCH_ID')
+          return 'br-withered-unit-azl2if4y';
+        if (key === 'APPROVED_NEON_TEST_ENDPOINT_ID')
+          return 'ep-long-fog-azwbvdgr';
+        if (key === 'PARENT_DEV_BRANCH_ID') return 'br-cold-band-az0cv5vx';
+        return undefined;
+      }),
+    };
+
+    service = new HealthService(
+      mockDataSource as unknown as DataSource,
+      mockConfigService as unknown as ConfigService,
+    );
   });
 
   describe('getLiveness', () => {
@@ -116,6 +135,48 @@ describe('HealthService', () => {
       const isolation = await service.getDatabaseIsolationInfo();
       expect(isolation.classification).toBe('shared_cloud_dev');
       expect(isolation.isApprovedTestBranch).toBe(false);
+      expect(isolation.isCloudShared).toBe(true);
+    });
+
+    it('regression: rejects and fails closed when approved configuration is missing from server', async () => {
+      // Clear configuration mock so no approved identities exist
+      mockConfigService.get.mockReturnValue(undefined);
+
+      mockDataSource.query.mockResolvedValue([
+        { name: 'neon.project_id', setting: 'weathered-voice-13361247' },
+        { name: 'neon.branch_id', setting: 'br-withered-unit-azl2if4y' },
+        { name: 'neon.endpoint_id', setting: 'ep-long-fog-azwbvdgr' },
+      ]);
+
+      const isolation = await service.getDatabaseIsolationInfo();
+      expect(isolation.isApprovedTestBranch).toBe(false);
+      expect(isolation.classification).toBe('shared_cloud_dev');
+      expect(isolation.isCloudShared).toBe(true);
+    });
+
+    it('regression: rejects and fails closed when Neon branch ID mismatches approved configuration', async () => {
+      mockDataSource.query.mockResolvedValue([
+        { name: 'neon.project_id', setting: 'weathered-voice-13361247' },
+        { name: 'neon.branch_id', setting: 'br-wrong-child-branch' },
+        { name: 'neon.endpoint_id', setting: 'ep-long-fog-azwbvdgr' },
+      ]);
+
+      const isolation = await service.getDatabaseIsolationInfo();
+      expect(isolation.isApprovedTestBranch).toBe(false);
+      expect(isolation.classification).toBe('shared_cloud_dev');
+      expect(isolation.isCloudShared).toBe(true);
+    });
+
+    it('regression: rejects and fails closed when Neon endpoint ID mismatches approved configuration', async () => {
+      mockDataSource.query.mockResolvedValue([
+        { name: 'neon.project_id', setting: 'weathered-voice-13361247' },
+        { name: 'neon.branch_id', setting: 'br-withered-unit-azl2if4y' },
+        { name: 'neon.endpoint_id', setting: 'ep-mismatched-endpoint-9999' },
+      ]);
+
+      const isolation = await service.getDatabaseIsolationInfo();
+      expect(isolation.isApprovedTestBranch).toBe(false);
+      expect(isolation.classification).toBe('shared_cloud_dev');
       expect(isolation.isCloudShared).toBe(true);
     });
 

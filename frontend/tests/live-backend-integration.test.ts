@@ -59,8 +59,12 @@ async function ensureApprovedTestDatabaseVerified(): Promise<void> {
       assert.equal(readyRes.status, 200);
 
       // 3. Internal database isolation diagnostics
-      const internalKey =
-        process.env.INTERNAL_SERVICE_KEY || 'development-internal-service-key-at-least-32-chars';
+      const internalKey = process.env.INTERNAL_SERVICE_KEY;
+      if (!internalKey) {
+        throw new Error(
+          'DATABASE SAFETY GATE BLOCKED: INTERNAL_SERVICE_KEY environment variable is required to authenticate database isolation preflight.',
+        );
+      }
       const diagRes = await fetch(`${BACKEND_URL}/health/internal/database-isolation`, {
         headers: {
           'x-internal-service-key': internalKey,
@@ -113,6 +117,15 @@ describe(
         throw new Error(
           'DATABASE SAFETY GATE BLOCKED: ALLOW_LIVE_DATABASE_INTEGRATION_TESTS=true was provided, but ' +
             'APPROVED_NEON_TEST_BRANCH=true is missing! Refusing to run write-capable integration tests without explicit test branch authorization.',
+        );
+      });
+      return;
+    }
+
+    if (isExplicitLiveAllowed && isApprovedNeonTest && !process.env.INTERNAL_SERVICE_KEY) {
+      it('DATABASE SAFETY GATE: Refuses to run without INTERNAL_SERVICE_KEY', () => {
+        throw new Error(
+          'DATABASE SAFETY GATE BLOCKED: INTERNAL_SERVICE_KEY environment variable is required to authenticate database isolation preflight.',
         );
       });
       return;

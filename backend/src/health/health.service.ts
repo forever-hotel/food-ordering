@@ -54,25 +54,22 @@ export class HealthService {
     }
 
     // Server-side allowlist configuration (Conditions 2 & 3)
+    // All approved identities must be explicitly configured on the server; no hardcoded defaults allowed.
     const approvedProjectId =
       this.configService?.get<string>('APPROVED_NEON_PROJECT_ID') ||
-      process.env.APPROVED_NEON_PROJECT_ID ||
-      'weathered-voice-13361247';
+      process.env.APPROVED_NEON_PROJECT_ID;
 
     const approvedTestBranchId =
       this.configService?.get<string>('APPROVED_NEON_TEST_BRANCH_ID') ||
-      process.env.APPROVED_NEON_TEST_BRANCH_ID ||
-      'br-withered-unit-azl2if4y';
+      process.env.APPROVED_NEON_TEST_BRANCH_ID;
 
     const approvedTestEndpointId =
       this.configService?.get<string>('APPROVED_NEON_TEST_ENDPOINT_ID') ||
-      process.env.APPROVED_NEON_TEST_ENDPOINT_ID ||
-      'ep-long-fog-azwbvdgr';
+      process.env.APPROVED_NEON_TEST_ENDPOINT_ID;
 
     const parentDevBranchId =
       this.configService?.get<string>('PARENT_DEV_BRANCH_ID') ||
-      process.env.PARENT_DEV_BRANCH_ID ||
-      'br-cold-band-az0cv5vx';
+      process.env.PARENT_DEV_BRANCH_ID;
 
     try {
       const rows = (await this.dataSource.query(
@@ -93,7 +90,7 @@ export class HealthService {
       // If Neon server metadata is present, evaluate against trusted server-side allowlist
       if (observedProjectId && observedBranchId) {
         // Explicitly reject if connected to parent dev
-        if (observedBranchId === parentDevBranchId) {
+        if (parentDevBranchId && observedBranchId === parentDevBranchId) {
           return {
             isDisposableTestDb: false,
             isCloudShared: true,
@@ -102,12 +99,19 @@ export class HealthService {
           };
         }
 
-        // Validate observed project, branch, and endpoint against server-side allowlist
-        const matchesProject = observedProjectId === approvedProjectId;
-        const matchesBranch = observedBranchId === approvedTestBranchId;
+        // Validate observed project, branch, and endpoint against server-side allowlist.
+        // Requires approved project and branch configuration to be explicitly set (fails closed if missing).
+        const hasRequiredConfig = Boolean(
+          approvedProjectId && approvedTestBranchId,
+        );
+        const matchesProject =
+          hasRequiredConfig && observedProjectId === approvedProjectId;
+        const matchesBranch =
+          hasRequiredConfig && observedBranchId === approvedTestBranchId;
         const matchesEndpoint =
-          !approvedTestEndpointId ||
-          observedEndpointId === approvedTestEndpointId;
+          hasRequiredConfig &&
+          (!approvedTestEndpointId ||
+            observedEndpointId === approvedTestEndpointId);
 
         if (matchesProject && matchesBranch && matchesEndpoint) {
           // Condition 4: Classify as dedicated_neon_test, not unrestricted disposable
@@ -119,7 +123,7 @@ export class HealthService {
           };
         }
 
-        // Mismatched or unknown branch in cloud
+        // Mismatched, unconfigured or unknown branch in cloud
         return {
           isDisposableTestDb: false,
           isCloudShared: true,
