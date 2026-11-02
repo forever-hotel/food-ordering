@@ -33,17 +33,12 @@ const isToday = (iso?: string) => {
 
 export function OrdersTab() {
   const { sessionToken, guest } = useAuth();
-  const {
-    setActiveTab,
-    selectedOrderId: navSelectedOrderId,
-    setSelectedOrderId: setNavSelectedOrderId,
-  } = useNavigation();
+  const { setActiveTab, selectedOrderId, setSelectedOrderId } = useNavigation();
 
   const [orders, setOrders] = useState<FoodOrderResponse[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
-  const activeOrderId = selectedOrderId || navSelectedOrderId;
+  const activeOrderId = selectedOrderId;
 
   const latestFetchSeqRef = useRef<number>(0);
   const realtimeClientRef = useRef<FossRealtimeClient | null>(null);
@@ -86,7 +81,6 @@ export function OrdersTab() {
       Promise.resolve().then(() => {
         if (!isCancelled && seq === latestFetchSeqRef.current) {
           setOrders([]);
-          setSelectedOrderId(null);
           setError(null);
           setLoading(false);
         }
@@ -100,7 +94,6 @@ export function OrdersTab() {
       .then((data) => {
         if (!isCancelled && seq === latestFetchSeqRef.current) {
           setOrders(reconcileAuthoritativeOrders([], data));
-          setSelectedOrderId(null);
           setError(null);
           setLoading(false);
         }
@@ -109,7 +102,6 @@ export function OrdersTab() {
         if (!isCancelled && seq === latestFetchSeqRef.current) {
           const msg = err instanceof Error ? err.message : 'Unable to retrieve order history.';
           setOrders([]);
-          setSelectedOrderId(null);
           setError(msg);
           setLoading(false);
         }
@@ -214,7 +206,6 @@ export function OrdersTab() {
 
   const handleBackFromTracker = useCallback(() => {
     setSelectedOrderId(null);
-    setNavSelectedOrderId(null);
     if (!sessionToken || !guest?.bookingId || !guest?.roomNumber) return;
     const seq = ++latestFetchSeqRef.current;
     fetchGuestOrders(sessionToken)
@@ -224,7 +215,7 @@ export function OrdersTab() {
         }
       })
       .catch(() => {});
-  }, [sessionToken, guest?.bookingId, guest?.roomNumber, setNavSelectedOrderId]);
+  }, [sessionToken, guest?.bookingId, guest?.roomNumber, setSelectedOrderId]);
 
   // If viewing detailed status tracker (Figure 36)
   if (activeOrderId) {

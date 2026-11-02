@@ -18,7 +18,7 @@ interface NavigationContextType {
   pageHeader: PageHeaderConfig;
   selectedOrderId: string | null;
   setSelectedOrderId: (id: string | null) => void;
-  setActiveTab: (tab: NavTabId) => void;
+  setActiveTab: (tab: NavTabId, options?: { keepSelectedOrder?: boolean }) => void;
   setPageHeader: (config: PageHeaderConfig) => void;
   resetHeaderForTab: (tab: NavTabId, roomNumber?: string, guestName?: string) => void;
 }
@@ -90,9 +90,12 @@ export function NavigationProvider({ children }: { children: React.ReactNode }) 
   );
 
   const setActiveTab = useCallback(
-    (tab: NavTabId) => {
+    (tab: NavTabId, options?: { keepSelectedOrder?: boolean }) => {
       setActiveTabState(tab);
       resetHeaderForTab(tab);
+      if (!options?.keepSelectedOrder) {
+        setSelectedOrderId(null);
+      }
     },
     [resetHeaderForTab],
   );

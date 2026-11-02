@@ -15,6 +15,7 @@ import { useAuth } from '../../../lib/auth/auth-context.tsx';
 import { useNavigation } from '../../../lib/navigation/navigation-context.tsx';
 import { useCart } from '../../../lib/cart/cart-context.tsx';
 import { AlertNotice } from '../../../components/feedback/alert-notice.tsx';
+import { EmptyState } from '../../../components/feedback/empty-state.tsx';
 import { OrderConfirmation } from '../../orders/components/order-confirmation.tsx';
 
 const { Title, Paragraph, Text } = Typography;
@@ -142,11 +143,30 @@ export function CartView({ onBack, onPlaceOrder }: CartViewProps) {
         order={confirmedOrder}
         onTrackStatus={() => {
           setSelectedOrderId(confirmedOrder.orderId);
-          setActiveTab('orders');
+          setActiveTab('orders', { keepSelectedOrder: true });
           onBack();
         }}
         onBackToMenu={onBack}
       />
+    );
+  }
+
+  // Dedicated Empty Cart State (Figure 34 / Task 1)
+  if (items.length === 0) {
+    return (
+      <div
+        role="region"
+        aria-label="Your Cart is Empty"
+        className="w-full max-w-md mx-auto py-8 animate-fade-in"
+      >
+        <EmptyState
+          icon="🛒"
+          title="Your Cart is Empty"
+          description="You haven't added any dishes yet. Explore our dining menu to select delicious meals for your stay."
+          actionText="Browse Menu"
+          onAction={onBack}
+        />
+      </div>
     );
   }
 
@@ -172,76 +192,70 @@ export function CartView({ onBack, onPlaceOrder }: CartViewProps) {
         className="!rounded-3xl !border-slate-100 !bg-white !shadow-xs divide-y divide-slate-100 overflow-hidden"
         styles={{ body: { padding: '8px 16px' } }}
       >
-        {items.length === 0 ? (
-          <div className="py-8 text-center text-slate-400 text-xs">
-            Your cart is empty. Please select food items from the menu.
-          </div>
-        ) : (
-          items.map((cartItem) => {
-            const portionCap = cartItem.item.portionCap ?? MAX_ORDER_ITEM_QUANTITY;
-            const lineTotal = calculateLineTotal(cartItem.item.price, cartItem.quantity);
+        {items.map((cartItem) => {
+          const portionCap = cartItem.item.portionCap ?? MAX_ORDER_ITEM_QUANTITY;
+          const lineTotal = calculateLineTotal(cartItem.item.price, cartItem.quantity);
 
-            return (
-              <div key={cartItem.id} className="py-3.5 flex items-center justify-between gap-3">
-                {/* Food Avatar / Thumbnail */}
-                <CartItemThumbnail item={cartItem.item} />
+          return (
+            <div key={cartItem.id} className="py-3.5 flex items-center justify-between gap-3">
+              {/* Food Avatar / Thumbnail */}
+              <CartItemThumbnail item={cartItem.item} />
 
-                {/* Name & Calculated Line Total */}
-                <div className="flex-1 min-w-0">
-                  <Title level={4} className="!text-sm !font-bold !text-[#1E293B] !mb-0.5 truncate">
-                    {cartItem.item.name}
-                  </Title>
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <Text className="text-xs font-semibold text-slate-700">
-                      {formatLkrPrice(lineTotal)}
-                    </Text>
-                    {cartItem.quantity > 1 && (
-                      <span className="text-[11px] text-slate-400 font-medium">
-                        ({formatLkrPrice(cartItem.item.price)} each)
-                      </span>
-                    )}
-                  </div>
-                  {cartItem.specialNotes && (
-                    <span className="text-[11px] text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded font-medium mt-1 inline-block truncate max-w-[180px]">
-                      Note: {cartItem.specialNotes}
+              {/* Name & Calculated Line Total */}
+              <div className="flex-1 min-w-0">
+                <Title level={4} className="!text-sm !font-bold !text-[#1E293B] !mb-0.5 truncate">
+                  {cartItem.item.name}
+                </Title>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <Text className="text-xs font-semibold text-slate-700">
+                    {formatLkrPrice(lineTotal)}
+                  </Text>
+                  {cartItem.quantity > 1 && (
+                    <span className="text-[11px] text-slate-400 font-medium">
+                      ({formatLkrPrice(cartItem.item.price)} each)
                     </span>
                   )}
                 </div>
-
-                {/* +/- Stepper Controls (Figure 34) */}
-                <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-2xl p-1 flex-shrink-0">
-                  <button
-                    type="button"
-                    aria-label={`Decrease quantity of ${cartItem.item.name}`}
-                    disabled={submitting}
-                    onClick={() => handleDecrement(cartItem)}
-                    className="touch-target w-8 h-8 rounded-xl bg-white text-slate-800 shadow-xs hover:bg-slate-100 active:scale-95 flex items-center justify-center font-bold text-base transition-all disabled:opacity-50"
-                  >
-                    −
-                  </button>
-
-                  <span className="w-5 text-center text-sm font-bold text-slate-800 tabular-nums">
-                    {cartItem.quantity}
+                {cartItem.specialNotes && (
+                  <span className="text-[11px] text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded font-medium mt-1 inline-block truncate max-w-[180px]">
+                    Note: {cartItem.specialNotes}
                   </span>
-
-                  <button
-                    type="button"
-                    aria-label={`Increase quantity of ${cartItem.item.name}`}
-                    disabled={cartItem.quantity >= portionCap || submitting}
-                    onClick={() => handleIncrement(cartItem)}
-                    className={`touch-target w-8 h-8 rounded-xl flex items-center justify-center font-bold text-base transition-all ${
-                      cartItem.quantity < portionCap && !submitting
-                        ? 'bg-white text-slate-800 shadow-xs hover:bg-slate-100 active:scale-95'
-                        : 'text-slate-300 cursor-not-allowed'
-                    }`}
-                  >
-                    +
-                  </button>
-                </div>
+                )}
               </div>
-            );
-          })
-        )}
+
+              {/* +/- Stepper Controls (Figure 34) */}
+              <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-2xl p-1 flex-shrink-0">
+                <button
+                  type="button"
+                  aria-label={`Decrease quantity of ${cartItem.item.name}`}
+                  disabled={submitting}
+                  onClick={() => handleDecrement(cartItem)}
+                  className="touch-target w-8 h-8 rounded-xl bg-white text-slate-800 shadow-xs hover:bg-slate-100 active:scale-95 flex items-center justify-center font-bold text-base transition-all disabled:opacity-50"
+                >
+                  −
+                </button>
+
+                <span className="w-5 text-center text-sm font-bold text-slate-800 tabular-nums">
+                  {cartItem.quantity}
+                </span>
+
+                <button
+                  type="button"
+                  aria-label={`Increase quantity of ${cartItem.item.name}`}
+                  disabled={cartItem.quantity >= portionCap || submitting}
+                  onClick={() => handleIncrement(cartItem)}
+                  className={`touch-target w-8 h-8 rounded-xl flex items-center justify-center font-bold text-base transition-all ${
+                    cartItem.quantity < portionCap && !submitting
+                      ? 'bg-white text-slate-800 shadow-xs hover:bg-slate-100 active:scale-95'
+                      : 'text-slate-300 cursor-not-allowed'
+                  }`}
+                >
+                  +
+                </button>
+              </div>
+            </div>
+          );
+        })}
 
         {/* Subtotal row within cart card */}
         {items.length > 0 && (
