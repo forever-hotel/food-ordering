@@ -17,6 +17,7 @@ import {
   TaskType,
   TaskPriority,
 } from '../src/integrations/internal-services/wkms/dto/wkms-task.dto.js';
+import { FossServiceCategory } from '../src/modules/service-requests/enums/foss-service-category.enum.js';
 import { GuestAuthGuard } from '../src/modules/guest-sessions/guards/guest-auth.guard.js';
 import { GuestSessionsService } from '../src/modules/guest-sessions/services/guest-sessions.service.js';
 import { ServiceRequestsController } from '../src/modules/service-requests/service-requests.controller.js';
@@ -285,19 +286,21 @@ describe('Service Requests & WKMS Worker Dispatch (e2e)', () => {
     it('fails closed with 503 error when upstream WKMS is unreachable', async () => {
       mockWkms.setSimulateDown(true);
 
-      const response = await request(app.getHttpServer())
-        .post('/service-requests')
-        .set('Authorization', `Bearer ${activeTokenRoom101}`)
-        .set('Idempotency-Key', 'idemp-wkms-down-test')
-        .send({
-          requestType: TaskType.TOILETRIES,
-          description: 'Need shampoo and soap',
-        });
+      try {
+        const response = await request(app.getHttpServer())
+          .post('/service-requests')
+          .set('Authorization', `Bearer ${activeTokenRoom101}`)
+          .set('Idempotency-Key', 'idemp-wkms-down-test')
+          .send({
+            requestType: FossServiceCategory.WATER_BOTTLES,
+            description: 'Need water bottles',
+          });
 
-      expect(response.status).toBe(503);
-      expect(response.body.message).toContain('WKMS');
-
-      mockWkms.setSimulateDown(false);
+        expect(response.status).toBe(503);
+        expect(response.body.message).toContain('WKMS');
+      } finally {
+        mockWkms.setSimulateDown(false);
+      }
     });
   });
 
@@ -368,8 +371,8 @@ describe('Service Requests & WKMS Worker Dispatch (e2e)', () => {
         .set('Authorization', `Bearer ${activeTokenRoom101}`)
         .set('Idempotency-Key', 'idemp-progression-test')
         .send({
-          requestType: TaskType.LUGGAGE_ASSISTANCE,
-          description: 'Need help with 2 suitcases',
+          requestType: FossServiceCategory.LAUNDRY_PICKUP,
+          description: 'Need laundry pickup',
         });
 
       expect(createResponse.status).toBe(201);
@@ -628,7 +631,7 @@ describe('Service Requests & WKMS Worker Dispatch (e2e)', () => {
         .set('Authorization', `Bearer ${activeTokenRoom101}`)
         .set('Idempotency-Key', 'idemp-ac3-dedup-test')
         .send({
-          requestType: TaskType.TOILETRIES,
+          requestType: FossServiceCategory.WATER_BOTTLES,
         });
       const reqId = createRes.body.requestId;
 

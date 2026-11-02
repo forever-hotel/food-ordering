@@ -13,8 +13,10 @@ import { ConfigService } from '@nestjs/config';
 import { UpstreamServiceUnavailableException } from '../../integrations/contracts/upstream-integration.exception.js';
 import {
   TaskPriority,
+  TaskType,
   WkmsCreateTaskDto,
 } from '../../integrations/internal-services/wkms/dto/wkms-task.dto.js';
+import { FossServiceCategory } from './enums/foss-service-category.enum.js';
 import {
   WKMS_PROVIDER,
   WkmsProvider,
@@ -69,11 +71,12 @@ export class ServiceRequestsService {
 
     // Validate that category is supported in the shared Neon schema (reject before dispatching to WKMS to prevent partial-failure and database enum errors)
     if (
-      dto.requestType === 'TOILETRIES' ||
-      dto.requestType === 'LUGGAGE_ASSISTANCE'
+      !Object.values(FossServiceCategory).includes(
+        dto.requestType as FossServiceCategory,
+      )
     ) {
       throw new BadRequestException(
-        `Service request category [${dto.requestType}] is pending cross-subsystem enum approval in shared database schema.`,
+        `Invalid service request category [${dto.requestType}]. Must be one of: ${Object.values(FossServiceCategory).join(', ')}`,
       );
     }
 
@@ -96,13 +99,18 @@ export class ServiceRequestsService {
     }
 
     const priority = dto.priority || TaskPriority.NORMAL;
+    const wkmsTaskType = this.translateCategoryToWkmsTaskType(dto.requestType);
+    const wkmsDescription = this.formatWkmsTaskDescription(
+      dto.requestType,
+      dto.description,
+    );
 
     // Dispatch to WKMS
     const wkmsTaskDto: WkmsCreateTaskDto = {
       roomNumber: guest.roomNumber,
       bookingId: guest.bookingId,
-      taskType: dto.requestType,
-      description: dto.description,
+      taskType: wkmsTaskType,
+      description: wkmsDescription,
       priority,
       idempotencyKey,
     };
@@ -110,7 +118,7 @@ export class ServiceRequestsService {
     let wkmsResult;
     try {
       this.logger.log(
-        `Dispatching service request to WKMS for room [${guest.roomNumber}] type [${dto.requestType}]`,
+        `Dispatching service request to WKMS for room [${guest.roomNumber}] type [${wkmsTaskType}] (FOSS category: [${dto.requestType}])`,
       );
       wkmsResult = await this.wkmsProvider.createTask(wkmsTaskDto);
     } catch (err: unknown) {
@@ -500,5 +508,47 @@ export class ServiceRequestsService {
             ? updatedAtIso
             : undefined,
     }));
+  }
+
+  /**
+   * Translates a FOSS-persisted service category to an upstream WKMS TaskType.
+   * Per authorized operational decision, WATER_BOTTLES is fulfilled via WKMS TOILETRIES.
+   */
+  public translateCategoryToWkmsTaskType(category: string): TaskType {
+    switch (category) {
+      case FossServiceCategory.ROOM_CLEANING:
+        return TaskType.ROOM_CLEANING;
+      case FossServiceCategory.EXTRA_TOWELS:
+        return TaskType.EXTRA_TOWELS;
+      case FossServiceCategory.WATER_BOTTLES:
+        return TaskType.TOILETRIES;
+      case FossServiceCategory.MAINTENANCE:
+        return TaskType.MAINTENANCE;
+      case FossServiceCategory.LAUNDRY_PICKUP:
+        return TaskType.LAUNDRY_PICKUP;
+      case FossServiceCategory.OTHER:
+        return TaskType.OTHER;
+      default:
+        return TaskType.OTHER;
+    }
+  }
+
+  /**
+   * Prepares the task description for WKMS workers.
+   * When WATER_BOTTLES is dispatched under TOILETRIES, prepends an explicit note
+   * to deliver drinking water bottles, preserving any guest instructions.
+   */
+  public formatWkmsTaskDescription(
+    category: string,
+    guestInstructions?: string,
+  ): string | undefined {
+    if (category === FossServiceCategory.WATER_BOTTLES) {
+      const baseNote = 'Deliver drinking water bottles to the guest room.';
+      if (guestInstructions && guestInstructions.trim().length > 0) {
+        return `${baseNote} Guest instructions: ${guestInstructions.trim()}`;
+      }
+      return baseNote;
+    }
+    return guestInstructions;
   }
 }

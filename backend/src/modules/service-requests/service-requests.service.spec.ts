@@ -17,6 +17,7 @@ import { CreateServiceRequestDto } from './dto/create-service-request.dto.js';
 import { GetServiceRequestsQueryDto } from './dto/get-service-requests-query.dto.js';
 import { WkmsTaskStatusUpdatedEventDto } from './dto/wkms-status-event.dto.js';
 import { FossServiceRequest } from './entities/foss-service-request.entity.js';
+import { FossServiceCategory } from './enums/foss-service-category.enum.js';
 import { ServiceRequestStatus } from './enums/service-request-status.enum.js';
 import { FossServiceRequestRepository } from './repositories/foss-service-request.repository.js';
 import { ServiceRequestsService } from './service-requests.service.js';
@@ -154,6 +155,74 @@ describe('ServiceRequestsService', () => {
           description: 'Help with bags',
         }),
       ).rejects.toThrow(BadRequestException);
+    });
+
+    it('correctly maps WATER_BOTTLES to WKMS TOILETRIES task with explicit description', async () => {
+      mockRequestRepository.findByIdempotencyKey.mockResolvedValue(null);
+      const createTaskSpy = jest.spyOn(mockWkms, 'createTask');
+
+      const response = await service.createServiceRequest(sampleGuest, {
+        requestType: FossServiceCategory.WATER_BOTTLES,
+        description: 'Please bring 3 bottles',
+        idempotencyKey: 'idemp-water-001',
+      });
+
+      expect(response.requestType).toBe(FossServiceCategory.WATER_BOTTLES);
+      expect(response.description).toBe('Please bring 3 bottles');
+      expect(createTaskSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          taskType: TaskType.TOILETRIES,
+          description:
+            'Deliver drinking water bottles to the guest room. Guest instructions: Please bring 3 bottles',
+        }),
+      );
+      expect(mockRequestRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          category: FossServiceCategory.WATER_BOTTLES,
+          description: 'Please bring 3 bottles',
+        }),
+      );
+    });
+
+    it('formats default task description for WATER_BOTTLES when guest instructions are omitted', async () => {
+      mockRequestRepository.findByIdempotencyKey.mockResolvedValue(null);
+      const createTaskSpy = jest.spyOn(mockWkms, 'createTask');
+
+      await service.createServiceRequest(sampleGuest, {
+        requestType: FossServiceCategory.WATER_BOTTLES,
+        idempotencyKey: 'idemp-water-002',
+      });
+
+      expect(createTaskSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          taskType: TaskType.TOILETRIES,
+          description: 'Deliver drinking water bottles to the guest room.',
+        }),
+      );
+    });
+
+    it('correctly maps LAUNDRY_PICKUP to WKMS LAUNDRY_PICKUP task', async () => {
+      mockRequestRepository.findByIdempotencyKey.mockResolvedValue(null);
+      const createTaskSpy = jest.spyOn(mockWkms, 'createTask');
+
+      const response = await service.createServiceRequest(sampleGuest, {
+        requestType: FossServiceCategory.LAUNDRY_PICKUP,
+        description: 'Dry cleaning 2 shirts',
+        idempotencyKey: 'idemp-laundry-001',
+      });
+
+      expect(response.requestType).toBe(FossServiceCategory.LAUNDRY_PICKUP);
+      expect(createTaskSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          taskType: TaskType.LAUNDRY_PICKUP,
+          description: 'Dry cleaning 2 shirts',
+        }),
+      );
+      expect(mockRequestRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          category: FossServiceCategory.LAUNDRY_PICKUP,
+        }),
+      );
     });
 
     it('handles concurrent duplicate key race condition gracefully', async () => {
@@ -616,6 +685,66 @@ describe('ServiceRequestsService', () => {
       } finally {
         process.env.NODE_ENV = 'test';
       }
+    });
+  });
+
+  describe('FOSS-to-WKMS Category & Description Translation', () => {
+    it('translates all 6 approved FOSS categories to corresponding WKMS task types', () => {
+      expect(
+        service.translateCategoryToWkmsTaskType(
+          FossServiceCategory.ROOM_CLEANING,
+        ),
+      ).toBe(TaskType.ROOM_CLEANING);
+      expect(
+        service.translateCategoryToWkmsTaskType(
+          FossServiceCategory.EXTRA_TOWELS,
+        ),
+      ).toBe(TaskType.EXTRA_TOWELS);
+      expect(
+        service.translateCategoryToWkmsTaskType(
+          FossServiceCategory.WATER_BOTTLES,
+        ),
+      ).toBe(TaskType.TOILETRIES);
+      expect(
+        service.translateCategoryToWkmsTaskType(FossServiceCategory.MAINTENANCE),
+      ).toBe(TaskType.MAINTENANCE);
+      expect(
+        service.translateCategoryToWkmsTaskType(
+          FossServiceCategory.LAUNDRY_PICKUP,
+        ),
+      ).toBe(TaskType.LAUNDRY_PICKUP);
+      expect(
+        service.translateCategoryToWkmsTaskType(FossServiceCategory.OTHER),
+      ).toBe(TaskType.OTHER);
+      expect(service.translateCategoryToWkmsTaskType('UNKNOWN')).toBe(
+        TaskType.OTHER,
+      );
+    });
+
+    it('formats water bottles task description correctly with and without guest notes', () => {
+      expect(
+        service.formatWkmsTaskDescription(FossServiceCategory.WATER_BOTTLES),
+      ).toBe('Deliver drinking water bottles to the guest room.');
+      expect(
+        service.formatWkmsTaskDescription(
+          FossServiceCategory.WATER_BOTTLES,
+          '  ',
+        ),
+      ).toBe('Deliver drinking water bottles to the guest room.');
+      expect(
+        service.formatWkmsTaskDescription(
+          FossServiceCategory.WATER_BOTTLES,
+          '3 chilled bottles',
+        ),
+      ).toBe(
+        'Deliver drinking water bottles to the guest room. Guest instructions: 3 chilled bottles',
+      );
+      expect(
+        service.formatWkmsTaskDescription(
+          FossServiceCategory.EXTRA_TOWELS,
+          '2 bath towels',
+        ),
+      ).toBe('2 bath towels');
     });
   });
 });

@@ -1,7 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsEnum, IsInt, IsOptional, Max, Min } from 'class-validator';
-import { TaskType } from '../../../integrations/internal-services/wkms/enums/task-type.enum.js';
+import { FossServiceCategory } from '../enums/foss-service-category.enum.js';
 import { ServiceRequestStatus } from '../enums/service-request-status.enum.js';
 
 export class GetServiceRequestsQueryDto {
@@ -17,12 +17,15 @@ export class GetServiceRequestsQueryDto {
   status?: ServiceRequestStatus;
 
   @ApiPropertyOptional({
-    enum: TaskType,
+    enum: FossServiceCategory,
     description: 'Filter by request category / type',
   })
   @IsOptional()
-  @IsEnum(TaskType, { message: 'requestType must be a valid TaskType' })
-  requestType?: TaskType;
+  @IsEnum(FossServiceCategory, {
+    message:
+      'requestType must be one of: ROOM_CLEANING, EXTRA_TOWELS, WATER_BOTTLES, MAINTENANCE, LAUNDRY_PICKUP, OTHER',
+  })
+  requestType?: FossServiceCategory;
 
   @ApiPropertyOptional({
     description: 'Maximum number of service requests to return (1-100)',

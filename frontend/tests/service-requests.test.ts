@@ -292,10 +292,55 @@ describe('TC-DDP-142-AC4: Contract & Visual Layout Fidelity Audit (Figure 38)', 
     );
     assert.deepEqual(
       categories.map((c) => c.backendType),
-      ['ROOM_CLEANING', 'EXTRA_TOWELS', 'MAINTENANCE', 'LAUNDRY_PICKUP', 'TOILETRIES', 'OTHER'],
+      ['ROOM_CLEANING', 'EXTRA_TOWELS', 'MAINTENANCE', 'LAUNDRY_PICKUP', 'WATER_BOTTLES', 'OTHER'],
     );
     const laundry = categories.find((c) => c.label === 'Laundry');
     assert.equal(laundry?.backendType, 'LAUNDRY_PICKUP');
+    const water = categories.find((c) => c.label === 'Water Bottles');
+    assert.equal(water?.backendType, 'WATER_BOTTLES');
+  });
+
+  it('submits all 6 approved categories with correct backendType and headers', async () => {
+    const originalFetch = globalThis.fetch;
+    const submittedTypes: string[] = [];
+
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      const parsedBody = JSON.parse(String(init?.body || '{}'));
+      submittedTypes.push(parsedBody.requestType);
+      return new Response(
+        JSON.stringify({
+          requestId: `REQ-${Date.now()}`,
+          roomNumber: '103',
+          bookingId: 'booking-101',
+          requestType: parsedBody.requestType,
+          status: 'SUBMITTED',
+          priority: 'NORMAL',
+          timeline: [],
+        }),
+        { status: 201, headers: { 'Content-Type': 'application/json' } },
+      );
+    }) as typeof fetch;
+
+    try {
+      for (const option of SERVICE_TYPE_OPTIONS) {
+        await createServiceRequest(
+          'session-101',
+          { requestType: option.backendType, description: `Request for ${option.label}` },
+          `idemp-${option.key}`,
+        );
+      }
+
+      assert.deepEqual(submittedTypes, [
+        'ROOM_CLEANING',
+        'EXTRA_TOWELS',
+        'MAINTENANCE',
+        'LAUNDRY_PICKUP',
+        'WATER_BOTTLES',
+        'OTHER',
+      ]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 
   it('reproduces Figure 38 active requests text and status tags', () => {
