@@ -161,13 +161,26 @@ function assertDemoAccessAuthorized(
 
   // 4. Physical socket check: inspect direct TCP socket address only.
   // Do NOT trust req.hostname or Host header.
+  // In containerized development (Docker), incoming host connections arrive via the Docker bridge gateway (RFC 1918).
   const remoteIp = req.socket?.remoteAddress;
-  const isLoopbackSocket =
+  const isLoopbackOrContainerBridge =
     remoteIp === '127.0.0.1' ||
     remoteIp === '::1' ||
-    remoteIp === '::ffff:127.0.0.1';
+    remoteIp === '::ffff:127.0.0.1' ||
+    Boolean(
+      remoteIp &&
+        (remoteIp.startsWith('127.') ||
+          remoteIp.startsWith('::ffff:127.') ||
+          // RFC 1918 private subnets for Docker bridge / WSL2 local gateway
+          remoteIp.startsWith('10.') ||
+          remoteIp.startsWith('::ffff:10.') ||
+          /^::ffff:172\.(1[6-9]|2[0-9]|3[0-1])\./.test(remoteIp) ||
+          /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(remoteIp) ||
+          remoteIp.startsWith('192.168.') ||
+          remoteIp.startsWith('::ffff:192.168.')),
+    );
 
-  if (!isLoopbackSocket) {
+  if (!isLoopbackOrContainerBridge) {
     throw new ForbiddenException(
       `${operationName} require direct local-only access or valid developer authorization.`,
     );
