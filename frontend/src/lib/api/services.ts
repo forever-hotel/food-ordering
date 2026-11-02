@@ -10,12 +10,18 @@ import { getServicesProvider } from '../data-mode/provider-factory.ts';
  * 6 Approved Service Request categories matching Figure 38
  */
 export const SERVICE_TYPE_OPTIONS: ServiceTypeOption[] = [
-  { key: 'cleaning', backendType: 'ROOM_CLEANING', label: 'Room Cleaning', icon: '🧹' },
-  { key: 'towels', backendType: 'EXTRA_TOWELS', label: 'Extra Towels', icon: '🛁' },
-  { key: 'maintenance', backendType: 'MAINTENANCE', label: 'Maintenance', icon: '🔧' },
-  { key: 'laundry', backendType: 'LAUNDRY_PICKUP', label: 'Laundry', icon: '👕' },
-  { key: 'water', backendType: 'WATER_BOTTLES', label: 'Water Bottles', icon: '💧' },
-  { key: 'other', backendType: 'OTHER', label: 'Other', icon: '✦' },
+  { key: 'cleaning', backendType: 'ROOM_CLEANING', label: 'Room Cleaning', iconKey: 'cleaning' },
+  { key: 'towels', backendType: 'EXTRA_TOWELS', label: 'Extra Towels', iconKey: 'towels' },
+  { key: 'maintenance', backendType: 'MAINTENANCE', label: 'Maintenance', iconKey: 'maintenance' },
+  { key: 'laundry', backendType: 'LAUNDRY_PICKUP', label: 'Laundry', iconKey: 'laundry' },
+  {
+    key: 'toiletries',
+    backendType: 'TOILETRIES',
+    label: 'Toiletries',
+    iconKey: 'toiletries',
+    disabled: true,
+  },
+  { key: 'other', backendType: 'OTHER', label: 'Other', iconKey: 'other' },
 ];
 
 /**

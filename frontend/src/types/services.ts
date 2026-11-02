@@ -2,11 +2,15 @@ export type ServiceRequestStatus = 'SUBMITTED' | 'ASSIGNED' | 'IN_PROGRESS' | 'C
 
 export type ServiceTaskPriority = 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT';
 
+export type ServiceIconKey =
+  'cleaning' | 'towels' | 'maintenance' | 'laundry' | 'toiletries' | 'other';
+
 export interface ServiceTypeOption {
   key: string;
   backendType: string;
   label: string;
-  icon: string;
+  iconKey: ServiceIconKey;
+  disabled?: boolean;
 }
 
 export interface CreateServiceRequestPayload {
