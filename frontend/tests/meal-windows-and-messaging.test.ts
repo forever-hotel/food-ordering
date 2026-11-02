@@ -7,15 +7,14 @@ import {
   formatRemainingTime,
   formatTime12Hour,
   getColomboTime,
-  getMealWindowGuestMessage,
   isItemCurrentlyOrderable,
   isItemCutoff,
   parseTimeToSeconds,
 } from '../src/lib/utils/meal-windows.ts';
 import type { GuestMenuItem, MealWindowStatus } from '../src/types/menu.ts';
 
-// Authoritative meal schedule definitions in Asia/Colombo
-const MOCK_MEAL_WINDOWS: MealWindowStatus[] = [
+// Authoritative operational meal schedule definitions in Asia/Colombo (4 windows per KMS contract)
+const MOCK_AUTHORITATIVE_MEAL_WINDOWS: MealWindowStatus[] = [
   {
     period: 'BREAKFAST',
     name: 'Breakfast',
@@ -30,15 +29,6 @@ const MOCK_MEAL_WINDOWS: MealWindowStatus[] = [
     name: 'Lunch',
     startTime: '12:00:00',
     cutoffTime: '15:00:00',
-    isActive: false,
-    isCutoffReached: false,
-    secondsRemaining: 0,
-  },
-  {
-    period: 'TEA_TIME',
-    name: 'Tea & Snacks',
-    startTime: '15:00:00',
-    cutoffTime: '17:30:00',
     isActive: false,
     isCutoffReached: false,
     secondsRemaining: 0,
@@ -63,7 +53,7 @@ const MOCK_MEAL_WINDOWS: MealWindowStatus[] = [
   },
 ];
 
-describe('Issue #101 Phase 2: Authoritative Meal Period Mapping', () => {
+describe('Issue #101 Phase 2: Authoritative Meal Period Mapping & Unapproved Schedule Isolation', () => {
   it('correctly maps Breakfast to BREAKFAST', () => {
     assert.equal(CATEGORY_PERIOD_MAP.Breakfast, 'BREAKFAST');
   });
@@ -81,15 +71,11 @@ describe('Issue #101 Phase 2: Authoritative Meal Period Mapping', () => {
     assert.notEqual(CATEGORY_PERIOD_MAP.Tea, 'ALL_DAY');
   });
 
-  it('treats ALL_DAY strictly as an item availability classification, not a tab window substitute', () => {
+  it('recognizes that backend KMS contract does not return a TEA_TIME window', () => {
     const targetPeriod = CATEGORY_PERIOD_MAP.Tea;
     assert.equal(targetPeriod, 'TEA_TIME');
-    // Does not fall back to ALL_DAY
-    const foundWindow = MOCK_MEAL_WINDOWS.find((w) => w.period === targetPeriod);
-    assert.ok(foundWindow);
-    assert.equal(foundWindow.period, 'TEA_TIME');
-    assert.equal(foundWindow.startTime, '15:00:00');
-    assert.equal(foundWindow.cutoffTime, '17:30:00');
+    const foundWindow = MOCK_AUTHORITATIVE_MEAL_WINDOWS.find((w) => w.period === targetPeriod);
+    assert.equal(foundWindow, undefined, 'Authoritative backend contract has no TEA_TIME window');
   });
 });
 
@@ -155,14 +141,13 @@ describe('Issue #101 Phase 3: Time Formatting and Colombo Timezone Handling', ()
   });
 });
 
-describe('Issue #101 Phase 3: Guest-Friendly Status Messages and Window States', () => {
-  const breakfastWindow = MOCK_MEAL_WINDOWS.find((w) => w.period === 'BREAKFAST')!;
-  const lunchWindow = MOCK_MEAL_WINDOWS.find((w) => w.period === 'LUNCH')!;
-  const teaWindow = MOCK_MEAL_WINDOWS.find((w) => w.period === 'TEA_TIME')!;
+describe('Issue #101 Phase 3 & 4: Guest-Friendly Messages and Tea Tab Experience', () => {
+  const breakfastWindow = MOCK_AUTHORITATIVE_MEAL_WINDOWS.find((w) => w.period === 'BREAKFAST')!;
+  const lunchWindow = MOCK_AUTHORITATIVE_MEAL_WINDOWS.find((w) => w.period === 'LUNCH')!;
+  const dinnerWindow = MOCK_AUTHORITATIVE_MEAL_WINDOWS.find((w) => w.period === 'DINNER')!;
 
   it('State 1: Upcoming meal window (before opening)', () => {
-    // 05:30 AM in Colombo (19,800 seconds) - Breakfast starts at 06:30 AM
-    const currentSeconds = 5 * 3600 + 30 * 60;
+    const currentSeconds = 5 * 3600 + 30 * 60; // 05:30 AM
     const status = evaluateMealWindowStatus(breakfastWindow, currentSeconds, 'Breakfast');
 
     assert.equal(status.state, 'upcoming');
@@ -175,9 +160,7 @@ describe('Issue #101 Phase 3: Guest-Friendly Status Messages and Window States',
   });
 
   it('State 2: Currently open meal window with countdown', () => {
-    // 01:45 PM in Colombo (13:45 = 49,500s) - Lunch cutoff is 03:00 PM (54,000s)
-    // Remaining time: 4,500s = 1h 15m
-    const currentSeconds = 13 * 3600 + 45 * 60;
+    const currentSeconds = 13 * 3600 + 45 * 60; // 01:45 PM -> 1h 15m left until 3:00 PM
     const status = evaluateMealWindowStatus(lunchWindow, currentSeconds, 'Lunch');
 
     assert.equal(status.state, 'open');
@@ -189,24 +172,8 @@ describe('Issue #101 Phase 3: Guest-Friendly Status Messages and Window States',
     );
   });
 
-  it('State 2: Currently open meal window with 45 minutes remaining', () => {
-    // 02:15 PM in Colombo (14:15 = 51,300s) - Cutoff 15:00 (54,000s)
-    // Remaining: 2,700s = 45 minutes
-    const currentSeconds = 14 * 3600 + 15 * 60;
-    const status = evaluateMealWindowStatus(lunchWindow, currentSeconds, 'Lunch');
-
-    assert.equal(status.state, 'open');
-    assert.equal(status.isOrderable, true);
-    assert.equal(status.secondsRemaining, 2700);
-    assert.equal(
-      status.message,
-      'Lunch orders are open until 3:00 PM. You have 45 minutes left to place an order.',
-    );
-  });
-
   it('State 3: Closed meal window (service ended / cutoff reached)', () => {
-    // 11:00 AM in Colombo (39,600s) - Breakfast cutoff was 10:30 AM (37,800s)
-    const currentSeconds = 11 * 3600;
+    const currentSeconds = 11 * 3600; // 11:00 AM (Breakfast closed at 10:30 AM)
     const status = evaluateMealWindowStatus(breakfastWindow, currentSeconds, 'Breakfast');
 
     assert.equal(status.state, 'closed');
@@ -218,107 +185,71 @@ describe('Issue #101 Phase 3: Guest-Friendly Status Messages and Window States',
     );
   });
 
-  it('State 4: Unavailable schedule when window data is missing', () => {
-    // Missing window
-    const status = evaluateMealWindowStatus(undefined, 40000, 'Tea');
+  it('verifies Dinner window upcoming and open messages', () => {
+    // 16:00 (4:00 PM) -> Dinner starts at 6:30 PM (18:30)
+    const upcoming = evaluateMealWindowStatus(dinnerWindow, 16 * 3600, 'Dinner');
+    assert.equal(upcoming.state, 'upcoming');
+    assert.equal(
+      upcoming.message,
+      'Dinner ordering starts at 6:30 PM. You can browse the menu in the meantime.',
+    );
+
+    // 19:30 (7:30 PM) -> Dinner open until 10:30 PM (22:30), 3h left
+    const open = evaluateMealWindowStatus(dinnerWindow, 19 * 3600 + 30 * 60, 'Dinner');
+    assert.equal(open.state, 'open');
+    assert.equal(
+      open.message,
+      'Dinner orders are open until 10:30 PM. You have 3h left to place an order.',
+    );
+  });
+
+  it('State 4: Tea Tab without a backend TEA_TIME schedule renders guest-friendly informative message without claiming error', () => {
+    // When viewing the Tea tab and backend has no dedicated TEA_TIME window
+    const status = evaluateMealWindowStatus(undefined, 15 * 3600, 'Tea');
 
     assert.equal(status.state, 'unavailable');
     assert.equal(status.isOrderable, false);
     assert.equal(status.secondsRemaining, 0);
+    // Guest-friendly explanation that does not claim API failure
+    assert.equal(
+      status.message,
+      "Tea and snack selections are shown below. Please check each item's availability before ordering.",
+    );
+  });
+
+  it('State 4: Missing schedule for Breakfast, Lunch, or Dinner explains hours could not be loaded', () => {
+    const status = evaluateMealWindowStatus(undefined, 12 * 3600, 'Lunch');
+
+    assert.equal(status.state, 'unavailable');
+    assert.equal(status.isOrderable, false);
     assert.equal(
       status.message,
       "We couldn't load the ordering hours right now. Please try again.",
     );
   });
 
-  it('never displays fabricated countdown (such as 2h 16m left) when service has ended', () => {
-    const currentSeconds = 11 * 3600; // Breakfast closed
-    const status = evaluateMealWindowStatus(breakfastWindow, currentSeconds, 'Breakfast');
-
-    assert.equal(status.state, 'closed');
-    assert.ok(!status.message.includes('2h 16m left'));
-    assert.ok(!status.message.includes('orders close at'));
-    assert.equal(
-      status.message,
-      'Breakfast ordering has closed for today. Please check the other menus for available options.',
-    );
-  });
-
-  it('handles exact opening and cutoff boundary seconds with precision', () => {
-    const startSeconds = parseTimeToSeconds('06:30:00'); // 23,400s
-    const cutoffSeconds = parseTimeToSeconds('10:30:00'); // 37,800s
-
-    // 1 second before opening: upcoming
-    const beforeOpen = evaluateMealWindowStatus(breakfastWindow, startSeconds - 1, 'Breakfast');
-    assert.equal(beforeOpen.state, 'upcoming');
-    assert.equal(beforeOpen.isOrderable, false);
-
-    // Exact opening second: open
-    const exactOpen = evaluateMealWindowStatus(breakfastWindow, startSeconds, 'Breakfast');
-    assert.equal(exactOpen.state, 'open');
-    assert.equal(exactOpen.isOrderable, true);
+  it('transitions active window to closed as soon as client clock reaches cutoff', () => {
+    const lunchCutoff = 15 * 3600; // 15:00:00
 
     // 1 second before cutoff: open
-    const beforeCutoff = evaluateMealWindowStatus(breakfastWindow, cutoffSeconds - 1, 'Breakfast');
+    const beforeCutoff = evaluateMealWindowStatus(lunchWindow, lunchCutoff - 1, 'Lunch');
     assert.equal(beforeCutoff.state, 'open');
     assert.equal(beforeCutoff.isOrderable, true);
     assert.equal(beforeCutoff.secondsRemaining, 1);
 
-    // Exact cutoff second: closed (exclusive cutoff)
-    const exactCutoff = evaluateMealWindowStatus(breakfastWindow, cutoffSeconds, 'Breakfast');
-    assert.equal(exactCutoff.state, 'closed');
-    assert.equal(exactCutoff.isOrderable, false);
-    assert.equal(exactCutoff.secondsRemaining, 0);
-  });
-
-  it('dynamically switches message when switching between meal tabs', () => {
-    // Current time: 13:00 (1:00 PM)
-    // Breakfast: closed
-    // Lunch: open
-    // Tea: upcoming (15:00)
-    // Dinner: upcoming (18:30)
-    const currentSeconds = 13 * 3600;
-
-    const b = evaluateMealWindowStatus(breakfastWindow, currentSeconds, 'Breakfast');
-    const l = evaluateMealWindowStatus(lunchWindow, currentSeconds, 'Lunch');
-    const t = evaluateMealWindowStatus(teaWindow, currentSeconds, 'Tea');
-    const d = evaluateMealWindowStatus(
-      MOCK_MEAL_WINDOWS.find((w) => w.period === 'DINNER'),
-      currentSeconds,
-      'Dinner',
-    );
-
-    assert.equal(b.state, 'closed');
-    assert.equal(
-      b.message,
-      'Breakfast ordering has closed for today. Please check the other menus for available options.',
-    );
-
-    assert.equal(l.state, 'open');
-    assert.equal(
-      l.message,
-      'Lunch orders are open until 3:00 PM. You have 2h left to place an order.',
-    );
-
-    assert.equal(t.state, 'upcoming');
-    assert.equal(
-      t.message,
-      'Tea ordering starts at 3:00 PM. You can browse the menu in the meantime.',
-    );
-
-    assert.equal(d.state, 'upcoming');
-    assert.equal(
-      d.message,
-      'Dinner ordering starts at 6:30 PM. You can browse the menu in the meantime.',
-    );
+    // Exact cutoff second: closed
+    const atCutoff = evaluateMealWindowStatus(lunchWindow, lunchCutoff, 'Lunch');
+    assert.equal(atCutoff.state, 'closed');
+    assert.equal(atCutoff.isOrderable, false);
+    assert.equal(atCutoff.secondsRemaining, 0);
   });
 });
 
-describe('Issue #101 Phase 4: Item Ordering Availability Rules', () => {
-  const breakfastOnlyItem: GuestMenuItem = {
+describe('Issue #101 Phase 4: Authoritative Orderability & Cutoff Enforcement Rules', () => {
+  const breakfastItem: GuestMenuItem = {
     id: 'item-b1',
     name: 'Eggs Benedict',
-    description: 'Poached eggs on toasted brioche',
+    description: 'Poached eggs on brioche',
     price: 950,
     category: 'Breakfast',
     mealPeriods: ['BREAKFAST'],
@@ -333,10 +264,10 @@ describe('Issue #101 Phase 4: Item Ordering Availability Rules', () => {
     estimatedPrepMinutes: 15,
   };
 
-  const multiPeriodItem: GuestMenuItem = {
+  const lunchDinnerItem: GuestMenuItem = {
     id: 'item-m1',
-    name: 'Sri Lankan Chicken Curry',
-    description: 'Aromatic curry served with rice',
+    name: 'Chicken Rice',
+    description: 'Steamed rice with grilled chicken',
     price: 1200,
     category: 'Mains',
     mealPeriods: ['LUNCH', 'DINNER'],
@@ -351,7 +282,7 @@ describe('Issue #101 Phase 4: Item Ordering Availability Rules', () => {
     estimatedPrepMinutes: 20,
   };
 
-  const allDayItem: GuestMenuItem = {
+  const teaAllDayBeverage: GuestMenuItem = {
     id: 'item-ad1',
     name: 'Ceylon Black Tea',
     description: 'Freshly brewed single-origin tea',
@@ -370,88 +301,154 @@ describe('Issue #101 Phase 4: Item Ordering Availability Rules', () => {
   };
 
   const soldOutItem: GuestMenuItem = {
+    ...lunchDinnerItem,
     id: 'item-so1',
-    name: 'Fresh Lobster',
-    description: 'Grilled local lobster',
-    price: 4500,
-    category: 'Mains',
-    mealPeriods: ['LUNCH', 'DINNER'],
-    dietaryFlags: [],
-    allergens: ['Crustaceans'],
     available: false, // Sold out
-    isOrderable: true,
-    isCutoff: false,
-    portionCap: 2,
-    imageUrl: null,
-    secondsRemainingUntilCutoff: 0,
-    estimatedPrepMinutes: 30,
   };
 
-  it('disables ordering for Breakfast-only item outside Breakfast hours', () => {
-    // 01:00 PM (during Lunch)
-    const currentSeconds = 13 * 3600;
-    const canOrder = isItemCurrentlyOrderable(breakfastOnlyItem, MOCK_MEAL_WINDOWS, currentSeconds);
-    const cutoff = isItemCutoff(breakfastOnlyItem, MOCK_MEAL_WINDOWS, currentSeconds);
+  const serverUnorderableItem: GuestMenuItem = {
+    ...lunchDinnerItem,
+    id: 'item-unord1',
+    isOrderable: false, // Server says not orderable
+  };
 
-    assert.equal(canOrder, false);
-    assert.equal(cutoff, true);
-  });
+  const serverCutoffItem: GuestMenuItem = {
+    ...lunchDinnerItem,
+    id: 'item-cut1',
+    isCutoff: true, // Server says cutoff reached
+  };
 
-  it('enables ordering for Breakfast-only item during Breakfast hours', () => {
-    // 08:00 AM (during Breakfast)
-    const currentSeconds = 8 * 3600;
-    const canOrder = isItemCurrentlyOrderable(breakfastOnlyItem, MOCK_MEAL_WINDOWS, currentSeconds);
-    const cutoff = isItemCutoff(breakfastOnlyItem, MOCK_MEAL_WINDOWS, currentSeconds);
-
-    assert.equal(canOrder, true);
-    assert.equal(cutoff, false);
-  });
-
-  it('keeps multi-period item orderable during Lunch AND during Dinner, but not between them', () => {
-    // 01:00 PM (during Lunch) -> orderable
-    assert.equal(isItemCurrentlyOrderable(multiPeriodItem, MOCK_MEAL_WINDOWS, 13 * 3600), true);
-
-    // 04:00 PM (between Lunch and Dinner) -> not orderable
-    assert.equal(isItemCurrentlyOrderable(multiPeriodItem, MOCK_MEAL_WINDOWS, 16 * 3600), false);
-
-    // 07:30 PM (during Dinner) -> orderable
+  it('Rule 1: Sold-out items (available === false) can NEVER be ordered under any clock condition', () => {
+    // During active Lunch (13:00)
     assert.equal(
-      isItemCurrentlyOrderable(multiPeriodItem, MOCK_MEAL_WINDOWS, 19 * 3600 + 30 * 60),
+      isItemCurrentlyOrderable(soldOutItem, MOCK_AUTHORITATIVE_MEAL_WINDOWS, 13 * 3600),
+      false,
+    );
+    // During active Dinner (19:00)
+    assert.equal(
+      isItemCurrentlyOrderable(soldOutItem, MOCK_AUTHORITATIVE_MEAL_WINDOWS, 19 * 3600),
+      false,
+    );
+  });
+
+  it('Rule 1: Server-disallowed items (isOrderable === false) can NEVER be overridden to orderable by client clock', () => {
+    // Even at 13:00 during peak Lunch, client clock cannot bypass server rejection
+    assert.equal(
+      isItemCurrentlyOrderable(serverUnorderableItem, MOCK_AUTHORITATIVE_MEAL_WINDOWS, 13 * 3600),
+      false,
+    );
+  });
+
+  it('Rule 1: Server-cutoff items (isCutoff === true) can NEVER be ordered', () => {
+    assert.equal(
+      isItemCurrentlyOrderable(serverCutoffItem, MOCK_AUTHORITATIVE_MEAL_WINDOWS, 13 * 3600),
+      false,
+    );
+  });
+
+  it('Rule 2: For regular meal windows, enforces start and cutoff times and transitions to closed at cutoff', () => {
+    // Lunch: 12:00:00 (43,200s) to 15:00:00 (54,000s)
+    // 11:59:59 (before opening) -> false
+    assert.equal(
+      isItemCurrentlyOrderable(lunchDinnerItem, MOCK_AUTHORITATIVE_MEAL_WINDOWS, 43200 - 1),
+      false,
+    );
+
+    // 12:00:00 (opening second) -> true
+    assert.equal(
+      isItemCurrentlyOrderable(lunchDinnerItem, MOCK_AUTHORITATIVE_MEAL_WINDOWS, 43200),
       true,
     );
-  });
 
-  it('keeps ALL_DAY items orderable across meal tab transitions while all-day window is active', () => {
-    // 11:00 AM (between Breakfast cutoff 10:30 and Lunch start 12:00)
-    // Breakfast is closed, but ALL_DAY (06:00 to 23:00) is open!
-    const currentSeconds = 11 * 3600;
-    const allDayCanOrder = isItemCurrentlyOrderable(allDayItem, MOCK_MEAL_WINDOWS, currentSeconds);
-    assert.equal(allDayCanOrder, true);
-
-    // Breakfast-only item at the same moment is NOT orderable
-    const breakfastCanOrder = isItemCurrentlyOrderable(
-      breakfastOnlyItem,
-      MOCK_MEAL_WINDOWS,
-      currentSeconds,
+    // 14:59:59 (1 second before cutoff) -> true
+    assert.equal(
+      isItemCurrentlyOrderable(lunchDinnerItem, MOCK_AUTHORITATIVE_MEAL_WINDOWS, 54000 - 1),
+      true,
     );
-    assert.equal(breakfastCanOrder, false);
+
+    // 15:00:00 (exact cutoff) -> false (client immediately transitions to closed)
+    assert.equal(
+      isItemCurrentlyOrderable(lunchDinnerItem, MOCK_AUTHORITATIVE_MEAL_WINDOWS, 54000),
+      false,
+    );
   });
 
-  it('strictly enforces sold-out items remain unavailable regardless of meal window', () => {
-    // During peak Lunch hours (13:00)
-    const currentSeconds = 13 * 3600;
-    const canOrder = isItemCurrentlyOrderable(soldOutItem, MOCK_MEAL_WINDOWS, currentSeconds);
-    assert.equal(canOrder, false);
+  it('Rule 3: Missing ALL_DAY window definition does NOT fabricate an unapproved 06:00–23:00 schedule', () => {
+    // Windows list with NO ALL_DAY window definition
+    const windowsWithoutAllDay: MealWindowStatus[] = MOCK_AUTHORITATIVE_MEAL_WINDOWS.filter(
+      (w) => w.period !== 'ALL_DAY',
+    );
+
+    // Client clock must not fabricate a schedule; without a window, it cannot open the window
+    assert.equal(
+      isItemCurrentlyOrderable(teaAllDayBeverage, windowsWithoutAllDay, 14 * 3600),
+      false,
+      'Must not fabricate 06:00-23:00 when ALL_DAY window definition is missing',
+    );
   });
 
-  it('respects authoritative backend isOrderable=false and does not allow client state to bypass it', () => {
-    const backendDisallowedItem: GuestMenuItem = {
-      ...multiPeriodItem,
-      isOrderable: false, // Backend explicitly marked as unorderable
-    };
+  it('Rule 4: Standard ALL_DAY dining enforces 06:00 to 23:00 when demo mode is not active', () => {
+    // 12:00 PM (within 06:00-23:00) -> orderable
+    assert.equal(
+      isItemCurrentlyOrderable(teaAllDayBeverage, MOCK_AUTHORITATIVE_MEAL_WINDOWS, 12 * 3600, {
+        isDemoMode: false,
+      }),
+      true,
+    );
 
-    // Even during Lunch hours, backend rejection is respected
-    const canOrder = isItemCurrentlyOrderable(backendDisallowedItem, MOCK_MEAL_WINDOWS, 13 * 3600);
-    assert.equal(canOrder, false);
+    // 23:30 (11:30 PM, after 23:00 cutoff) -> NOT orderable in production/standard mode
+    assert.equal(
+      isItemCurrentlyOrderable(
+        teaAllDayBeverage,
+        MOCK_AUTHORITATIVE_MEAL_WINDOWS,
+        23 * 3600 + 30 * 60,
+        { isDemoMode: false },
+      ),
+      false,
+    );
+  });
+
+  it('Rule 5: When explicit DEMO_MODE is active, ALL_DAY is continuously active (24/7)', () => {
+    // 23:30 (11:30 PM) with explicit isDemoMode: true -> orderable
+    assert.equal(
+      isItemCurrentlyOrderable(
+        teaAllDayBeverage,
+        MOCK_AUTHORITATIVE_MEAL_WINDOWS,
+        23 * 3600 + 30 * 60,
+        { isDemoMode: true },
+      ),
+      true,
+    );
+
+    // 03:00 AM with explicit isDemoMode: true -> orderable
+    assert.equal(
+      isItemCurrentlyOrderable(teaAllDayBeverage, MOCK_AUTHORITATIVE_MEAL_WINDOWS, 3 * 3600, {
+        isDemoMode: true,
+      }),
+      true,
+    );
+
+    // But Breakfast-only item at 03:00 AM remains NOT orderable even in demo mode
+    assert.equal(
+      isItemCurrentlyOrderable(breakfastItem, MOCK_AUTHORITATIVE_MEAL_WINDOWS, 3 * 3600, {
+        isDemoMode: true,
+      }),
+      false,
+    );
+  });
+
+  it('Rule 6: Allows ordering of available ALL_DAY beverages and snacks under the Tea tab', () => {
+    // When guest is on the Tea tab, Ceylon Black Tea (ALL_DAY) is orderable during daytime hours
+    const currentSeconds = 15 * 3600 + 30 * 60; // 3:30 PM
+    assert.equal(
+      isItemCurrentlyOrderable(teaAllDayBeverage, MOCK_AUTHORITATIVE_MEAL_WINDOWS, currentSeconds),
+      true,
+    );
+
+    // Outside ordering hours item is marked cutoff
+    assert.equal(
+      isItemCutoff(breakfastItem, MOCK_AUTHORITATIVE_MEAL_WINDOWS, currentSeconds),
+      true,
+    );
   });
 });

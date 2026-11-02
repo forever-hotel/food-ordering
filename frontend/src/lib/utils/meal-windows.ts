@@ -6,7 +6,7 @@ export type CategoryKey = 'Breakfast' | 'Lunch' | 'Dinner' | 'Tea';
 
 /**
  * Authoritative category to meal period mapping.
- * Tea is strictly mapped to TEA_TIME.
+ * Tea maps to TEA_TIME.
  * ALL_DAY is a separate item availability classification and must never substitute for Tea.
  */
 export const CATEGORY_PERIOD_MAP: Record<CategoryKey, MealPeriod> = {
@@ -27,6 +27,10 @@ export interface MealWindowEvaluation {
   secondsRemaining: number;
   isOrderable: boolean;
   message: string;
+}
+
+export interface OrderableEvaluationOptions {
+  isDemoMode?: boolean;
 }
 
 /**
@@ -112,6 +116,8 @@ export function getColomboTime(date: Date = new Date()): {
 
 /**
  * Generate human-friendly guest message based on window evaluation.
+ * When the backend supplies no dedicated schedule for Tea, displays an informative
+ * guest-friendly message explaining that tea & snack selections are available below.
  */
 export function getMealWindowGuestMessage(
   periodLabel: string,
@@ -122,6 +128,9 @@ export function getMealWindowGuestMessage(
 ): string {
   switch (state) {
     case 'unavailable':
+      if (periodLabel.toLowerCase() === 'tea') {
+        return "Tea and snack selections are shown below. Please check each item's availability before ordering.";
+      }
       return "We couldn't load the ordering hours right now. Please try again.";
     case 'upcoming':
       return `${periodLabel} ordering starts at ${formatTime12Hour(startTime)}. You can browse the menu in the meantime.`;
@@ -135,7 +144,7 @@ export function getMealWindowGuestMessage(
 /**
  * Evaluates the status of a specific meal window against current Colombo seconds.
  * Inclusive start, exclusive cutoff:
- * Active when: startSeconds <= currentSeconds < cutoffSeconds
+ * Active strictly when: startSeconds <= currentSeconds < cutoffSeconds
  */
 export function evaluateMealWindowStatus(
   window?: MealWindowStatus,
@@ -209,23 +218,35 @@ export function evaluateMealWindowStatus(
  * Determines whether an item can currently be ordered.
  *
  * Rules:
- * 1. Sold-out items (available === false) are never orderable.
- * 2. Backend orderability validation is authoritative: if item.isOrderable === false, do not allow ordering.
- * 3. If item.isCutoff === true, do not allow ordering.
- * 4. If meal windows are available, check if ANY valid meal period for the item (or ALL_DAY) is currently open.
- *    An item is not disabled merely because one of its periods closed if another period (e.g. ALL_DAY) is open.
- * 5. If client clock has passed the cutoff for all of the item's meal periods, client disables ordering.
+ * 1. Backend item-level restrictions are strictly authoritative:
+ *    - item.available === false prevents ordering (Sold Out)
+ *    - item.isOrderable === false prevents ordering (Outside Ordering Hours)
+ *    - item.isCutoff === true prevents ordering (Cutoff Reached)
+ *    The client clock CANNOT override a server-declared unavailable/unorderable item.
+ * 2. If no meal windows are provided, defer to server-side item.isOrderable.
+ * 3. For items with meal periods:
+ *    - Item is orderable if AT LEAST ONE of its meal periods is currently within its active window.
+ *    - For regular meal windows (BREAKFAST, LUNCH, DINNER, and standard ALL_DAY),
+ *      start and cutoff boundaries are enforced against current Asia/Colombo time:
+ *      active strictly when: currentSeconds >= startSeconds && currentSeconds < cutoffSeconds.
+ *    - Cached `window.isActive === true` is NOT blindly treated as permanently active;
+ *      as soon as the cutoff time is reached in Colombo, the client transitions to closed.
+ *    - When explicit DEMO_MODE is active (e.g. verified via options or demo runtime context),
+ *      ALL_DAY is continuously active (24/7) matching the server-side demo policy.
+ *    - No fabricated schedules: missing window definitions never assume 06:00–23:00.
  */
 export function isItemCurrentlyOrderable(
   item: GuestMenuItem,
   mealWindows?: MealWindowStatus[],
   colomboSeconds?: number,
+  options?: OrderableEvaluationOptions,
 ): boolean {
+  // 1. Authoritative backend item-level restrictions
   if (!item.available) return false;
   if (!item.isOrderable) return false;
   if (item.isCutoff) return false;
 
-  // If no windows provided, rely on backend item-level flags
+  // 2. If no windows provided, rely on backend item-level flags
   if (!mealWindows || mealWindows.length === 0) {
     return true;
   }
@@ -238,21 +259,27 @@ export function isItemCurrentlyOrderable(
   const currentSeconds =
     typeof colomboSeconds === 'number' ? colomboSeconds : getColomboTime().totalSecondsOfDay;
 
-  // Check if at least one applicable meal period is currently open
-  const hasActivePeriod = itemPeriods.some((period) => {
+  const isDemoMode = options?.isDemoMode === true;
+
+  // 3. Check if at least one applicable meal period is currently within its permitted ordering window
+  return itemPeriods.some((period) => {
     const win = mealWindows.find((w) => w.period === period);
-    if (!win) {
-      // If ALL_DAY window isn't explicitly defined, assume standard 06:00 to 23:00
-      if (period === 'ALL_DAY') {
-        return currentSeconds >= 6 * 3600 && currentSeconds < 23 * 3600;
-      }
+    if (!win || !win.startTime || !win.cutoffTime) {
+      // Do NOT fabricate operational schedules for missing windows
       return false;
     }
-    const evalStatus = evaluateMealWindowStatus(win, currentSeconds);
-    return evalStatus.state === 'open';
-  });
 
-  return hasActivePeriod;
+    // Explicit demo mode policy: backend treats ALL_DAY as 24/7 active in demo mode
+    if (isDemoMode && period === 'ALL_DAY') {
+      return true;
+    }
+
+    // Standard meal window cutoff enforcement: startSeconds <= currentSeconds < cutoffSeconds
+    const startSec = parseTimeToSeconds(win.startTime);
+    const cutoffSec = parseTimeToSeconds(win.cutoffTime);
+
+    return currentSeconds >= startSec && currentSeconds < cutoffSec;
+  });
 }
 
 /**
@@ -262,6 +289,7 @@ export function isItemCutoff(
   item: GuestMenuItem,
   mealWindows?: MealWindowStatus[],
   colomboSeconds?: number,
+  options?: OrderableEvaluationOptions,
 ): boolean {
   if (!item.available) return false; // Sold out is handled separately
   if (item.isCutoff) return true;
@@ -277,5 +305,5 @@ export function isItemCutoff(
   }
 
   // If ANY applicable period is still open or upcoming, it's not strictly past all cutoffs
-  return !isItemCurrentlyOrderable(item, mealWindows, colomboSeconds);
+  return !isItemCurrentlyOrderable(item, mealWindows, colomboSeconds, options);
 }

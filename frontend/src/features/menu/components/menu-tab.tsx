@@ -325,7 +325,9 @@ export function MenuTab() {
               ? 'bg-[#F0F7FF] border-l-4 border-[#3B82F6] text-[#1E3A8A]'
               : windowEvaluation.state === 'closed'
                 ? 'bg-[#F8FAFC] border-l-4 border-[#94A3B8] text-slate-700'
-                : 'bg-[#FFFDF5] border-l-4 border-[#CBD5E1] text-slate-600'
+                : selectedCategory === 'Tea'
+                  ? 'bg-[#F0FDF4] border-l-4 border-[#22C55E] text-emerald-950'
+                  : 'bg-[#FFFDF5] border-l-4 border-[#CBD5E1] text-slate-600'
         }`}
       >
         <span className="text-base select-none flex-shrink-0" aria-hidden="true">
@@ -335,7 +337,9 @@ export function MenuTab() {
               ? '🕒'
               : windowEvaluation.state === 'closed'
                 ? '🔒'
-                : 'ℹ️'}
+                : selectedCategory === 'Tea'
+                  ? '🍵'
+                  : 'ℹ️'}
         </span>
         <span className="text-xs font-medium leading-relaxed">{windowEvaluation.message}</span>
       </div>

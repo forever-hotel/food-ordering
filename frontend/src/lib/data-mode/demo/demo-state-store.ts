@@ -343,15 +343,6 @@ export const DEMO_MEAL_WINDOWS: MealWindowStatus[] = [
     secondsRemaining: 7200,
   },
   {
-    period: 'TEA_TIME',
-    name: 'High Tea',
-    startTime: '15:30',
-    cutoffTime: '18:00',
-    isActive: false,
-    isCutoffReached: false,
-    secondsRemaining: 12600,
-  },
-  {
     period: 'DINNER',
     name: 'Dinner',
     startTime: '19:00',
