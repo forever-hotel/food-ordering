@@ -180,6 +180,30 @@ export function evaluateMealWindowStatus(
   const startSeconds = parseTimeToSeconds(window.startTime);
   const cutoffSeconds = parseTimeToSeconds(window.cutoffTime);
 
+  // For ALL_DAY: honor server-authorized active status outside nominal hours (e.g. server DEMO_MODE)
+  if (window.period === 'ALL_DAY' && window.isActive === true && !window.isCutoffReached) {
+    const secondsRemaining =
+      window.secondsRemaining > 0
+        ? window.secondsRemaining
+        : Math.max(0, cutoffSeconds - currentSeconds);
+    return {
+      state: 'open',
+      period: window.period,
+      name: window.name,
+      startTime: window.startTime,
+      cutoffTime: window.cutoffTime,
+      secondsRemaining,
+      isOrderable: true,
+      message: getMealWindowGuestMessage(
+        label,
+        'open',
+        window.startTime,
+        window.cutoffTime,
+        secondsRemaining,
+      ),
+    };
+  }
+
   // Inclusive start, exclusive cutoff
   if (currentSeconds < startSeconds) {
     return {
@@ -271,8 +295,6 @@ export function isItemCurrentlyOrderable(
   const currentSeconds =
     typeof colomboSeconds === 'number' ? colomboSeconds : getColomboTime().totalSecondsOfDay;
 
-  const isDemoMode = options?.isDemoMode === true;
-
   // 3. Check if at least one applicable meal period is currently within its permitted ordering window
   return itemPeriods.some((period) => {
     const win = mealWindows.find((w) => w.period === period);
@@ -281,16 +303,36 @@ export function isItemCurrentlyOrderable(
       return false;
     }
 
-    // Explicit demo mode policy: backend treats ALL_DAY as 24/7 active in demo mode
-    if (isDemoMode && period === 'ALL_DAY') {
-      return true;
-    }
-
-    // Standard meal window cutoff enforcement: startSeconds <= currentSeconds < cutoffSeconds
     const startSec = parseTimeToSeconds(win.startTime);
     const cutoffSec = parseTimeToSeconds(win.cutoffTime);
 
-    return currentSeconds >= startSec && currentSeconds < cutoffSec;
+    // Regular meal windows (BREAKFAST, LUNCH, DINNER):
+    // Strictly enforce backend-provided start and cutoff times in Asia/Colombo.
+    // Transition to closed immediately when cutoff time is reached.
+    if (period !== 'ALL_DAY') {
+      return currentSeconds >= startSec && currentSeconds < cutoffSec;
+    }
+
+    // ALL_DAY dining:
+    // If explicit demo option is provided, honor it for controlled test isolation:
+    if (options?.isDemoMode === true) {
+      return true;
+    }
+    if (options?.isDemoMode === false) {
+      return currentSeconds >= startSec && currentSeconds < cutoffSec;
+    }
+
+    // When running in real application without explicit override:
+    // 1. Within standard operational hours (06:00:00 to 23:00:00), ALL_DAY is active.
+    if (currentSeconds >= startSec && currentSeconds < cutoffSec) {
+      return true;
+    }
+
+    // 2. Outside standard 06:00–23:00 hours:
+    // Safely resolve via contract-supported values without inventing a demo-mode indicator:
+    // In server DEMO_MODE, the backend explicitly sets win.isActive === true and !win.isCutoffReached.
+    // In production, the backend returns win.isActive === false and win.isCutoffReached === true.
+    return win.isActive === true && !win.isCutoffReached;
   });
 }
 

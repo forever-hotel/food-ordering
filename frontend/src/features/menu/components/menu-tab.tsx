@@ -98,6 +98,23 @@ export function MenuTab({ isDemoMode }: MenuTabProps = {}) {
     };
   }, [sessionToken, guest]);
 
+  // Periodic background revalidation (every 30s) to keep availability and stock fresh
+  useEffect(() => {
+    if (!sessionToken || !guest) return;
+
+    const interval = setInterval(() => {
+      fetchGuestMenu(sessionToken)
+        .then((data) => {
+          setCatalog(data);
+        })
+        .catch(() => {
+          // Silent background revalidation error; keep existing catalog
+        });
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, [sessionToken, guest]);
+
   const handleRetry = () => {
     if (!sessionToken || !guest) return;
 

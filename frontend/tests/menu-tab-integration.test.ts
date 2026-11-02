@@ -383,4 +383,74 @@ describe('TC-DDP-101-AC4: MenuTab Integration — Availability, Messages & Contr
       assert.equal(serverDisallowedResult.state, 'temporarily_unavailable');
     });
   });
+
+  describe('Integration 5: Real Application Composition Without isDemoMode Prop', () => {
+    const lateNightSeconds = 23 * 3600 + 30 * 60; // 11:30 PM (outside standard 06:00-23:00)
+
+    it('real application without props correctly allows ALL_DAY when backend returns demo active window', () => {
+      // In server DEMO_MODE, the backend returns win.isActive === true and !win.isCutoffReached
+      const demoBackendWindows: MealWindowStatus[] = AUTHORITATIVE_MEAL_WINDOWS.map((w) =>
+        w.period === 'ALL_DAY'
+          ? { ...w, isActive: true, isCutoffReached: false, secondsRemaining: 1800 }
+          : { ...w, isActive: false, isCutoffReached: true },
+      );
+
+      // In real app, MenuTab is rendered as <MenuTab /> with NO props (options is undefined)
+      const availability = getItemAvailability(
+        sampleTeaAllDayBeverage,
+        demoBackendWindows,
+        lateNightSeconds,
+        undefined, // Real application composition: no props passed!
+      );
+
+      // Safe contract-driven resolution: honors server-authorized active status!
+      assert.equal(availability.isOrderable, true);
+      assert.equal(availability.state, 'available');
+      assert.equal(availability.buttonLabel, 'Add to Cart');
+    });
+
+    it('real application without props correctly closes ALL_DAY when backend returns production closed window', () => {
+      // In production mode, the backend returns win.isActive === false and win.isCutoffReached === true
+      const productionBackendWindows: MealWindowStatus[] = AUTHORITATIVE_MEAL_WINDOWS.map((w) =>
+        w.period === 'ALL_DAY'
+          ? { ...w, isActive: false, isCutoffReached: true, secondsRemaining: 0 }
+          : { ...w, isActive: false, isCutoffReached: true },
+      );
+      const productionClosedItem: GuestMenuItem = {
+        ...sampleTeaAllDayBeverage,
+        isOrderable: false, // Server says closed
+        isCutoff: true,
+      };
+
+      const availability = getItemAvailability(
+        productionClosedItem,
+        productionBackendWindows,
+        lateNightSeconds,
+        undefined, // Real application composition
+      );
+
+      assert.equal(availability.isOrderable, false);
+      assert.equal(availability.state, 'closed');
+      assert.equal(availability.buttonLabel, 'Ordering Closed');
+    });
+
+    it('real application strictly prevents Breakfast ordering at 11:30 PM under all backend configurations', () => {
+      const demoBackendWindows: MealWindowStatus[] = AUTHORITATIVE_MEAL_WINDOWS.map((w) =>
+        w.period === 'ALL_DAY'
+          ? { ...w, isActive: true, isCutoffReached: false, secondsRemaining: 1800 }
+          : { ...w, isActive: false, isCutoffReached: true },
+      );
+
+      const availability = getItemAvailability(
+        sampleBreakfastItem,
+        demoBackendWindows,
+        lateNightSeconds,
+        undefined, // Real application composition
+      );
+
+      assert.equal(availability.isOrderable, false);
+      assert.equal(availability.state, 'closed');
+      assert.equal(availability.buttonLabel, 'Ordering Closed');
+    });
+  });
 });
