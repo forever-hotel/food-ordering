@@ -180,6 +180,26 @@ describe('HealthService', () => {
       expect(isolation.isCloudShared).toBe(true);
     });
 
+    it('regression: rejects and fails closed when approved endpoint ID is missing from configuration', async () => {
+      mockConfigService.get.mockImplementation((key: string) => {
+        if (key === 'APPROVED_NEON_PROJECT_ID') return 'weathered-voice-13361247';
+        if (key === 'APPROVED_NEON_TEST_BRANCH_ID') return 'br-withered-unit-azl2if4y';
+        // APPROVED_NEON_TEST_ENDPOINT_ID is missing
+        return undefined;
+      });
+
+      mockDataSource.query.mockResolvedValue([
+        { name: 'neon.project_id', setting: 'weathered-voice-13361247' },
+        { name: 'neon.branch_id', setting: 'br-withered-unit-azl2if4y' },
+        { name: 'neon.endpoint_id', setting: 'ep-long-fog-azwbvdgr' },
+      ]);
+
+      const isolation = await service.getDatabaseIsolationInfo();
+      expect(isolation.isApprovedTestBranch).toBe(false);
+      expect(isolation.classification).toBe('shared_cloud_dev');
+      expect(isolation.isCloudShared).toBe(true);
+    });
+
     it('rejects in production mode regardless of branch metadata', async () => {
       const prevEnv = process.env.NODE_ENV;
       process.env.NODE_ENV = 'production';

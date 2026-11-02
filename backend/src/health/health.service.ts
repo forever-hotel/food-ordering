@@ -100,18 +100,16 @@ export class HealthService {
         }
 
         // Validate observed project, branch, and endpoint against server-side allowlist.
-        // Requires approved project and branch configuration to be explicitly set (fails closed if missing).
+        // Requires approved project, branch, and endpoint configuration to be explicitly set (fails closed if any is missing).
         const hasRequiredConfig = Boolean(
-          approvedProjectId && approvedTestBranchId,
+          approvedProjectId && approvedTestBranchId && approvedTestEndpointId,
         );
         const matchesProject =
           hasRequiredConfig && observedProjectId === approvedProjectId;
         const matchesBranch =
           hasRequiredConfig && observedBranchId === approvedTestBranchId;
         const matchesEndpoint =
-          hasRequiredConfig &&
-          (!approvedTestEndpointId ||
-            observedEndpointId === approvedTestEndpointId);
+          hasRequiredConfig && observedEndpointId === approvedTestEndpointId;
 
         if (matchesProject && matchesBranch && matchesEndpoint) {
           // Condition 4: Classify as dedicated_neon_test, not unrestricted disposable
