@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { App, Button } from 'antd';
 import type { GuestMenuItem, GuestMenuResponse, MealPeriod } from '../../../types/menu.ts';
 import { fetchGuestMenu, formatLkrPrice } from '../../../lib/api/menu.ts';
@@ -19,8 +19,8 @@ import {
   type CategoryKey,
   evaluateMealWindowStatus,
   getColomboTime,
-  isItemCurrentlyOrderable,
-  isItemCutoff,
+  getItemAvailability,
+  type OrderableEvaluationOptions,
 } from '../../../lib/utils/meal-windows.ts';
 
 const CATEGORIES: { key: CategoryKey; label: string }[] = [
@@ -30,11 +30,20 @@ const CATEGORIES: { key: CategoryKey; label: string }[] = [
   { key: 'Tea', label: 'Tea' },
 ];
 
-export function MenuTab() {
+export interface MenuTabProps {
+  isDemoMode?: boolean;
+}
+
+export function MenuTab({ isDemoMode }: MenuTabProps = {}) {
   const { message } = App.useApp();
   const { sessionToken, guest } = useAuth();
   const { setPageHeader, resetHeaderForTab } = useNavigation();
   const { totalCount, totalAmount, addItem, isCartOpen, setIsCartOpen } = useCart();
+
+  const evaluationOptions = useMemo<OrderableEvaluationOptions>(
+    () => ({ isDemoMode }),
+    [isDemoMode],
+  );
 
   const [catalog, setCatalog] = useState<GuestMenuResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -143,17 +152,14 @@ export function MenuTab() {
 
   const handleQuickAdd = (item: GuestMenuItem) => {
     const colomboTime = getColomboTime(currentTime);
-    const isOrderableNow = isItemCurrentlyOrderable(
+    const availability = getItemAvailability(
       item,
       catalog?.mealWindows,
       colomboTime.totalSecondsOfDay,
+      evaluationOptions,
     );
-    if (!item.available) {
-      message.error('Item is sold out.');
-      return;
-    }
-    if (!isOrderableNow) {
-      message.error('This item is outside ordering hours.');
+    if (!availability.isOrderable) {
+      message.error(availability.quickAddErrorMessage || 'This item cannot be ordered.');
       return;
     }
 
@@ -199,18 +205,24 @@ export function MenuTab() {
 
   // If viewing item detail screen (Figure 33)
   if (selectedItem) {
-    const isOrderableNow = isItemCurrentlyOrderable(
+    const availability = getItemAvailability(
       selectedItem,
       catalog?.mealWindows,
       currentColomboSeconds,
+      evaluationOptions,
     );
-    const isCutoffNow = isItemCutoff(selectedItem, catalog?.mealWindows, currentColomboSeconds);
     const effectiveSelectedItem: GuestMenuItem = {
       ...selectedItem,
-      isOrderable: isOrderableNow,
-      isCutoff: isCutoffNow,
+      isOrderable: availability.isOrderable,
+      isCutoff: availability.state === 'closed',
     };
-    return <MenuItemDetail item={effectiveSelectedItem} onBack={handleBackToMenu} />;
+    return (
+      <MenuItemDetail
+        item={effectiveSelectedItem}
+        availability={availability}
+        onBack={handleBackToMenu}
+      />
+    );
   }
 
   // Authoritative meal period mapping (Tea -> TEA_TIME; ALL_DAY is separate)
@@ -362,21 +374,22 @@ export function MenuTab() {
       {!loading && displayedItems.length > 0 && (
         <div className="space-y-3" role="feed" aria-label={`${selectedCategory} menu items`}>
           {displayedItems.map((item) => {
-            const isOrderableNow = isItemCurrentlyOrderable(
+            const availability = getItemAvailability(
               item,
               catalog?.mealWindows,
               currentColomboSeconds,
+              evaluationOptions,
             );
-            const isCutoffNow = isItemCutoff(item, catalog?.mealWindows, currentColomboSeconds);
             const effectiveItem: GuestMenuItem = {
               ...item,
-              isOrderable: isOrderableNow,
-              isCutoff: isCutoffNow,
+              isOrderable: availability.isOrderable,
+              isCutoff: availability.state === 'closed',
             };
             return (
               <MenuItemCard
                 key={item.id}
                 item={effectiveItem}
+                availability={availability}
                 onSelect={handleSelectItem}
                 onQuickAdd={handleQuickAdd}
               />

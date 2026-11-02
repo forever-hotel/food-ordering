@@ -7,11 +7,12 @@ import {
   formatRemainingTime,
   formatTime12Hour,
   getColomboTime,
+  getItemAvailability,
   isItemCurrentlyOrderable,
   isItemCutoff,
   parseTimeToSeconds,
 } from '../src/lib/utils/meal-windows.ts';
-import type { GuestMenuItem, MealWindowStatus } from '../src/types/menu.ts';
+import type { GuestMenuItem, MealPeriod, MealWindowStatus } from '../src/types/menu.ts';
 
 // Authoritative operational meal schedule definitions in Asia/Colombo (4 windows per KMS contract)
 const MOCK_AUTHORITATIVE_MEAL_WINDOWS: MealWindowStatus[] = [
@@ -450,5 +451,176 @@ describe('Issue #101 Phase 4: Authoritative Orderability & Cutoff Enforcement Ru
       isItemCutoff(breakfastItem, MOCK_AUTHORITATIVE_MEAL_WINDOWS, currentSeconds),
       true,
     );
+  });
+});
+
+describe('TC-DDP-101-AC3: Fine-Grained Item Availability States & Guest Messages', () => {
+  const breakfastItem: GuestMenuItem = {
+    id: 'item-b1',
+    name: 'Eggs Benedict',
+    description: 'Poached eggs on brioche',
+    price: 950,
+    category: 'Breakfast',
+    mealPeriods: ['BREAKFAST'],
+    dietaryFlags: [],
+    allergens: ['Egg', 'Gluten'],
+    available: true,
+    isOrderable: true,
+    isCutoff: false,
+    portionCap: 5,
+    imageUrl: null,
+    secondsRemainingUntilCutoff: 0,
+    estimatedPrepMinutes: 15,
+  };
+
+  const lunchDinnerItem: GuestMenuItem = {
+    id: 'item-m1',
+    name: 'Chicken Rice',
+    description: 'Steamed rice with grilled chicken',
+    price: 1200,
+    category: 'Mains',
+    mealPeriods: ['LUNCH', 'DINNER'],
+    dietaryFlags: ['Gluten-free'],
+    allergens: [],
+    available: true,
+    isOrderable: true,
+    isCutoff: false,
+    portionCap: 10,
+    imageUrl: null,
+    secondsRemainingUntilCutoff: 0,
+    estimatedPrepMinutes: 20,
+  };
+
+  const allDayItem: GuestMenuItem = {
+    id: 'item-ad1',
+    name: 'Ceylon Black Tea',
+    description: 'Freshly brewed single-origin tea',
+    price: 400,
+    category: 'Beverages',
+    mealPeriods: ['ALL_DAY'],
+    dietaryFlags: ['Vegan'],
+    allergens: [],
+    available: true,
+    isOrderable: true,
+    isCutoff: false,
+    portionCap: 10,
+    imageUrl: null,
+    secondsRemainingUntilCutoff: 0,
+    estimatedPrepMinutes: 5,
+  };
+
+  const soldOutItem: GuestMenuItem = {
+    ...lunchDinnerItem,
+    id: 'item-so1',
+    available: false,
+  };
+
+  const serverUnorderableItem: GuestMenuItem = {
+    ...lunchDinnerItem,
+    id: 'item-unord1',
+    isOrderable: false,
+  };
+
+  it('distinguishes "sold_out" state with clear badge, CTA and quick add error', () => {
+    // During active Lunch (13:00)
+    const result = getItemAvailability(soldOutItem, MOCK_AUTHORITATIVE_MEAL_WINDOWS, 13 * 3600);
+    assert.equal(result.state, 'sold_out');
+    assert.equal(result.isOrderable, false);
+    assert.equal(result.badgeLabel, 'Sold Out');
+    assert.equal(result.buttonLabel, 'Item Sold Out');
+    assert.equal(result.quickAddErrorMessage, 'Item is sold out.');
+  });
+
+  it('distinguishes "not_yet_open" before morning opening hours (e.g. 05:00 AM)', () => {
+    // 05:00 AM (Breakfast opens at 06:30)
+    const result = getItemAvailability(breakfastItem, MOCK_AUTHORITATIVE_MEAL_WINDOWS, 5 * 3600);
+    assert.equal(result.state, 'not_yet_open');
+    assert.equal(result.isOrderable, false);
+    assert.equal(result.badgeLabel, 'Opens at 6:30 AM');
+    assert.equal(result.buttonLabel, 'Ordering Not Yet Open');
+    assert.match(result.quickAddErrorMessage || '', /starts at 6:30 AM/);
+  });
+
+  it('distinguishes "not_yet_open" for multi-period item between service windows (e.g. 16:00)', () => {
+    // 16:00 (4:00 PM: Lunch cutoff 15:00 passed, Dinner opens at 18:30)
+    const result = getItemAvailability(lunchDinnerItem, MOCK_AUTHORITATIVE_MEAL_WINDOWS, 16 * 3600);
+    assert.equal(result.state, 'not_yet_open');
+    assert.equal(result.isOrderable, false);
+    assert.equal(result.badgeLabel, 'Opens at 6:30 PM');
+    assert.equal(result.buttonLabel, 'Ordering Not Yet Open');
+    assert.match(result.quickAddErrorMessage || '', /starts at 6:30 PM/);
+  });
+
+  it('distinguishes "closed" when all daily ordering windows have passed cutoff (e.g. 23:00)', () => {
+    // 23:00 (11:00 PM: Dinner cutoff was 22:30, no more windows today)
+    const result = getItemAvailability(lunchDinnerItem, MOCK_AUTHORITATIVE_MEAL_WINDOWS, 23 * 3600);
+    assert.equal(result.state, 'closed');
+    assert.equal(result.isOrderable, false);
+    assert.equal(result.badgeLabel, 'Closed');
+    assert.equal(result.buttonLabel, 'Ordering Closed');
+    assert.equal(result.quickAddErrorMessage, 'Ordering for this item has closed for today.');
+  });
+
+  it('distinguishes "temporarily_unavailable" when server marks isOrderable=false', () => {
+    const result = getItemAvailability(
+      serverUnorderableItem,
+      MOCK_AUTHORITATIVE_MEAL_WINDOWS,
+      13 * 3600,
+    );
+    assert.equal(result.state, 'temporarily_unavailable');
+    assert.equal(result.isOrderable, false);
+    assert.equal(result.badgeLabel, 'Unavailable');
+    assert.equal(result.buttonLabel, 'Service Unavailable');
+    assert.equal(result.quickAddErrorMessage, 'This item is currently unavailable.');
+  });
+
+  it('distinguishes "temporarily_unavailable" when window schedule definition is completely missing', () => {
+    const itemWithMissingWindow: GuestMenuItem = {
+      ...lunchDinnerItem,
+      mealPeriods: ['UNKNOWN_WINDOW' as unknown as MealPeriod],
+    };
+    const result = getItemAvailability(
+      itemWithMissingWindow,
+      MOCK_AUTHORITATIVE_MEAL_WINDOWS,
+      13 * 3600,
+    );
+    assert.equal(result.state, 'temporarily_unavailable');
+    assert.equal(result.isOrderable, false);
+    assert.equal(result.badgeLabel, 'Unavailable');
+    assert.equal(result.buttonLabel, 'Service Unavailable');
+  });
+
+  it('correctly reports "available" during active window with Add to Cart button', () => {
+    // 13:00 (active Lunch)
+    const result = getItemAvailability(lunchDinnerItem, MOCK_AUTHORITATIVE_MEAL_WINDOWS, 13 * 3600);
+    assert.equal(result.state, 'available');
+    assert.equal(result.isOrderable, true);
+    assert.equal(result.badgeLabel, null);
+    assert.equal(result.buttonLabel, 'Add to Cart');
+  });
+
+  it('ALL_DAY outside standard hours (23:30) is closed in production but available in demo mode', () => {
+    const lateNightSeconds = 23 * 3600 + 30 * 60; // 11:30 PM
+
+    // Standard mode (production / API mode)
+    const standardResult = getItemAvailability(
+      allDayItem,
+      MOCK_AUTHORITATIVE_MEAL_WINDOWS,
+      lateNightSeconds,
+      { isDemoMode: false },
+    );
+    assert.equal(standardResult.state, 'closed');
+    assert.equal(standardResult.isOrderable, false);
+
+    // Explicit demo mode
+    const demoResult = getItemAvailability(
+      allDayItem,
+      MOCK_AUTHORITATIVE_MEAL_WINDOWS,
+      lateNightSeconds,
+      { isDemoMode: true },
+    );
+    assert.equal(demoResult.state, 'available');
+    assert.equal(demoResult.isOrderable, true);
+    assert.equal(demoResult.buttonLabel, 'Add to Cart');
   });
 });

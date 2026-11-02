@@ -33,6 +33,18 @@ export interface OrderableEvaluationOptions {
   isDemoMode?: boolean;
 }
 
+export type ItemAvailabilityState =
+  'available' | 'sold_out' | 'not_yet_open' | 'closed' | 'temporarily_unavailable';
+
+export interface ItemAvailabilityInfo {
+  state: ItemAvailabilityState;
+  isOrderable: boolean;
+  badgeLabel: string | null;
+  buttonLabel: string;
+  quickAddErrorMessage?: string;
+  nextWindowStartTime?: string;
+}
+
 /**
  * Parse an 'HH:mm:ss' or 'HH:mm' string into total seconds of the day.
  */
@@ -306,4 +318,131 @@ export function isItemCutoff(
 
   // If ANY applicable period is still open or upcoming, it's not strictly past all cutoffs
   return !isItemCurrentlyOrderable(item, mealWindows, colomboSeconds, options);
+}
+
+/**
+ * Evaluates fine-grained availability status for an item to provide guest-friendly messages:
+ * - 'sold_out': Item is out of stock (available === false)
+ * - 'not_yet_open': Item's applicable meal window has not yet opened today
+ * - 'closed': Item's applicable meal window has passed its cutoff for today
+ * - 'temporarily_unavailable': Item has missing schedule data or backend isOrderable === false without cutoff
+ * - 'available': Item is currently in-stock and within an active ordering window
+ */
+export function getItemAvailability(
+  item: GuestMenuItem,
+  mealWindows?: MealWindowStatus[],
+  colomboSeconds?: number,
+  options?: OrderableEvaluationOptions,
+): ItemAvailabilityInfo {
+  // 1. Authoritative sold out
+  if (!item.available) {
+    return {
+      state: 'sold_out',
+      isOrderable: false,
+      badgeLabel: 'Sold Out',
+      buttonLabel: 'Item Sold Out',
+      quickAddErrorMessage: 'Item is sold out.',
+    };
+  }
+
+  // 2. Authoritative backend cutoff flag
+  if (item.isCutoff) {
+    return {
+      state: 'closed',
+      isOrderable: false,
+      badgeLabel: 'Closed',
+      buttonLabel: 'Ordering Closed',
+      quickAddErrorMessage: 'Ordering for this item has closed for today.',
+    };
+  }
+
+  // 3. Backend explicit isOrderable === false without cutoff
+  if (!item.isOrderable) {
+    return {
+      state: 'temporarily_unavailable',
+      isOrderable: false,
+      badgeLabel: 'Unavailable',
+      buttonLabel: 'Service Unavailable',
+      quickAddErrorMessage: 'This item is currently unavailable.',
+    };
+  }
+
+  const currentSeconds =
+    typeof colomboSeconds === 'number' ? colomboSeconds : getColomboTime().totalSecondsOfDay;
+
+  // 4. Check if currently orderable under authoritative rules
+  const isOrderableNow = isItemCurrentlyOrderable(item, mealWindows, currentSeconds, options);
+  if (isOrderableNow) {
+    return {
+      state: 'available',
+      isOrderable: true,
+      badgeLabel: null,
+      buttonLabel: 'Add to Cart',
+    };
+  }
+
+  // 5. Item is not orderable right now. Inspect meal windows to distinguish reasons:
+  const itemPeriods = item.mealPeriods || [];
+  if (!mealWindows || mealWindows.length === 0 || itemPeriods.length === 0) {
+    return {
+      state: 'temporarily_unavailable',
+      isOrderable: false,
+      badgeLabel: 'Unavailable',
+      buttonLabel: 'Service Unavailable',
+      quickAddErrorMessage: 'Ordering schedule is currently unavailable.',
+    };
+  }
+
+  const resolvedWindows: Array<{ win: MealWindowStatus; startSec: number; cutoffSec: number }> = [];
+  let hasMissingWindow = false;
+
+  for (const period of itemPeriods) {
+    const win = mealWindows.find((w) => w.period === period);
+    if (!win || !win.startTime || !win.cutoffTime) {
+      hasMissingWindow = true;
+      continue;
+    }
+    resolvedWindows.push({
+      win,
+      startSec: parseTimeToSeconds(win.startTime),
+      cutoffSec: parseTimeToSeconds(win.cutoffTime),
+    });
+  }
+
+  if (resolvedWindows.length === 0 && hasMissingWindow) {
+    return {
+      state: 'temporarily_unavailable',
+      isOrderable: false,
+      badgeLabel: 'Unavailable',
+      buttonLabel: 'Service Unavailable',
+      quickAddErrorMessage: 'Ordering schedule is currently unavailable.',
+    };
+  }
+
+  // Check if any window is upcoming later today
+  const upcomingWindows = resolvedWindows
+    .filter((w) => currentSeconds < w.startSec)
+    .sort((a, b) => a.startSec - b.startSec);
+
+  if (upcomingWindows.length > 0) {
+    const nextWin = upcomingWindows[0];
+    const formattedStart = formatTime12Hour(nextWin.win.startTime);
+    return {
+      state: 'not_yet_open',
+      isOrderable: false,
+      badgeLabel: `Opens at ${formattedStart}`,
+      buttonLabel: 'Ordering Not Yet Open',
+      quickAddErrorMessage: `Ordering is not yet open for this item (starts at ${formattedStart}).`,
+      nextWindowStartTime: nextWin.win.startTime,
+    };
+  }
+
+  // All applicable windows have passed their cutoff today
+  return {
+    state: 'closed',
+    isOrderable: false,
+    badgeLabel: 'Closed',
+    buttonLabel: 'Ordering Closed',
+    quickAddErrorMessage: 'Ordering for this item has closed for today.',
+  };
 }

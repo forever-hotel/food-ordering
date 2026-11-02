@@ -10,12 +10,14 @@ import {
   MAX_ORDER_ITEM_QUANTITY,
 } from '../../../lib/constants/order-policy.ts';
 import { useCart } from '../../../lib/cart/cart-context.tsx';
+import type { ItemAvailabilityInfo } from '../../../lib/utils/meal-windows.ts';
 
 const { Title, Paragraph, Text } = Typography;
 const { TextArea } = Input;
 
 interface MenuItemDetailProps {
   item: GuestMenuItem;
+  availability?: ItemAvailabilityInfo;
   onBack: () => void;
 }
 
@@ -29,7 +31,7 @@ function formatDietaryTag(tag: string): string {
   return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
 }
 
-export function MenuItemDetail({ item, onBack }: MenuItemDetailProps) {
+export function MenuItemDetail({ item, availability, onBack }: MenuItemDetailProps) {
   const { message } = App.useApp();
   const { addItem, getItemQuantity } = useCart();
   const [quantity, setQuantity] = useState(1);
@@ -40,9 +42,11 @@ export function MenuItemDetail({ item, onBack }: MenuItemDetailProps) {
   const currentCartQty = getItemQuantity(item.id);
   const remainingAllowance = Math.max(0, portionCap - currentCartQty);
 
-  const isSoldOut = !item.available;
-  const isCutoff = item.isCutoff || !item.isOrderable;
-  const canOrder = item.available && item.isOrderable && !item.isCutoff && remainingAllowance > 0;
+  const isSoldOut = !item.available || availability?.state === 'sold_out';
+  const isActionable = availability
+    ? availability.state === 'available'
+    : item.available && item.isOrderable && !item.isCutoff;
+  const canOrder = isActionable && remainingAllowance > 0;
 
   const handleIncrement = () => {
     if (quantity < portionCap && quantity < remainingAllowance) {
@@ -113,13 +117,19 @@ export function MenuItemDetail({ item, onBack }: MenuItemDetailProps) {
           <span>{item.category}</span>
         </button>
 
-        {isSoldOut && (
+        {isSoldOut ? (
           <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-[2px] flex items-center justify-center">
             <span className="bg-red-600 text-white font-bold px-4 py-1.5 rounded-full text-xs uppercase tracking-wider shadow-lg">
               Sold Out
             </span>
           </div>
-        )}
+        ) : !isActionable && availability?.badgeLabel ? (
+          <div className="absolute top-4 right-4 z-10">
+            <span className="bg-slate-900/80 backdrop-blur-md text-white font-bold px-3 py-1.5 rounded-full text-xs shadow-md">
+              {availability.badgeLabel}
+            </span>
+          </div>
+        ) : null}
       </div>
 
       {/* Main Content Card */}
@@ -261,13 +271,11 @@ export function MenuItemDetail({ item, onBack }: MenuItemDetailProps) {
           onClick={handleAddToCart}
           className="!h-12 !rounded-2xl !bg-[#1D3557] hover:!bg-[#162a45] !font-bold text-sm shadow-md"
         >
-          {isSoldOut
-            ? 'Item Sold Out'
-            : isCutoff
-              ? 'Outside Ordering Hours'
-              : remainingAllowance <= 0
-                ? 'Max Portion in Cart'
-                : 'Add to Cart'}
+          {!isActionable
+            ? availability?.buttonLabel || (isSoldOut ? 'Item Sold Out' : 'Outside Ordering Hours')
+            : remainingAllowance <= 0
+              ? 'Max Portion in Cart'
+              : 'Add to Cart'}
         </Button>
       </div>
     </div>

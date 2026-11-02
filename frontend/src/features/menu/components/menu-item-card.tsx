@@ -4,11 +4,13 @@ import React, { useState } from 'react';
 import { Card, Tag, Typography } from 'antd';
 import type { GuestMenuItem } from '../../../types/menu.ts';
 import { formatLkrPrice, isValidImageUrl } from '../../../lib/api/menu.ts';
+import type { ItemAvailabilityInfo } from '../../../lib/utils/meal-windows.ts';
 
 const { Title, Paragraph, Text } = Typography;
 
 interface MenuItemCardProps {
   item: GuestMenuItem;
+  availability?: ItemAvailabilityInfo;
   onSelect: (item: GuestMenuItem) => void;
   onQuickAdd: (item: GuestMenuItem) => void;
 }
@@ -23,12 +25,18 @@ function formatDietaryTag(tag: string): string {
   return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
 }
 
-export function MenuItemCard({ item, onSelect, onQuickAdd }: MenuItemCardProps) {
+export function MenuItemCard({ item, availability, onSelect, onQuickAdd }: MenuItemCardProps) {
   const [imgError, setImgError] = useState(false);
 
-  const isSoldOut = !item.available;
-  const isCutoff = item.isCutoff || !item.isOrderable;
-  const isActionable = item.available && item.isOrderable && !item.isCutoff;
+  const isSoldOut = !item.available || availability?.state === 'sold_out';
+  const isActionable = availability
+    ? availability.state === 'available'
+    : item.available && item.isOrderable && !item.isCutoff;
+  const isCutoff = !isActionable && !isSoldOut;
+
+  const badgeText =
+    availability?.badgeLabel ?? (isSoldOut ? 'Unavailable' : isCutoff ? 'Outside Hours' : null);
+  const badgeColor = availability?.state === 'sold_out' || isSoldOut ? 'error' : 'default';
 
   const handleQuickAdd = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -44,7 +52,7 @@ export function MenuItemCard({ item, onSelect, onQuickAdd }: MenuItemCardProps) 
       tabIndex={0}
       data-testid="menu-item-card"
       aria-label={`${item.name}, ${formatLkrPrice(item.price)}. ${
-        isSoldOut ? 'Sold out.' : isCutoff ? 'Outside ordering hours.' : 'Available to order.'
+        badgeText ? `${badgeText}.` : 'Available to order.'
       } Click for details.`}
       onClick={() => onSelect(item)}
       onKeyDown={(e) => {
@@ -93,16 +101,9 @@ export function MenuItemCard({ item, onSelect, onQuickAdd }: MenuItemCardProps) 
               {item.name}
             </Title>
 
-            {isSoldOut ? (
-              <Tag color="default" className="text-[10px] font-semibold mr-0 !rounded-full">
-                Unavailable
-              </Tag>
-            ) : isCutoff ? (
-              <Tag
-                color="default"
-                className="text-[10px] font-semibold mr-0 text-slate-500 !rounded-full"
-              >
-                Outside Hours
+            {badgeText ? (
+              <Tag color={badgeColor} className="text-[10px] font-semibold mr-0 !rounded-full">
+                {badgeText}
               </Tag>
             ) : null}
           </div>
@@ -153,7 +154,7 @@ export function MenuItemCard({ item, onSelect, onQuickAdd }: MenuItemCardProps) 
               </button>
             ) : (
               <span className="text-xs text-slate-400 font-medium">
-                {isSoldOut ? 'Unavailable' : 'Outside Hours'}
+                {badgeText || 'Unavailable'}
               </span>
             )}
           </div>
