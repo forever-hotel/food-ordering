@@ -407,7 +407,7 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
                   <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                 </svg>
               ) : currentStatus === 'IN_PREPARATION' ? (
-                <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-ping" />
+                <span className="w-3 h-3 rounded-full bg-amber-500 shadow-xs" />
               ) : (
                 <span className="w-2 h-2 rounded-full bg-transparent" />
               )}

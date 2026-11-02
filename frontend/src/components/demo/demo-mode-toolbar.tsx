@@ -8,6 +8,7 @@ import { resetBackendDemo } from '@/lib/api/guest-sessions';
 
 export function DemoModeToolbar() {
   const [messageApi, contextHolder] = message.useMessage();
+  const [expanded, setExpanded] = React.useState(false);
 
   const isMounted = useSyncExternalStore(
     () => () => {},
@@ -76,12 +77,27 @@ export function DemoModeToolbar() {
     };
   });
 
+  if (!expanded) {
+    return (
+      <aside className="fixed top-2 right-2 z-50 pointer-events-auto">
+        <button
+          type="button"
+          aria-label="Toggle developer toolbar"
+          onClick={() => setExpanded(true)}
+          className="opacity-30 hover:opacity-100 transition-opacity bg-slate-900/80 text-[10px] text-blue-300 px-2 py-0.5 rounded-full border border-slate-700/80 shadow-xs"
+        >
+          ⚙️ Dev
+        </button>
+      </aside>
+    );
+  }
+
   return (
     <>
       {contextHolder}
       <aside
         aria-label="Development Backend Integration Toolbar"
-        className="fixed bottom-16 left-1/2 -translate-x-1/2 z-50 px-3 py-1.5 bg-slate-900/90 text-white backdrop-blur-md rounded-full shadow-lg border border-slate-700/80 flex items-center gap-2 text-xs select-none max-w-[95vw] overflow-x-auto"
+        className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 px-3 py-1.5 bg-slate-900/95 text-white backdrop-blur-md rounded-full shadow-xl border border-slate-700 flex items-center gap-2 text-xs select-none max-w-[95vw] overflow-x-auto"
       >
         <Tag color="blue" className="!m-0 !font-semibold !px-2 !rounded-full !text-[10px]">
           🌐 NESTJS API
@@ -119,6 +135,15 @@ export function DemoModeToolbar() {
         >
           Reset Demo
         </Button>
+
+        <button
+          type="button"
+          aria-label="Close developer toolbar"
+          onClick={() => setExpanded(false)}
+          className="text-slate-400 hover:text-white ml-1 px-1.5 py-0.5 rounded-full hover:bg-white/10"
+        >
+          ✕
+        </button>
       </aside>
     </>
   );

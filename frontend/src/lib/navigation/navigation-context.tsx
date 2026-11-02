@@ -9,11 +9,15 @@ export interface PageHeaderConfig {
   subtitle?: string;
   showBackButton?: boolean;
   onBack?: (() => void) | null;
+  hideHeader?: boolean;
+  hideBottomNav?: boolean;
 }
 
 interface NavigationContextType {
   activeTab: NavTabId;
   pageHeader: PageHeaderConfig;
+  selectedOrderId: string | null;
+  setSelectedOrderId: (id: string | null) => void;
   setActiveTab: (tab: NavTabId) => void;
   setPageHeader: (config: PageHeaderConfig) => void;
   resetHeaderForTab: (tab: NavTabId, roomNumber?: string, guestName?: string) => void;
@@ -30,6 +34,7 @@ const DEFAULT_TITLES: Record<NavTabId, { title: string; subtitlePrefix: string }
 
 export function NavigationProvider({ children }: { children: React.ReactNode }) {
   const [activeTab, setActiveTabState] = useState<NavTabId>('menu');
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [pageHeader, setPageHeaderState] = useState<PageHeaderConfig>({
     title: DEFAULT_TITLES.menu.title,
     subtitle: DEFAULT_TITLES.menu.subtitlePrefix,
@@ -43,7 +48,9 @@ export function NavigationProvider({ children }: { children: React.ReactNode }) 
         prev.title === config.title &&
         prev.subtitle === config.subtitle &&
         prev.showBackButton === config.showBackButton &&
-        prev.onBack === config.onBack
+        prev.onBack === config.onBack &&
+        prev.hideHeader === config.hideHeader &&
+        prev.hideBottomNav === config.hideBottomNav
       ) {
         return prev;
       }
@@ -75,6 +82,8 @@ export function NavigationProvider({ children }: { children: React.ReactNode }) 
         subtitle,
         showBackButton: false,
         onBack: null,
+        hideHeader: false,
+        hideBottomNav: false,
       });
     },
     [setPageHeader],
@@ -92,11 +101,13 @@ export function NavigationProvider({ children }: { children: React.ReactNode }) 
     () => ({
       activeTab,
       pageHeader,
+      selectedOrderId,
+      setSelectedOrderId,
       setActiveTab,
       setPageHeader,
       resetHeaderForTab,
     }),
-    [activeTab, pageHeader, setActiveTab, setPageHeader, resetHeaderForTab],
+    [activeTab, pageHeader, selectedOrderId, setActiveTab, setPageHeader, resetHeaderForTab],
   );
 
   return <NavigationContext.Provider value={value}>{children}</NavigationContext.Provider>;

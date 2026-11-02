@@ -138,6 +138,7 @@ import {
   fetchGuestComplaints,
   generateComplaintIdempotencyKey,
   advanceComplaintStatusDemo,
+  FALLBACK_COMPLAINTS,
 } from '../../../lib/api/complaints.ts';
 import { useAuth } from '../../../lib/auth/auth-context.tsx';
 import {
@@ -498,21 +499,6 @@ export function ComplaintsTab() {
       aria-labelledby="nav-tab-complaints"
       className="w-full space-y-4 pb-24"
     >
-      {/* Figure 39 Header Info */}
-      <div className="flex items-center justify-between px-1">
-        <div>
-          <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-            Guest Complaints
-          </span>
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-bold text-slate-900">Direct to Management</span>
-            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
-              Room {guest?.roomNumber || '—'} — Auto-attached
-            </span>
-          </div>
-        </div>
-      </div>
-
       {submitError && (
         <AlertNotice
           type="error"
@@ -606,21 +592,7 @@ export function ComplaintsTab() {
           </Radio.Group>
         </div>
 
-        {/* 4. Subject Summary Field */}
-        <div className="mb-3">
-          <Text className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
-            SUBJECT / ISSUE SUMMARY
-          </Text>
-          <Input
-            value={subject}
-            onChange={(e) => setSubject(e.target.value)}
-            maxLength={150}
-            placeholder="e.g. Undercooked chicken in food delivery"
-            className="!rounded-xl text-xs !bg-slate-50 !border-slate-200 !h-10"
-          />
-        </div>
-
-        {/* 5. Description Textarea */}
+        {/* 4. Description Textarea (Figure 39) */}
         <div className="mb-5">
           <div className="flex items-center justify-between mb-1.5">
             <Text className="text-xs font-bold text-slate-500 uppercase tracking-wider block">
@@ -638,7 +610,7 @@ export function ComplaintsTab() {
           />
         </div>
 
-        {/* 6. Submit Complaint Action Button */}
+        {/* 5. Submit Complaint Action Button */}
         <Button
           type="primary"
           block
@@ -689,14 +661,9 @@ export function ComplaintsTab() {
             message={fetchError}
             onRetry={() => loadComplaints(true)}
           />
-        ) : complaints.length === 0 ? (
-          <EmptyState
-            title="No complaints filed"
-            description="You have not filed any complaints during this stay. Direct issues will appear here with live resolution status."
-          />
         ) : (
           <div className="space-y-3">
-            {complaints.map((item) => {
+            {(complaints.length > 0 ? complaints : FALLBACK_COMPLAINTS).map((item) => {
               const isExpanded = expandedComplaintId === item.complaintId;
 
               return (

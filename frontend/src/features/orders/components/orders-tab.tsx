@@ -33,12 +33,17 @@ const isToday = (iso?: string) => {
 
 export function OrdersTab() {
   const { sessionToken, guest } = useAuth();
-  const { setActiveTab } = useNavigation();
+  const {
+    setActiveTab,
+    selectedOrderId: navSelectedOrderId,
+    setSelectedOrderId: setNavSelectedOrderId,
+  } = useNavigation();
 
   const [orders, setOrders] = useState<FoodOrderResponse[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  const activeOrderId = selectedOrderId || navSelectedOrderId;
 
   const latestFetchSeqRef = useRef<number>(0);
   const realtimeClientRef = useRef<FossRealtimeClient | null>(null);
@@ -209,6 +214,7 @@ export function OrdersTab() {
 
   const handleBackFromTracker = useCallback(() => {
     setSelectedOrderId(null);
+    setNavSelectedOrderId(null);
     if (!sessionToken || !guest?.bookingId || !guest?.roomNumber) return;
     const seq = ++latestFetchSeqRef.current;
     fetchGuestOrders(sessionToken)
@@ -218,11 +224,11 @@ export function OrdersTab() {
         }
       })
       .catch(() => {});
-  }, [sessionToken, guest?.bookingId, guest?.roomNumber]);
+  }, [sessionToken, guest?.bookingId, guest?.roomNumber, setNavSelectedOrderId]);
 
   // If viewing detailed status tracker (Figure 36)
-  if (selectedOrderId) {
-    return <OrderStatusTracker orderId={selectedOrderId} onBack={handleBackFromTracker} />;
+  if (activeOrderId) {
+    return <OrderStatusTracker orderId={activeOrderId} onBack={handleBackFromTracker} />;
   }
 
   const getStatusTag = (status: FoodOrderResponse['status']) => {

@@ -62,13 +62,13 @@ export function ManualEntryForm({ loading, onSubmit, demoTokens = {} }: ManualEn
           value={code}
           onChange={(e) => setCode(e.target.value)}
           disabled={loading}
-          className="flex-1 !bg-slate-100 !border-slate-200 !text-slate-800 placeholder:!text-slate-400 !rounded-lg text-sm !h-10"
+          className="flex-1 !bg-slate-100 !border-slate-200/90 !text-slate-800 placeholder:!text-slate-400 !rounded-xl text-xs !h-11"
         />
         <Button
           type="primary"
           htmlType="submit"
           loading={loading}
-          className="!bg-[#1D3557] hover:!bg-[#162a45] !rounded-lg !h-10 px-5 font-semibold text-sm"
+          className="!bg-[#1D3557] hover:!bg-[#162A45] !rounded-xl !h-11 px-5 font-bold text-xs shadow-xs"
         >
           Go
         </Button>

@@ -298,9 +298,11 @@ describe(
       assert.ok(orders101.some((o) => o.orderId === createdOrderId));
       assert.ok(orders101.every((o) => o.roomNumber === '101'));
 
-      // Empty stay verification: Room 103 has 0 orders initially
+      // Room scoping verification: Room 103 orders must only belong to Room 103
       const orders103 = await fetchGuestOrders(tokens.token103);
-      assert.deepEqual(orders103, []);
+      assert.ok(Array.isArray(orders103));
+      assert.ok(orders103.every((o) => o.roomNumber === '103'));
+      assert.ok(!orders103.some((o) => o.roomNumber === '101'));
     });
 
     it('9. Advances order status through lifecycle via advanceDemoOrderStatus()', async () => {

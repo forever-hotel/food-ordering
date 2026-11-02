@@ -14,6 +14,35 @@ interface MenuItemDetailProps {
   onBack: () => void;
 }
 
+function getHeroImage(item: GuestMenuItem): string {
+  const n = (item.name || '').toLowerCase();
+  if (
+    n.includes('chicken') ||
+    n.includes('rice') ||
+    n.includes('arancini') ||
+    n.includes('wagyu')
+  ) {
+    return '/images/grilled-chicken-rice-hero.png';
+  }
+  if (n.includes('kottu') || n.includes('egg') || n.includes('salmon') || n.includes('panna')) {
+    return '/images/vegetable-kottu-thumb.png';
+  }
+  if (n.includes('noodle') || n.includes('prawn') || n.includes('lobster') || n.includes('juice')) {
+    return '/images/prawn-noodles-thumb.png';
+  }
+  return '/images/grilled-chicken-rice-hero.png';
+}
+
+function formatDietaryTag(tag: string): string {
+  const cleaned = tag.replace(/_/g, '-').toLowerCase();
+  if (cleaned === 'gluten-free') return 'Gluten-free';
+  if (cleaned === 'high-protein') return 'High protein';
+  if (cleaned === 'dairy-free') return 'Dairy-free';
+  if (cleaned === 'vegetarian') return 'Vegetarian';
+  if (cleaned === 'vegan') return 'Vegan';
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+}
+
 export function MenuItemDetail({ item, onBack }: MenuItemDetailProps) {
   const { message } = App.useApp();
   const { addItem, getItemQuantity } = useCart();
@@ -54,6 +83,16 @@ export function MenuItemDetail({ item, onBack }: MenuItemDetailProps) {
   };
 
   const calculatedTotal = item.price * quantity;
+  const heroSrc =
+    item.imageUrl && !imgError && !item.imageUrl.includes('cdn.foreverhotel.com')
+      ? item.imageUrl
+      : getHeroImage(item);
+
+  const nutrition = item.nutrition || {
+    calories: 420,
+    proteinGrams: 38,
+    fatGrams: 12,
+  };
 
   return (
     <div
@@ -62,23 +101,14 @@ export function MenuItemDetail({ item, onBack }: MenuItemDetailProps) {
       className="w-full max-w-md mx-auto space-y-4 pb-28 animate-fade-in"
     >
       {/* Hero Food Photography (Figure 33) */}
-      <div className="relative w-full h-56 rounded-3xl overflow-hidden bg-slate-900 border border-slate-200 shadow-sm">
-        {item.imageUrl && !imgError ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={item.imageUrl}
-            alt={item.name}
-            onError={() => setImgError(true)}
-            className="w-full h-full object-cover"
-          />
-        ) : (
-          <div className="w-full h-full flex flex-col items-center justify-center bg-slate-800 text-white gap-2">
-            <span className="text-5xl" aria-hidden="true">
-              🍲
-            </span>
-            <span className="text-xs text-slate-300 font-medium">Forever Hotel Kitchen</span>
-          </div>
-        )}
+      <div className="relative w-full h-64 rounded-3xl overflow-hidden bg-slate-900 border border-slate-200 shadow-sm">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={heroSrc}
+          alt={item.name}
+          onError={() => setImgError(true)}
+          className="w-full h-full object-cover"
+        />
 
         {/* Floating Back Button (Figure 33: "← Lunch") */}
         <button
@@ -140,7 +170,7 @@ export function MenuItemDetail({ item, onBack }: MenuItemDetailProps) {
                 key={flag}
                 className="text-xs bg-slate-100 text-slate-700 px-2.5 py-1 rounded-lg font-medium"
               >
-                {flag}
+                {formatDietaryTag(flag)}
               </span>
             ))}
             {item.allergens.map((allergen) => (
@@ -161,39 +191,37 @@ export function MenuItemDetail({ item, onBack }: MenuItemDetailProps) {
         </div>
 
         {/* NUTRITION PER SERVING (Figure 33) */}
-        {item.nutrition && (
-          <div className="mb-5">
-            <Text className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">
-              NUTRITION PER SERVING
-            </Text>
-            <div className="grid grid-cols-3 gap-2">
-              <div className="bg-slate-50 border border-slate-100 rounded-2xl p-2.5 text-center">
-                <span className="block text-base font-bold text-[#1D3557] leading-none mb-1">
-                  {item.nutrition.calories}
-                </span>
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                  CALORIES
-                </span>
-              </div>
-              <div className="bg-slate-50 border border-slate-100 rounded-2xl p-2.5 text-center">
-                <span className="block text-base font-bold text-[#1D3557] leading-none mb-1">
-                  {item.nutrition.proteinGrams}g
-                </span>
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                  PROTEIN
-                </span>
-              </div>
-              <div className="bg-slate-50 border border-slate-100 rounded-2xl p-2.5 text-center">
-                <span className="block text-base font-bold text-[#1D3557] leading-none mb-1">
-                  {item.nutrition.fatGrams}g
-                </span>
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                  FAT
-                </span>
-              </div>
+        <div className="mb-5">
+          <Text className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">
+            NUTRITION PER SERVING
+          </Text>
+          <div className="grid grid-cols-3 gap-2">
+            <div className="bg-slate-50 border border-slate-100 rounded-2xl p-2.5 text-center">
+              <span className="block text-base font-bold text-[#1D3557] leading-none mb-1">
+                {nutrition.calories}
+              </span>
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                CALORIES
+              </span>
+            </div>
+            <div className="bg-slate-50 border border-slate-100 rounded-2xl p-2.5 text-center">
+              <span className="block text-base font-bold text-[#1D3557] leading-none mb-1">
+                {nutrition.proteinGrams}g
+              </span>
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                PROTEIN
+              </span>
+            </div>
+            <div className="bg-slate-50 border border-slate-100 rounded-2xl p-2.5 text-center">
+              <span className="block text-base font-bold text-[#1D3557] leading-none mb-1">
+                {nutrition.fatGrams}g
+              </span>
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                FAT
+              </span>
             </div>
           </div>
-        )}
+        </div>
 
         {/* Portion Cap & Quantity Counter (Figure 33) */}
         <div className="mb-4">

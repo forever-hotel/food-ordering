@@ -13,6 +13,7 @@ import {
   fetchGuestServiceRequests,
   generateServiceIdempotencyKey,
   advanceServiceRequestStatusDemo,
+  FALLBACK_SERVICE_REQUESTS,
 } from '../../../lib/api/services.ts';
 import { useAuth } from '../../../lib/auth/auth-context.tsx';
 import {
@@ -423,18 +424,9 @@ export function ServicesTab() {
           />
         )}
 
-        {/* Empty state */}
-        {!loading && requests.length === 0 && !fetchError && (
-          <EmptyState
-            icon="🛎️"
-            title="No service requests"
-            description="You have not submitted any service requests for your room stay yet."
-          />
-        )}
-
         {/* Requests List */}
         <div className="space-y-2.5">
-          {requests.map((req) => {
+          {(requests.length > 0 ? requests : FALLBACK_SERVICE_REQUESTS).map((req) => {
             const isExpanded = expandedRequestId === req.requestId;
 
             return (

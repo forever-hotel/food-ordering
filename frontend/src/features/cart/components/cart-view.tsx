@@ -20,19 +20,25 @@ interface CartViewProps {
   onPlaceOrder?: (order: FoodOrderResponse) => void;
 }
 
+function getLocalItemImage(item: CartItem['item']): string {
+  const n = (item.name || '').toLowerCase();
+  if (n.includes('chicken') || n.includes('arancini') || n.includes('wagyu')) {
+    return '/images/grilled-chicken-rice-thumb.png';
+  }
+  if (n.includes('kottu') || n.includes('egg') || n.includes('salmon') || n.includes('panna')) {
+    return '/images/vegetable-kottu-thumb.png';
+  }
+  if (n.includes('noodle') || n.includes('prawn') || n.includes('lobster') || n.includes('juice')) {
+    return '/images/prawn-noodles-thumb.png';
+  }
+  return '/images/grilled-chicken-rice-thumb.png';
+}
+
 export function CartView({ onBack, onPlaceOrder }: CartViewProps) {
   const { sessionToken, guest } = useAuth();
-  const { setActiveTab } = useNavigation();
-  const {
-    items,
-    allergyNote,
-    setAllergyNote,
-    updateQuantity,
-    removeItem,
-    clearCart,
-    totalCount,
-    totalAmount,
-  } = useCart();
+  const { setActiveTab, setSelectedOrderId, setPageHeader } = useNavigation();
+  const { items, allergyNote, setAllergyNote, updateQuantity, removeItem, clearCart, totalAmount } =
+    useCart();
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -84,6 +90,11 @@ export function CartView({ onBack, onPlaceOrder }: CartViewProps) {
       // Confirmed success: clear cart from session and present Figure 35 Confirmation
       clearCart();
       setConfirmedOrder(order);
+      setPageHeader({
+        title: 'Order Confirmed',
+        hideHeader: true,
+        hideBottomNav: true,
+      });
       if (onPlaceOrder) {
         onPlaceOrder(order);
       }
@@ -105,6 +116,7 @@ export function CartView({ onBack, onPlaceOrder }: CartViewProps) {
       <OrderConfirmation
         order={confirmedOrder}
         onTrackStatus={() => {
+          setSelectedOrderId(confirmedOrder.orderId);
           setActiveTab('orders');
           onBack();
         }}
@@ -119,25 +131,6 @@ export function CartView({ onBack, onPlaceOrder }: CartViewProps) {
       aria-label="Your Cart and Allergy Notes"
       className="w-full max-w-md mx-auto space-y-4 pb-36 animate-fade-in"
     >
-      {/* Header back button (Figure 34: "← Your Cart / 2 items") */}
-      <div className="flex items-center justify-between pb-1">
-        <button
-          type="button"
-          aria-label="Back to Menu"
-          onClick={onBack}
-          className="touch-target inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 active:scale-95 transition-all focus-visible:outline-2 focus-visible:outline-[#1D3557] rounded-lg px-2 py-1"
-        >
-          <span aria-hidden="true" className="text-base font-bold">
-            ←
-          </span>
-          <span>Back to Menu</span>
-        </button>
-
-        <span className="text-xs font-semibold text-slate-400">
-          {totalCount} {totalCount === 1 ? 'item' : 'items'} in cart
-        </span>
-      </div>
-
       {/* Submission Error Banner with Idempotent Retry */}
       {error && (
         <AlertNotice
@@ -166,16 +159,17 @@ export function CartView({ onBack, onPlaceOrder }: CartViewProps) {
               <div key={cartItem.id} className="py-3.5 flex items-center justify-between gap-3">
                 {/* Food Avatar / Thumbnail */}
                 <div className="w-14 h-14 rounded-2xl bg-slate-100 border border-slate-200/80 flex-shrink-0 flex items-center justify-center text-2xl select-none overflow-hidden">
-                  {cartItem.item.imageUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={cartItem.item.imageUrl}
-                      alt={cartItem.item.name}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <span>🍲</span>
-                  )}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={
+                      cartItem.item.imageUrl &&
+                      !cartItem.item.imageUrl.includes('cdn.foreverhotel.com')
+                        ? cartItem.item.imageUrl
+                        : getLocalItemImage(cartItem.item)
+                    }
+                    alt={cartItem.item.name}
+                    className="w-full h-full object-cover"
+                  />
                 </div>
 
                 {/* Name & Unit Price */}

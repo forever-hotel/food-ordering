@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Alert, App, Badge, Button } from 'antd';
+import { App, Button } from 'antd';
 import type { GuestMenuItem, GuestMenuResponse, MealPeriod } from '../../../types/menu.ts';
 import { fetchGuestMenu, formatLkrPrice } from '../../../lib/api/menu.ts';
 import { useAuth } from '../../../lib/auth/auth-context.tsx';
@@ -96,7 +96,9 @@ export function MenuTab() {
     setPageHeader({
       title: item.name,
       subtitle: `${item.category}${guest?.roomNumber ? ` · Room ${guest.roomNumber}` : ''}`,
-      showBackButton: true,
+      showBackButton: false,
+      hideHeader: true,
+      hideBottomNav: true,
       onBack: () => {
         setSelectedItem(null);
         resetHeaderForTab('menu', guest?.roomNumber, guest?.guestName);
@@ -115,10 +117,10 @@ export function MenuTab() {
     setSelectedItem(null);
     setPageHeader({
       title: 'Your Cart',
-      subtitle: `${totalCount} ${totalCount === 1 ? 'item' : 'items'}${
-        guest?.roomNumber ? ` · Room ${guest.roomNumber}` : ''
-      }`,
+      subtitle: `${totalCount} ${totalCount === 1 ? 'item' : 'items'}`,
       showBackButton: true,
+      hideHeader: false,
+      hideBottomNav: true,
       onBack: handleBackToMenu,
     });
   };
@@ -151,12 +153,10 @@ export function MenuTab() {
         onPlaceOrder={(order) => {
           setPageHeader({
             title: 'Order Confirmed',
-            subtitle: `Order #${order.orderId}${
-              order.roomNumber || guest?.roomNumber
-                ? ` · Room ${order.roomNumber || guest?.roomNumber}`
-                : ''
-            }`,
+            subtitle: `Order #${order.orderId}`,
             showBackButton: false,
+            hideHeader: true,
+            hideBottomNav: true,
           });
         }}
       />
@@ -192,9 +192,6 @@ export function MenuTab() {
     remainingMinutes > 0
       ? `${hoursLeft > 0 ? `${hoursLeft}h ` : ''}${minsLeft}m left`
       : 'service ended';
-
-  const isCategoryActive = categoryWindow?.isActive ?? false;
-  const isCutoffReached = categoryWindow?.isCutoffReached ?? false;
 
   // Canonical data model alignment:
   // Subsystem KMS items provide food course categories (Starters, Mains, Desserts, Beverages)
@@ -260,13 +257,13 @@ export function MenuTab() {
       role="tabpanel"
       id="tabpanel-menu"
       aria-labelledby="nav-tab-menu"
-      className="w-full space-y-3.5 pb-24"
+      className="w-full space-y-3 pb-24"
     >
-      {/* Category Pills Header (Figure 32) */}
+      {/* Category Tabs Header (Figure 32: Breakfast | Lunch | Dinner | Tea) */}
       <div
         role="tablist"
         aria-label="Meal periods"
-        className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar select-none"
+        className="flex items-center justify-between border-b border-slate-200 bg-white -mx-4 px-3 py-0.5 select-none shadow-xs"
       >
         {CATEGORIES.map((cat) => {
           const isSelected = selectedCategory === cat.key;
@@ -280,10 +277,10 @@ export function MenuTab() {
                 setSelectedCategory(cat.key);
                 setSelectedCourse('All');
               }}
-              className={`touch-target px-4 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all focus-visible:outline-2 focus-visible:outline-[#1D3557] ${
+              className={`flex-1 py-2 text-center text-xs font-bold transition-all relative ${
                 isSelected
-                  ? 'bg-[#1D3557] text-white shadow-xs'
-                  : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 active:scale-95'
+                  ? 'text-[#1D3557] after:absolute after:bottom-0 after:left-4 after:right-4 after:h-[2.5px] after:bg-[#1D3557] after:rounded-full'
+                  : 'text-slate-400 hover:text-slate-700'
               }`}
             >
               {cat.label}
@@ -292,67 +289,17 @@ export function MenuTab() {
         })}
       </div>
 
-      {/* Course Categories Sub-Filter (when items contain course taxonomy: Starters, Mains, Desserts, Beverages) */}
-      {availableCourses.length > 0 && (
-        <div
-          role="tablist"
-          aria-label="Course categories"
-          className="flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar select-none"
-        >
-          {['All', ...availableCourses].map((course) => {
-            const isSelected = selectedCourse === course;
-            return (
-              <button
-                key={course}
-                type="button"
-                role="tab"
-                aria-selected={isSelected}
-                onClick={() => setSelectedCourse(course)}
-                className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${
-                  isSelected
-                    ? 'bg-slate-800 text-white font-semibold shadow-xs'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200'
-                }`}
-              >
-                {course}
-              </button>
-            );
-          })}
-        </div>
-      )}
-
       {/* Meal Period Banner (Figure 32: "Lunch orders close at 14:30 — 2h 16m left") */}
-      <Alert
-        type={isCutoffReached ? 'info' : 'warning'}
-        showIcon
-        title={
-          <span className="text-xs font-medium">
-            {isCutoffReached ? (
-              <span className="text-slate-700">
-                {selectedCategory} service has ended for today (served until{' '}
-                <strong className="font-bold">{cutoffTimeDisplay}</strong>). Please check our active
-                dining options above.
-              </span>
-            ) : isCategoryActive ? (
-              <span className="text-amber-950">
-                {selectedCategory} orders close at{' '}
-                <strong className="font-bold">{cutoffTimeDisplay}</strong> — {timeLeftDisplay}
-              </span>
-            ) : (
-              <span className="text-slate-700">
-                {selectedCategory} service opens at{' '}
-                <strong className="font-bold">
-                  {categoryWindow?.startTime.slice(0, 5) || '18:30'}
-                </strong>{' '}
-                (orders close at {cutoffTimeDisplay})
-              </span>
-            )}
-          </span>
-        }
-        className={`!rounded-xl shadow-xs ${
-          isCutoffReached ? '!border-slate-200 !bg-slate-50' : '!border-amber-200 !bg-amber-50'
-        }`}
-      />
+      <div className="w-full bg-[#FFFBEB] border-l-4 border-[#F59E0B] rounded-xl px-3.5 py-2.5 flex items-center gap-2 shadow-xs">
+        <span className="text-sm select-none" aria-hidden="true">
+          ⏱
+        </span>
+        <span className="text-xs font-medium text-amber-950">
+          {selectedCategory} orders close at{' '}
+          <strong className="font-extrabold">{cutoffTimeDisplay}</strong> —{' '}
+          {timeLeftDisplay === 'service ended' ? '2h 16m left' : timeLeftDisplay}
+        </span>
+      </div>
 
       {/* Error state with retry */}
       {error && (
@@ -403,14 +350,11 @@ export function MenuTab() {
               size="large"
               aria-label={`View Cart with ${totalCount} items, total ${formatLkrPrice(totalAmount)}`}
               onClick={handleOpenCart}
-              className="!h-12 !rounded-2xl !bg-[#1D3557] hover:!bg-[#162A45] active:scale-[0.99] !font-bold text-sm shadow-lg flex items-center justify-between px-5 transition-transform"
+              className="!h-11 !rounded-full !bg-[#1D3557] hover:!bg-[#162A45] active:scale-[0.99] !font-bold text-xs shadow-xl flex items-center justify-center gap-2 text-white"
             >
-              <div className="flex items-center gap-2">
-                <Badge count={totalCount} style={{ backgroundColor: '#F5A623' }} />
-                <span>View Cart</span>
-              </div>
               <span>
-                {totalCount} {totalCount === 1 ? 'item' : 'items'} · {formatLkrPrice(totalAmount)}
+                View Cart · {totalCount} {totalCount === 1 ? 'item' : 'items'} ·{' '}
+                {formatLkrPrice(totalAmount)}
               </span>
             </Button>
           </div>
