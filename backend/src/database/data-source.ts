@@ -38,11 +38,19 @@ const AppDataSource = new DataSource({
 
 // Hook DataSource.initialize to automatically run the fail-closed Neon identity guard
 // before any migration DDL, history table creation, or schema operations can occur.
+// If the identity assertion fails, destroy the initialized connection cleanly before re-throwing.
 const originalInitialize = AppDataSource.initialize.bind(AppDataSource);
 AppDataSource.initialize = async function (): Promise<DataSource> {
   const initializedDataSource = await originalInitialize();
-  await assertApprovedDatabaseIdentity(initializedDataSource);
-  return initializedDataSource;
+  try {
+    await assertApprovedDatabaseIdentity(initializedDataSource);
+    return initializedDataSource;
+  } catch (error) {
+    if (initializedDataSource.isInitialized) {
+      await initializedDataSource.destroy().catch(() => {});
+    }
+    throw error;
+  }
 };
 
 export default AppDataSource;

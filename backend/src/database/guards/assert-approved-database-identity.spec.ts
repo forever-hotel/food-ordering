@@ -143,4 +143,40 @@ describe('assertApprovedDatabaseIdentity', () => {
       ),
     ).rejects.toThrow(/Neon branch identity verification failed/);
   });
+
+  it('proves that a failed identity check can trigger connection destroy without error suppression', async () => {
+    const destroyMock = jest.fn().mockResolvedValue(undefined);
+    const mockFailingDs: any = {
+      isInitialized: true,
+      destroy: destroyMock,
+      query: jest.fn().mockResolvedValueOnce([
+        { name: 'neon.project_id', setting: 'wrong-project' },
+        { name: 'neon.branch_id', setting: 'br-wrong' },
+        { name: 'neon.endpoint_id', setting: 'ep-wrong' },
+      ]),
+    };
+
+    let caughtError: any;
+    try {
+      try {
+        await assertApprovedDatabaseIdentity(
+          mockFailingDs as DataSource,
+          VALID_CONFIG,
+        );
+      } catch (err) {
+        if (mockFailingDs.isInitialized) {
+          await mockFailingDs.destroy().catch(() => {});
+        }
+        throw err;
+      }
+    } catch (err) {
+      caughtError = err;
+    }
+
+    expect(caughtError).toBeDefined();
+    expect(caughtError.message).toContain(
+      'MIGRATION SAFETY GATE BLOCKED: Neon branch identity verification failed',
+    );
+    expect(destroyMock).toHaveBeenCalledTimes(1);
+  });
 });
