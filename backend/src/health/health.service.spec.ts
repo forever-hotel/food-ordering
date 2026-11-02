@@ -182,8 +182,10 @@ describe('HealthService', () => {
 
     it('regression: rejects and fails closed when approved endpoint ID is missing from configuration', async () => {
       mockConfigService.get.mockImplementation((key: string) => {
-        if (key === 'APPROVED_NEON_PROJECT_ID') return 'weathered-voice-13361247';
-        if (key === 'APPROVED_NEON_TEST_BRANCH_ID') return 'br-withered-unit-azl2if4y';
+        if (key === 'APPROVED_NEON_PROJECT_ID')
+          return 'weathered-voice-13361247';
+        if (key === 'APPROVED_NEON_TEST_BRANCH_ID')
+          return 'br-withered-unit-azl2if4y';
         // APPROVED_NEON_TEST_ENDPOINT_ID is missing
         return undefined;
       });
