@@ -17,7 +17,10 @@ import {
   TaskType,
   TaskPriority,
 } from '../src/integrations/internal-services/wkms/dto/wkms-task.dto.js';
-import { FossServiceCategory } from '../src/modules/service-requests/enums/foss-service-category.enum.js';
+import {
+  ActiveFossServiceCategory,
+  FossServiceCategory,
+} from '../src/modules/service-requests/enums/foss-service-category.enum.js';
 import { GuestAuthGuard } from '../src/modules/guest-sessions/guards/guest-auth.guard.js';
 import { GuestSessionsService } from '../src/modules/guest-sessions/services/guest-sessions.service.js';
 import { ServiceRequestsController } from '../src/modules/service-requests/service-requests.controller.js';
@@ -258,10 +261,44 @@ describe('Service Requests & WKMS Worker Dispatch (e2e)', () => {
       expect(response.body.message).toEqual(
         expect.arrayContaining([
           expect.stringContaining(
-            'requestType must be one of the approved categories',
+            'requestType must be one of the approved active categories',
           ),
         ]),
       );
+    });
+
+    it('rejects legacy WATER_BOTTLES submission with 400 Bad Request', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/service-requests')
+        .set('Authorization', `Bearer ${activeTokenRoom101}`)
+        .send({
+          requestType: FossServiceCategory.WATER_BOTTLES,
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining(
+            'requestType must be one of the approved active categories',
+          ),
+        ]),
+      );
+    });
+
+    it('accepts TOILETRIES with 201 Created and dispatches to WKMS TOILETRIES', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/service-requests')
+        .set('Authorization', `Bearer ${activeTokenRoom101}`)
+        .set('Idempotency-Key', 'idemp-sr-toiletries-e2e-001')
+        .send({
+          requestType: ActiveFossServiceCategory.TOILETRIES,
+          description: 'Extra shampoo and body wash',
+          priority: TaskPriority.NORMAL,
+        });
+
+      expect(response.status).toBe(201);
+      expect(response.body.requestType).toBe(ActiveFossServiceCategory.TOILETRIES);
+      expect(response.body.description).toBe('Extra shampoo and body wash');
     });
 
     it('rejects description exceeding 500 characters with 400 Bad Request', async () => {
@@ -292,8 +329,8 @@ describe('Service Requests & WKMS Worker Dispatch (e2e)', () => {
           .set('Authorization', `Bearer ${activeTokenRoom101}`)
           .set('Idempotency-Key', 'idemp-wkms-down-test')
           .send({
-            requestType: FossServiceCategory.WATER_BOTTLES,
-            description: 'Need water bottles',
+            requestType: ActiveFossServiceCategory.TOILETRIES,
+            description: 'Need toiletries',
           });
 
         expect(response.status).toBe(503);
@@ -631,7 +668,7 @@ describe('Service Requests & WKMS Worker Dispatch (e2e)', () => {
         .set('Authorization', `Bearer ${activeTokenRoom101}`)
         .set('Idempotency-Key', 'idemp-ac3-dedup-test')
         .send({
-          requestType: FossServiceCategory.WATER_BOTTLES,
+          requestType: ActiveFossServiceCategory.TOILETRIES,
         });
       const reqId = createRes.body.requestId;
 

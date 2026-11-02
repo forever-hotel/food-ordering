@@ -7,18 +7,18 @@ import {
   MaxLength,
 } from 'class-validator';
 import { TaskPriority } from '../../../integrations/internal-services/wkms/dto/wkms-task.dto.js';
-import { FossServiceCategory } from '../enums/foss-service-category.enum.js';
+import { ActiveFossServiceCategory } from '../enums/foss-service-category.enum.js';
 
 export class CreateServiceRequestDto {
   @ApiProperty({
-    enum: FossServiceCategory,
-    example: FossServiceCategory.EXTRA_TOWELS,
-    description: 'Category of service request matching approved FOSS service options',
+    enum: ActiveFossServiceCategory,
+    example: ActiveFossServiceCategory.TOILETRIES,
+    description: 'Category of service request matching approved active FOSS service options',
   })
   @IsNotEmpty({ message: 'requestType is required' })
-  @IsEnum(FossServiceCategory, {
+  @IsEnum(ActiveFossServiceCategory, {
     message:
-      'requestType must be one of the approved categories: ROOM_CLEANING, EXTRA_TOWELS, WATER_BOTTLES, MAINTENANCE, LAUNDRY_PICKUP, OTHER',
+      'requestType must be one of the approved active categories: ROOM_CLEANING, EXTRA_TOWELS, TOILETRIES, MAINTENANCE, LAUNDRY_PICKUP, OTHER',
   })
   requestType!: string;
 

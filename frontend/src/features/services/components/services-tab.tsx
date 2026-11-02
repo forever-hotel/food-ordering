@@ -12,7 +12,6 @@ import {
   CheckCircleOutlined,
   ClockCircleOutlined,
   SyncOutlined,
-  InfoCircleOutlined,
 } from '@ant-design/icons';
 import type {
   ServiceIconKey,
@@ -430,18 +429,6 @@ export function ServicesTab() {
           className="!rounded-2xl text-xs !bg-slate-50 !border-slate-200 focus:!bg-white"
         />
 
-        {/* Toiletries Unavailable Notice */}
-        {selectedType.disabled && (
-          <div className="mt-3 p-3 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-start gap-2">
-            <InfoCircleOutlined className="text-sm mt-0.5 shrink-0 text-amber-600" />
-            <span>
-              Toiletries requests are temporarily unavailable via the app while amenities catalog
-              integration is in progress. Please contact the front desk or call housekeeping
-              directly.
-            </span>
-          </div>
-        )}
-
         {/* Submission Error Banner with Idempotent Retry */}
         {submitError && (
           <AlertNotice
@@ -469,7 +456,7 @@ export function ServicesTab() {
           {submitting
             ? 'Submitting Request...'
             : selectedType.disabled
-              ? 'Toiletries Temporarily Unavailable'
+              ? 'Temporarily Unavailable'
               : 'Submit Request'}
         </Button>
       </Card>

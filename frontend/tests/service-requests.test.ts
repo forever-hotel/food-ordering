@@ -309,7 +309,7 @@ describe('TC-DDP-142-AC4: Contract & Visual Layout Fidelity Audit (Figure 38)', 
     const toiletries = categories.find((c) => c.label === 'Toiletries');
     assert.equal(toiletries?.backendType, 'TOILETRIES');
     assert.equal(toiletries?.key, 'toiletries');
-    assert.equal(toiletries?.disabled, true);
+    assert.equal(Boolean(toiletries?.disabled), false);
 
     const laundry = categories.find((c) => c.label === 'Laundry');
     assert.equal(laundry?.backendType, 'LAUNDRY_PICKUP');
@@ -325,7 +325,7 @@ describe('TC-DDP-142-AC4: Contract & Visual Layout Fidelity Audit (Figure 38)', 
     }
   });
 
-  it('submits all 5 operational categories while blocking disabled Toiletries', async () => {
+  it('submits all 6 operational categories including newly enabled Toiletries', async () => {
     const originalFetch = globalThis.fetch;
     const submittedTypes: string[] = [];
 
@@ -348,7 +348,7 @@ describe('TC-DDP-142-AC4: Contract & Visual Layout Fidelity Audit (Figure 38)', 
 
     try {
       const operationalOptions = SERVICE_TYPE_OPTIONS.filter((o) => !o.disabled);
-      assert.equal(operationalOptions.length, 5);
+      assert.equal(operationalOptions.length, 6);
 
       for (const option of operationalOptions) {
         await createServiceRequest(
@@ -363,6 +363,7 @@ describe('TC-DDP-142-AC4: Contract & Visual Layout Fidelity Audit (Figure 38)', 
         'EXTRA_TOWELS',
         'MAINTENANCE',
         'LAUNDRY_PICKUP',
+        'TOILETRIES',
         'OTHER',
       ]);
     } finally {

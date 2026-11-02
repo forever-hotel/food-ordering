@@ -23,7 +23,7 @@ export class GetServiceRequestsQueryDto {
   @IsOptional()
   @IsEnum(FossServiceCategory, {
     message:
-      'requestType must be one of: ROOM_CLEANING, EXTRA_TOWELS, WATER_BOTTLES, MAINTENANCE, LAUNDRY_PICKUP, OTHER',
+      'requestType must be one of: ROOM_CLEANING, EXTRA_TOWELS, WATER_BOTTLES, TOILETRIES, MAINTENANCE, LAUNDRY_PICKUP, OTHER',
   })
   requestType?: FossServiceCategory;
 

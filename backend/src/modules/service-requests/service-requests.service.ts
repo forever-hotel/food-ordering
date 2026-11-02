@@ -16,7 +16,7 @@ import {
   TaskType,
   WkmsCreateTaskDto,
 } from '../../integrations/internal-services/wkms/dto/wkms-task.dto.js';
-import { FossServiceCategory } from './enums/foss-service-category.enum.js';
+import { ActiveFossServiceCategory } from './enums/foss-service-category.enum.js';
 import {
   WKMS_PROVIDER,
   WkmsProvider,
@@ -69,14 +69,14 @@ export class ServiceRequestsService {
       dto.idempotencyKey ||
       `idemp-sr-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
 
-    // Validate that category is supported in the shared Neon schema (reject before dispatching to WKMS to prevent partial-failure and database enum errors)
+    // Validate that category is an approved active FOSS category (reject before dispatching to WKMS to prevent partial-failure and database enum errors)
     if (
-      !Object.values(FossServiceCategory).includes(
-        dto.requestType as FossServiceCategory,
+      !Object.values(ActiveFossServiceCategory).includes(
+        dto.requestType as ActiveFossServiceCategory,
       )
     ) {
       throw new BadRequestException(
-        `Invalid service request category [${dto.requestType}]. Must be one of: ${Object.values(FossServiceCategory).join(', ')}`,
+        `Invalid or unsupported service request category [${dto.requestType}]. Must be one of: ${Object.values(ActiveFossServiceCategory).join(', ')}`,
       );
     }
 
@@ -511,44 +511,47 @@ export class ServiceRequestsService {
   }
 
   /**
-   * Translates a FOSS-persisted service category to an upstream WKMS TaskType.
-   * Per authorized operational decision, WATER_BOTTLES is fulfilled via WKMS TOILETRIES.
+   * Translates an active FOSS service category to an upstream WKMS TaskType.
+   * Only the six approved active categories are dispatched:
+   * ROOM_CLEANING -> ROOM_CLEANING
+   * EXTRA_TOWELS -> EXTRA_TOWELS
+   * TOILETRIES -> TOILETRIES
+   * MAINTENANCE -> MAINTENANCE
+   * LAUNDRY_PICKUP -> LAUNDRY_PICKUP
+   * OTHER -> OTHER
+   *
+   * Rejects WATER_BOTTLES and unknown categories explicitly without silent fallback.
    */
   public translateCategoryToWkmsTaskType(category: string): TaskType {
     switch (category) {
-      case FossServiceCategory.ROOM_CLEANING:
+      case ActiveFossServiceCategory.ROOM_CLEANING:
         return TaskType.ROOM_CLEANING;
-      case FossServiceCategory.EXTRA_TOWELS:
+      case ActiveFossServiceCategory.EXTRA_TOWELS:
         return TaskType.EXTRA_TOWELS;
-      case FossServiceCategory.WATER_BOTTLES:
+      case ActiveFossServiceCategory.TOILETRIES:
         return TaskType.TOILETRIES;
-      case FossServiceCategory.MAINTENANCE:
+      case ActiveFossServiceCategory.MAINTENANCE:
         return TaskType.MAINTENANCE;
-      case FossServiceCategory.LAUNDRY_PICKUP:
+      case ActiveFossServiceCategory.LAUNDRY_PICKUP:
         return TaskType.LAUNDRY_PICKUP;
-      case FossServiceCategory.OTHER:
+      case ActiveFossServiceCategory.OTHER:
         return TaskType.OTHER;
       default:
-        return TaskType.OTHER;
+        throw new BadRequestException(
+          `Cannot dispatch unsupported or legacy service category [${category}] to WKMS.`,
+        );
     }
   }
 
   /**
    * Prepares the task description for WKMS workers.
-   * When WATER_BOTTLES is dispatched under TOILETRIES, prepends an explicit note
-   * to deliver drinking water bottles, preserving any guest instructions.
+   * Passes through guest instructions directly without alteration.
    */
   public formatWkmsTaskDescription(
-    category: string,
+    _category: string,
     guestInstructions?: string,
   ): string | undefined {
-    if (category === FossServiceCategory.WATER_BOTTLES) {
-      const baseNote = 'Deliver drinking water bottles to the guest room.';
-      if (guestInstructions && guestInstructions.trim().length > 0) {
-        return `${baseNote} Guest instructions: ${guestInstructions.trim()}`;
-      }
-      return baseNote;
-    }
-    return guestInstructions;
+    return guestInstructions?.trim() || undefined;
   }
 }
+

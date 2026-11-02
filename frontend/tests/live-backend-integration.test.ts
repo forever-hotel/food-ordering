@@ -387,6 +387,62 @@ describe(
       assert.ok(requests102.some((r) => r.requestId === svcData.requestId));
     });
 
+    it('11b. Submits TOILETRIES service request, verifies persistence, idempotency & rejects WATER_BOTTLES', async () => {
+      const tokens = await getOrInitTokens();
+      const idempKey = `idemp-live-toiletries-${Date.now()}`;
+
+      // 1. Submit TOILETRIES
+      const toiletriesData = await createServiceRequest(
+        tokens.token101,
+        {
+          requestType: 'TOILETRIES',
+          priority: 'NORMAL',
+          description: 'Extra shampoo and dental kit',
+        },
+        idempKey,
+      );
+      assert.equal(toiletriesData.roomNumber, '101');
+      assert.equal(toiletriesData.requestType, 'TOILETRIES');
+      assert.equal(toiletriesData.status, 'SUBMITTED');
+
+      // 2. Idempotent replay with same idempotency key
+      const replayed = await createServiceRequest(
+        tokens.token101,
+        {
+          requestType: 'TOILETRIES',
+          description: 'Extra shampoo and dental kit',
+        },
+        idempKey,
+      );
+      assert.equal(replayed.requestId, toiletriesData.requestId);
+
+      // 3. Verify in guest history
+      const history101 = await fetchGuestServiceRequests(tokens.token101);
+      assert.ok(
+        history101.some(
+          (r) => r.requestId === toiletriesData.requestId && r.requestType === 'TOILETRIES',
+        ),
+      );
+
+      // 4. Verify rejection of legacy WATER_BOTTLES
+      await assert.rejects(
+        async () =>
+          createServiceRequest(
+            tokens.token101,
+            {
+              requestType: 'WATER_BOTTLES',
+              description: 'Water bottles not accepted',
+            },
+            `idemp-water-${Date.now()}`,
+          ),
+        (err: unknown) => {
+          assert.ok(err instanceof ApiError);
+          assert.equal(err.status, 400);
+          return true;
+        },
+      );
+    });
+
     it('12. Submits and updates complaints via createComplaint()', async () => {
       const tokens = await getOrInitTokens();
       const cmpData = await createComplaint(

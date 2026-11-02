@@ -19,7 +19,6 @@ export const SERVICE_TYPE_OPTIONS: ServiceTypeOption[] = [
     backendType: 'TOILETRIES',
     label: 'Toiletries',
     iconKey: 'toiletries',
-    disabled: true,
   },
   { key: 'other', backendType: 'OTHER', label: 'Other', iconKey: 'other' },
 ];
