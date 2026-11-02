@@ -194,11 +194,18 @@ export function ServicesTab() {
       ]);
     } catch (err: unknown) {
       // Failure keeps input and retains idempotency key for retry
-      const msg =
+      const rawMsg =
         err instanceof Error
           ? err.message
           : 'Unable to submit service request. Please check your connection and retry.';
-      setSubmitError(msg);
+      const friendlyMsg =
+        rawMsg.includes('500') ||
+        rawMsg.toLowerCase().includes('internal server error') ||
+        rawMsg.toLowerCase().includes('queryfailed')
+          ? "We couldn't submit your request right now. Please try again."
+          : rawMsg;
+      setSubmitError(friendlyMsg);
+      message.error(friendlyMsg);
     } finally {
       setSubmitting(false);
     }

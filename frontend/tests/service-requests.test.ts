@@ -290,6 +290,12 @@ describe('TC-DDP-142-AC4: Contract & Visual Layout Fidelity Audit (Figure 38)', 
       categories.map((c) => c.label),
       ['Room Cleaning', 'Extra Towels', 'Maintenance', 'Laundry', 'Water Bottles', 'Other'],
     );
+    assert.deepEqual(
+      categories.map((c) => c.backendType),
+      ['ROOM_CLEANING', 'EXTRA_TOWELS', 'MAINTENANCE', 'LAUNDRY_PICKUP', 'TOILETRIES', 'OTHER'],
+    );
+    const laundry = categories.find((c) => c.label === 'Laundry');
+    assert.equal(laundry?.backendType, 'LAUNDRY_PICKUP');
   });
 
   it('reproduces Figure 38 active requests text and status tags', () => {

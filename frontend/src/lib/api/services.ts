@@ -13,7 +13,7 @@ export const SERVICE_TYPE_OPTIONS: ServiceTypeOption[] = [
   { key: 'cleaning', backendType: 'ROOM_CLEANING', label: 'Room Cleaning', icon: '🧹' },
   { key: 'towels', backendType: 'EXTRA_TOWELS', label: 'Extra Towels', icon: '🛁' },
   { key: 'maintenance', backendType: 'MAINTENANCE', label: 'Maintenance', icon: '🔧' },
-  { key: 'laundry', backendType: 'LUGGAGE_ASSISTANCE', label: 'Laundry', icon: '👕' },
+  { key: 'laundry', backendType: 'LAUNDRY_PICKUP', label: 'Laundry', icon: '👕' },
   { key: 'water', backendType: 'TOILETRIES', label: 'Water Bottles', icon: '💧' },
   { key: 'other', backendType: 'OTHER', label: 'Other', icon: '✦' },
 ];

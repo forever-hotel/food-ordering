@@ -35,7 +35,7 @@ export function MenuItemCard({ item, availability, onSelect, onQuickAdd }: MenuI
   const isCutoff = !isActionable && !isSoldOut;
 
   const badgeText =
-    availability?.badgeLabel ?? (isSoldOut ? 'Unavailable' : isCutoff ? 'Outside Hours' : null);
+    availability?.badgeLabel ?? (isSoldOut ? 'Sold Out' : isCutoff ? 'Closed' : null);
   const badgeColor = availability?.state === 'sold_out' || isSoldOut ? 'error' : 'default';
 
   const handleQuickAdd = (e: React.MouseEvent) => {

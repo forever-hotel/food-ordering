@@ -453,4 +453,28 @@ describe('TC-DDP-101-AC4: MenuTab Integration — Availability, Messages & Contr
       assert.equal(availability.buttonLabel, 'Ordering Closed');
     });
   });
+
+  describe('Integration 6: Unambiguous Visible CTA Labels Across All Item States', () => {
+    it('guarantees every item availability state produces a non-empty, meaningful button label', () => {
+      const itemsToTest = [
+        { item: sampleLunchDinnerItem, seconds: 13 * 3600, expected: 'Add to Cart' },
+        { item: sampleSoldOutItem, seconds: 13 * 3600, expected: 'Item Sold Out' },
+        { item: sampleLunchDinnerItem, seconds: 11 * 3600, expected: 'Ordering Not Yet Open' },
+        { item: sampleBreakfastItem, seconds: 15 * 3600, expected: 'Ordering Closed' },
+      ];
+
+      for (const { item, seconds, expected } of itemsToTest) {
+        const availability = getItemAvailability(item, AUTHORITATIVE_MEAL_WINDOWS, seconds);
+        assert.ok(
+          availability.buttonLabel,
+          `buttonLabel should be defined for state ${availability.state}`,
+        );
+        assert.ok(
+          availability.buttonLabel.trim().length > 0,
+          'buttonLabel must not be empty string',
+        );
+        assert.equal(availability.buttonLabel, expected);
+      }
+    });
+  });
 });

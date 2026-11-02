@@ -48,6 +48,33 @@ export function MenuItemDetail({ item, availability, onBack }: MenuItemDetailPro
     : item.available && item.isOrderable && !item.isCutoff;
   const canOrder = isActionable && remainingAllowance > 0;
 
+  // Resolve visible button label guaranteeing meaningful text for every state
+  const getCtaLabel = (): string => {
+    if (!isActionable) {
+      if (isSoldOut || availability?.state === 'sold_out') {
+        return 'Sold Out';
+      }
+      if (availability?.state === 'not_yet_open') {
+        return 'Ordering Not Yet Open';
+      }
+      if (availability?.state === 'closed' || item.isCutoff) {
+        return 'Ordering Closed';
+      }
+      if (availability?.buttonLabel) {
+        return availability.buttonLabel;
+      }
+      return 'Currently Unavailable';
+    }
+
+    if (remainingAllowance <= 0) {
+      return 'Maximum Quantity Reached';
+    }
+
+    return 'Add to Cart';
+  };
+
+  const ctaLabel = getCtaLabel();
+
   const handleIncrement = () => {
     if (quantity < portionCap && quantity < remainingAllowance) {
       setQuantity((q) => q + 1);
@@ -268,14 +295,15 @@ export function MenuItemDetail({ item, availability, onBack }: MenuItemDetailPro
           block
           size="large"
           disabled={!canOrder}
+          aria-disabled={!canOrder}
           onClick={handleAddToCart}
-          className="!h-12 !rounded-2xl !bg-[#1D3557] hover:!bg-[#162a45] !font-bold text-sm shadow-md"
+          className={`!h-12 !rounded-2xl !font-bold text-sm shadow-md transition-all ${
+            canOrder
+              ? '!bg-[#1D3557] hover:!bg-[#162a45] !text-white'
+              : '!bg-slate-200 !text-slate-500 !border-slate-300 !cursor-not-allowed'
+          }`}
         >
-          {!isActionable
-            ? availability?.buttonLabel || (isSoldOut ? 'Item Sold Out' : 'Outside Ordering Hours')
-            : remainingAllowance <= 0
-              ? 'Max Portion in Cart'
-              : 'Add to Cart'}
+          {ctaLabel}
         </Button>
       </div>
     </div>

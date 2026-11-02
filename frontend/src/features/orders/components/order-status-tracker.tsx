@@ -22,6 +22,30 @@ import { LoadingSkeleton } from '../../../components/feedback/loading-skeleton.t
 
 const { Title, Text, Paragraph } = Typography;
 
+/**
+ * Formats ISO timestamp in Asia/Colombo in 12-hour AM/PM format (e.g. 07:00 PM).
+ * Returns null if timestamp is missing or invalid.
+ */
+function formatColomboTime(isoString?: string | null): string | null {
+  if (!isoString) return null;
+  const d = new Date(isoString);
+  if (isNaN(d.getTime())) return null;
+  try {
+    return d.toLocaleTimeString('en-US', {
+      timeZone: 'Asia/Colombo',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    });
+  } catch {
+    return d.toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    });
+  }
+}
+
 interface OrderStatusTrackerProps {
   orderId: string;
   onBack: () => void;
@@ -265,6 +289,10 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
             ...step,
             completed: step.status === targetStatus ? true : step.completed,
             current: step.status === targetStatus,
+            timestamp:
+              step.status === targetStatus && !step.timestamp
+                ? new Date().toISOString()
+                : step.timestamp,
           })),
         };
         setOrder(nextOrder);
@@ -317,6 +345,36 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
       default:
         return 'In Kitchen — Preparing';
     }
+  };
+
+  const timeline = order?.timeline || [];
+  const placedStep = timeline.find((s) => s.status === 'PLACED');
+  const prepStep = timeline.find((s) => s.status === 'IN_PREPARATION');
+  const readyStep = timeline.find((s) => s.status === 'READY');
+  const deliveredStep = timeline.find((s) => s.status === 'DELIVERED');
+
+  const placedTime = formatColomboTime(placedStep?.timestamp || order?.createdAt);
+  const prepTime = formatColomboTime(prepStep?.timestamp);
+  const readyTime = formatColomboTime(readyStep?.timestamp);
+  const deliveredTime = formatColomboTime(deliveredStep?.timestamp);
+
+  // Authoritative estimated delivery calculation for Ready for Delivery milestone
+  const getEstimatedReadyLabel = (): string => {
+    if (currentStatus === 'READY' || currentStatus === 'DELIVERED') {
+      return readyTime || 'Ready';
+    }
+    const mins = order?.estimatedDeliveryMinutes || 25;
+    if (order?.createdAt) {
+      const createdMs = new Date(order.createdAt).getTime();
+      if (!isNaN(createdMs)) {
+        const estMs = createdMs + mins * 60 * 1000;
+        const estClock = formatColomboTime(new Date(estMs).toISOString());
+        if (estClock) {
+          return `Est. ${estClock}`;
+        }
+      }
+    }
+    return `Est. ~${mins}m`;
   };
 
   return (
@@ -374,14 +432,9 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
                 <Text strong className="text-sm text-slate-900 block font-bold">
                   Order Placed
                 </Text>
-                <span className="text-[11px] text-slate-400 font-medium">
-                  {order?.createdAt
-                    ? new Date(order.createdAt).toLocaleTimeString([], {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })
-                    : '12:20 PM'}
-                </span>
+                {placedTime && (
+                  <span className="text-[11px] text-slate-400 font-medium">{placedTime}</span>
+                )}
               </div>
               <Text className="text-xs text-slate-500 block">Order received & KOT printed</Text>
             </div>
@@ -420,11 +473,13 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
                 >
                   In Preparation
                 </Text>
-                {currentStatus === 'IN_PREPARATION' && (
+                {prepTime ? (
+                  <span className="text-[11px] text-slate-400 font-medium">{prepTime}</span>
+                ) : currentStatus === 'IN_PREPARATION' ? (
                   <span className="text-[11px] text-amber-800 font-bold bg-amber-50 px-2 py-0.5 rounded-full">
-                    Now
+                    In Progress
                   </span>
-                )}
+                ) : null}
               </div>
               <Text className="text-xs text-slate-500 block leading-snug">
                 Kitchen acknowledged allergy notes and started cooking
@@ -466,9 +521,7 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
                   Ready for Delivery
                 </Text>
                 <span className="text-[11px] text-slate-400 font-medium">
-                  {currentStatus === 'READY'
-                    ? 'Now'
-                    : `Est. ~${order?.estimatedDeliveryMinutes || 25}m`}
+                  {getEstimatedReadyLabel()}
                 </span>
               </div>
               <Text className="text-xs text-slate-500 block">Food prepared, worker assigned</Text>
@@ -502,6 +555,9 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
                 >
                   Delivered
                 </Text>
+                {deliveredTime && (
+                  <span className="text-[11px] text-slate-400 font-medium">{deliveredTime}</span>
+                )}
               </div>
               <Text className="text-xs text-slate-500 block">
                 Worker delivers to Room {order?.roomNumber || guest?.roomNumber || '—'}

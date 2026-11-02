@@ -67,19 +67,14 @@ export class ServiceRequestsService {
       dto.idempotencyKey ||
       `idemp-sr-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
 
-    // Validate that category is supported in the shared Neon schema (reject in production / real integration)
-    const isMock =
-      this.configService.get<string>('MOCK_EXTERNAL_SERVICES') === 'true';
-    const isDemo = this.configService.get<string>('DEMO_MODE') === 'true';
-    if (!isMock && !isDemo) {
-      if (
-        dto.requestType === 'TOILETRIES' ||
-        dto.requestType === 'LUGGAGE_ASSISTANCE'
-      ) {
-        throw new BadRequestException(
-          `Service request category [${dto.requestType}] is pending cross-subsystem enum approval in shared database schema.`,
-        );
-      }
+    // Validate that category is supported in the shared Neon schema (reject before dispatching to WKMS to prevent partial-failure and database enum errors)
+    if (
+      dto.requestType === 'TOILETRIES' ||
+      dto.requestType === 'LUGGAGE_ASSISTANCE'
+    ) {
+      throw new BadRequestException(
+        `Service request category [${dto.requestType}] is pending cross-subsystem enum approval in shared database schema.`,
+      );
     }
 
     // Check for existing request with this idempotency key
