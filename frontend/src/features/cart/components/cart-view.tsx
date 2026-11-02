@@ -292,7 +292,7 @@ export function CartView({ onBack, onPlaceOrder }: CartViewProps) {
         </div>
       </Card>
 
-      {/* Subtotal & Service Charge Calculation Card (Figure 34) */}
+      {/* Subtotal & Total Summary Card (Figure 34) */}
       <Card
         className="!rounded-3xl !border-slate-100 !bg-white !shadow-xs"
         styles={{ body: { padding: '16px 18px' } }}
@@ -301,11 +301,6 @@ export function CartView({ onBack, onPlaceOrder }: CartViewProps) {
           <div className="flex items-center justify-between text-slate-500">
             <span>Subtotal</span>
             <span className="font-semibold text-slate-700">{formatLkrPrice(totalAmount)}</span>
-          </div>
-
-          <div className="flex items-center justify-between text-slate-500">
-            <span>Service charge</span>
-            <span className="font-semibold text-emerald-600">Included</span>
           </div>
 
           <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-sm font-bold text-[#1D3557]">

@@ -1,33 +1,53 @@
 /**
  * Monetary Calculation and Currency Formatting Utilities
  *
- * Implements IEEE-754 floating point safe arithmetic for prices, subtotals,
- * and Sri Lankan Rupee (LKR) formatting.
+ * Uses integer minor units (cents / 1/100ths) internally to eliminate
+ * IEEE-754 binary floating-point representation and rounding drift,
+ * matching backend two-decimal monetary arithmetic.
  */
 
 /**
- * Rounds a monetary amount to 2 decimal places to eliminate floating-point drift.
+ * Converts a major unit currency amount (e.g. 18.50) to integer minor units (e.g. 1850 cents).
+ */
+export function toMinorUnits(amount: number): number {
+  return Math.round(amount * 100);
+}
+
+/**
+ * Converts integer minor units (e.g. 1850 cents) back to major currency units (e.g. 18.50).
+ */
+export function fromMinorUnits(cents: number): number {
+  return Math.round(cents) / 100;
+}
+
+/**
+ * Rounds a major currency amount to 2 decimal places using integer minor units.
  */
 export function roundMoney(amount: number): number {
-  return Math.round((amount + Number.EPSILON) * 100) / 100;
+  return fromMinorUnits(toMinorUnits(amount));
 }
 
 /**
- * Calculates a cart/order line total as unitPrice * quantity rounded to 2 decimal places.
+ * Calculates a cart/order line total as (unitPrice in minor units * integer quantity) / 100.
+ * Operates on integer minor units for the multiplication.
  */
 export function calculateLineTotal(unitPrice: number, quantity: number): number {
-  return roundMoney(unitPrice * quantity);
+  const unitCents = toMinorUnits(unitPrice);
+  const totalCents = Math.round(unitCents * quantity);
+  return fromMinorUnits(totalCents);
 }
 
 /**
- * Calculates a cart subtotal as the sum of all rounded line totals.
+ * Calculates a cart subtotal as the sum of all integer minor unit line totals,
+ * converted back to major currency units.
  */
 export function calculateSubtotal(items: { item: { price: number }; quantity: number }[]): number {
-  const sum = items.reduce(
-    (total, item) => total + calculateLineTotal(item.item.price, item.quantity),
-    0,
-  );
-  return roundMoney(sum);
+  const subtotalCents = items.reduce((sumCents, item) => {
+    const itemCents = toMinorUnits(item.item.price);
+    const lineCents = Math.round(itemCents * item.quantity);
+    return sumCents + lineCents;
+  }, 0);
+  return fromMinorUnits(subtotalCents);
 }
 
 /**

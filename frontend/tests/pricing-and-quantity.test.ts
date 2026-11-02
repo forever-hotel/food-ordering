@@ -6,6 +6,8 @@ import {
   calculateSubtotal,
   formatLkrPrice,
   roundMoney,
+  toMinorUnits,
+  fromMinorUnits,
 } from '../src/lib/utils/money.ts';
 import {
   MIN_ORDER_ITEM_QUANTITY,
@@ -157,7 +159,16 @@ describe('Phase 4: Pricing and Quantity Policy Unit Tests', () => {
     });
   });
 
-  describe('3. Currency Formatting & Floating-Point Protection', () => {
+  describe('3. Currency Formatting & Integer Minor Units Precision', () => {
+    it('converts to and from integer minor units with exact precision', () => {
+      assert.equal(toMinorUnits(18.5), 1850);
+      assert.equal(fromMinorUnits(1850), 18.5);
+      assert.equal(toMinorUnits(0.01), 1);
+      assert.equal(fromMinorUnits(1), 0.01);
+      assert.equal(toMinorUnits(999.99), 99999);
+      assert.equal(fromMinorUnits(99999), 999.99);
+    });
+
     it('formats integer prices without unnecessary decimals', () => {
       assert.equal(formatLkrPrice(1500), 'LKR 1,500');
       assert.equal(formatLkrPrice(850), 'LKR 850');
@@ -168,9 +179,10 @@ describe('Phase 4: Pricing and Quantity Policy Unit Tests', () => {
       assert.equal(formatLkrPrice(32.5), 'LKR 32.50');
       assert.equal(formatLkrPrice(18.75), 'LKR 18.75');
       assert.equal(formatLkrPrice(0.05), 'LKR 0.05');
+      assert.equal(formatLkrPrice(0.01), 'LKR 0.01');
     });
 
-    it('eliminates IEEE 754 floating-point inaccuracies through roundMoney', () => {
+    it('eliminates IEEE 754 floating-point inaccuracies through integer minor units', () => {
       // In naive JS: 0.1 + 0.2 = 0.30000000000000004
       const naiveSum = 0.1 + 0.2;
       assert.notEqual(naiveSum, 0.3);
@@ -185,6 +197,18 @@ describe('Phase 4: Pricing and Quantity Policy Unit Tests', () => {
       const safeLine = calculateLineTotal(32.55, 3);
       assert.equal(safeLine, 97.65);
       assert.equal(formatLkrPrice(safeLine), 'LKR 97.65');
+    });
+
+    it('handles cumulative precision across many fractional lines without drift', () => {
+      // 10 items of 0.07: 10 * 7 cents = 70 cents = 0.70
+      const smallItems: CartItem[] = Array.from({ length: 10 }, (_, i) => ({
+        id: `small-${i}`,
+        item: { ...itemFractional, id: `small-${i}`, price: 0.07 },
+        quantity: 1,
+      }));
+      const subtotal = calculateSubtotal(smallItems);
+      assert.equal(subtotal, 0.7);
+      assert.equal(formatLkrPrice(subtotal), 'LKR 0.70');
     });
   });
 
@@ -241,13 +265,11 @@ describe('Phase 4: Pricing and Quantity Policy Unit Tests', () => {
       assert.equal(formatLkrPrice(clientTotal), formatLkrPrice(backendOrderResponse.totalAmount));
     });
 
-    it('verifies service charge row is strictly all-inclusive with no unexpected surcharges', () => {
+    it('verifies cart subtotal strictly equals total with zero unsupported service charge surcharges', () => {
       const subtotal = 2500;
-      const serviceChargeLabel = 'Included';
-      // All-inclusive means total equals subtotal exactly
+      // In the absence of an approved contract for separate service charges, total equals subtotal
       const total = subtotal;
 
-      assert.equal(serviceChargeLabel, 'Included');
       assert.equal(total, subtotal);
       assert.equal(formatLkrPrice(total), formatLkrPrice(subtotal));
     });

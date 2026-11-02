@@ -118,19 +118,16 @@ describe('TC-DDP-139-AC3: Boundary, Session Scope & Persistence Isolation', () =
 });
 
 describe('TC-DDP-139-AC4: Contract & Visual Layout Fidelity Audit', () => {
-  it('matches Figure 34 cart summary layout (Subtotal, Service charge Included, Total)', () => {
+  it('matches Figure 34 cart summary layout (Subtotal, Total)', () => {
     const subtotal = 1500;
-    const serviceCharge = 'Included';
     const total = 1500;
 
     const summary = {
       subtotalDisplay: formatLkrPrice(subtotal),
-      serviceChargeDisplay: serviceCharge,
       totalDisplay: formatLkrPrice(total),
     };
 
     assert.equal(summary.subtotalDisplay, 'LKR 1,500');
-    assert.equal(summary.serviceChargeDisplay, 'Included');
     assert.equal(summary.totalDisplay, 'LKR 1,500');
   });
 
