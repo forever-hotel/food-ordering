@@ -4,6 +4,11 @@ import React, { useState } from 'react';
 import { App, Button, Card, Input, Tag, Typography } from 'antd';
 import type { GuestMenuItem } from '../../../types/menu.ts';
 import { formatLkrPrice, isValidImageUrl } from '../../../lib/api/menu.ts';
+import { calculateLineTotal } from '../../../lib/utils/money.ts';
+import {
+  MIN_ORDER_ITEM_QUANTITY,
+  MAX_ORDER_ITEM_QUANTITY,
+} from '../../../lib/constants/order-policy.ts';
 import { useCart } from '../../../lib/cart/cart-context.tsx';
 
 const { Title, Paragraph, Text } = Typography;
@@ -31,7 +36,7 @@ export function MenuItemDetail({ item, onBack }: MenuItemDetailProps) {
   const [specialNotes, setSpecialNotes] = useState('');
   const [imgError, setImgError] = useState(false);
 
-  const portionCap = item.portionCap || 3;
+  const portionCap = item.portionCap ?? MAX_ORDER_ITEM_QUANTITY;
   const currentCartQty = getItemQuantity(item.id);
   const remainingAllowance = Math.max(0, portionCap - currentCartQty);
 
@@ -46,7 +51,7 @@ export function MenuItemDetail({ item, onBack }: MenuItemDetailProps) {
   };
 
   const handleDecrement = () => {
-    if (quantity > 1) {
+    if (quantity > MIN_ORDER_ITEM_QUANTITY) {
       setQuantity((q) => q - 1);
     }
   };
@@ -63,7 +68,7 @@ export function MenuItemDetail({ item, onBack }: MenuItemDetailProps) {
     }
   };
 
-  const calculatedTotal = item.price * quantity;
+  const calculatedTotal = calculateLineTotal(item.price, quantity);
   const hasValidImage = isValidImageUrl(item.imageUrl) && !imgError;
 
   return (
@@ -192,10 +197,10 @@ export function MenuItemDetail({ item, onBack }: MenuItemDetailProps) {
             <button
               type="button"
               aria-label="Decrease quantity"
-              disabled={quantity <= 1 || !canOrder}
+              disabled={quantity <= MIN_ORDER_ITEM_QUANTITY || !canOrder}
               onClick={handleDecrement}
               className={`touch-target w-10 h-10 rounded-xl flex items-center justify-center font-bold text-lg transition-all ${
-                quantity > 1 && canOrder
+                quantity > MIN_ORDER_ITEM_QUANTITY && canOrder
                   ? 'bg-white text-slate-800 shadow-xs hover:bg-slate-100 active:scale-95'
                   : 'text-slate-300 cursor-not-allowed'
               }`}

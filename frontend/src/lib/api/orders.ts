@@ -4,6 +4,8 @@ import type {
   FoodOrderStatus,
 } from '../../types/orders.ts';
 import { getOrdersProvider } from '../data-mode/provider-factory.ts';
+import { FALLBACK_MENU_RESPONSE } from './menu.ts';
+import { calculateLineTotal, roundMoney } from '../utils/money.ts';
 
 /**
  * Generates a unique, high-entropy client-side idempotency key for order submission.
@@ -20,6 +22,7 @@ export function generateIdempotencyKey(): string {
 
 /**
  * Deterministic fallback response matching Figure 35 for offline resilience and tests.
+ * Calculates totalAmount dynamically from validated item line totals to prevent misrepresenting actual orders.
  */
 export function createMockOrderResponse(
   payload: CreateFoodOrderPayload,
@@ -29,19 +32,36 @@ export function createMockOrderResponse(
   const now = new Date();
   const cancellationCutoff = new Date(now.getTime() + 600 * 1000);
 
+  const validatedItems = (payload.items || []).map((item) => {
+    const catalogItem = FALLBACK_MENU_RESPONSE.items.find((m) => m.id === item.menuItemId);
+    const unitPrice = catalogItem ? catalogItem.price : item.menuItemId === 'item-102' ? 650 : 850;
+    const name = catalogItem
+      ? catalogItem.name
+      : item.menuItemId === 'item-102'
+        ? 'Vegetable Kottu'
+        : 'Grilled Chicken Rice';
+
+    return {
+      itemId: item.menuItemId,
+      name,
+      unitPrice,
+      quantity: item.quantity,
+      specialNotes: item.specialNotes,
+    };
+  });
+
+  const totalAmount = validatedItems.reduce(
+    (sum, item) => roundMoney(sum + calculateLineTotal(item.unitPrice, item.quantity)),
+    0,
+  );
+
   return {
     orderId: 'ORD-291',
     roomNumber,
     bookingId: 'booking-101',
     status: 'PLACED',
-    totalAmount: 1500,
-    items: (payload.items || []).map((item) => ({
-      itemId: item.menuItemId,
-      name: item.menuItemId === 'item-102' ? 'Vegetable Kottu' : 'Grilled Chicken Rice',
-      unitPrice: item.menuItemId === 'item-102' ? 650 : 850,
-      quantity: item.quantity,
-      specialNotes: item.specialNotes,
-    })),
+    totalAmount,
+    items: validatedItems,
     allergyNotes: payload.allergyNote,
     estimatedDeliveryMinutes: 25,
     createdAt: now.toISOString(),

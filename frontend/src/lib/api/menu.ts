@@ -197,15 +197,7 @@ export function isValidImageUrl(url?: string | null): boolean {
   }
 }
 
-/**
- * Formats a currency amount into Sri Lankan Rupee (LKR) display text.
- */
-export function formatLkrPrice(price: number): string {
-  return `LKR ${price.toLocaleString(undefined, {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  })}`;
-}
+export { formatLkrPrice } from '../utils/money.ts';
 
 /**
  * Fetches the active menu catalog with meal windows and items from FOSS API.

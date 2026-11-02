@@ -5,6 +5,11 @@ import { Button, Card, Input, Typography } from 'antd';
 import type { CartItem } from '../../../types/menu.ts';
 import type { CreateFoodOrderPayload, FoodOrderResponse } from '../../../types/orders.ts';
 import { formatLkrPrice, isValidImageUrl } from '../../../lib/api/menu.ts';
+import { calculateLineTotal } from '../../../lib/utils/money.ts';
+import {
+  MIN_ORDER_ITEM_QUANTITY,
+  MAX_ORDER_ITEM_QUANTITY,
+} from '../../../lib/constants/order-policy.ts';
 import { generateIdempotencyKey, placeFoodOrder } from '../../../lib/api/orders.ts';
 import { useAuth } from '../../../lib/auth/auth-context.tsx';
 import { useNavigation } from '../../../lib/navigation/navigation-context.tsx';
@@ -57,7 +62,7 @@ export function CartView({ onBack, onPlaceOrder }: CartViewProps) {
   const idempotencyKeyRef = useRef<string>(generateIdempotencyKey());
 
   const handleIncrement = (cartItem: CartItem) => {
-    const portionCap = cartItem.item.portionCap || 3;
+    const portionCap = cartItem.item.portionCap ?? MAX_ORDER_ITEM_QUANTITY;
     if (cartItem.quantity < portionCap) {
       updateQuantity(cartItem.id, cartItem.quantity + 1);
     }
@@ -76,6 +81,17 @@ export function CartView({ onBack, onPlaceOrder }: CartViewProps) {
 
     setSubmitting(true);
     setError(null);
+
+    // Validate item quantities adhere to 1-20 policy
+    for (const item of items) {
+      if (item.quantity < MIN_ORDER_ITEM_QUANTITY || item.quantity > MAX_ORDER_ITEM_QUANTITY) {
+        setError(
+          `Quantity for ${item.item.name} must be between ${MIN_ORDER_ITEM_QUANTITY} and ${MAX_ORDER_ITEM_QUANTITY}.`,
+        );
+        setSubmitting(false);
+        return;
+      }
+    }
 
     const payload: CreateFoodOrderPayload = {
       items: items.map((cartItem) => ({
@@ -162,21 +178,29 @@ export function CartView({ onBack, onPlaceOrder }: CartViewProps) {
           </div>
         ) : (
           items.map((cartItem) => {
-            const portionCap = cartItem.item.portionCap || 3;
+            const portionCap = cartItem.item.portionCap ?? MAX_ORDER_ITEM_QUANTITY;
+            const lineTotal = calculateLineTotal(cartItem.item.price, cartItem.quantity);
 
             return (
               <div key={cartItem.id} className="py-3.5 flex items-center justify-between gap-3">
                 {/* Food Avatar / Thumbnail */}
                 <CartItemThumbnail item={cartItem.item} />
 
-                {/* Name & Unit Price */}
+                {/* Name & Calculated Line Total */}
                 <div className="flex-1 min-w-0">
                   <Title level={4} className="!text-sm !font-bold !text-[#1E293B] !mb-0.5 truncate">
                     {cartItem.item.name}
                   </Title>
-                  <Text className="text-xs font-semibold text-slate-500 block">
-                    {formatLkrPrice(cartItem.item.price)}
-                  </Text>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <Text className="text-xs font-semibold text-slate-700">
+                      {formatLkrPrice(lineTotal)}
+                    </Text>
+                    {cartItem.quantity > 1 && (
+                      <span className="text-[11px] text-slate-400 font-medium">
+                        ({formatLkrPrice(cartItem.item.price)} each)
+                      </span>
+                    )}
+                  </div>
                   {cartItem.specialNotes && (
                     <span className="text-[11px] text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded font-medium mt-1 inline-block truncate max-w-[180px]">
                       Note: {cartItem.specialNotes}

@@ -16,6 +16,8 @@ import type {
 } from '../../../types/complaints.ts';
 import { ApiError } from '../api-error.ts';
 import type { FossRealtimeEvent } from '../../realtime/realtime-client.ts';
+import { calculateLineTotal, roundMoney } from '../../utils/money.ts';
+import { MIN_ORDER_ITEM_QUANTITY, MAX_ORDER_ITEM_QUANTITY } from '../../constants/order-policy.ts';
 
 export interface DemoStay {
   roomNumber: string;
@@ -729,6 +731,12 @@ export class DemoStateStore {
 
     let totalAmount = 0;
     const validatedItems = (payload.items || []).map((item) => {
+      if (item.quantity < MIN_ORDER_ITEM_QUANTITY || item.quantity > MAX_ORDER_ITEM_QUANTITY) {
+        throw new ApiError(
+          `Quantity for item [${item.menuItemId}] must be between ${MIN_ORDER_ITEM_QUANTITY} and ${MAX_ORDER_ITEM_QUANTITY}.`,
+          400,
+        );
+      }
       const catalogItem = DEMO_MENU_ITEMS.find((m) => m.id === item.menuItemId);
       if (!catalogItem) {
         throw new ApiError(`Menu item [${item.menuItemId}] is not in catalog.`, 400);
@@ -740,7 +748,8 @@ export class DemoStateStore {
         throw new ApiError(`Ordering window for "${catalogItem.name}" has closed.`, 409);
       }
       const unitPrice = catalogItem.price;
-      totalAmount += unitPrice * item.quantity;
+      const lineTotal = calculateLineTotal(unitPrice, item.quantity);
+      totalAmount = roundMoney(totalAmount + lineTotal);
       return {
         itemId: catalogItem.id,
         name: catalogItem.name,
