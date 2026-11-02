@@ -1,4 +1,97 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
+import { assertApprovedDatabaseIdentity } from '../guards/assert-approved-database-identity.js';
+
+interface ExpectedConstraint {
+  tableName: string;
+  constraintName: string;
+  foreignTableName: string;
+  definitionSubstrings: string[];
+}
+
+const EXPECTED_CROSS_SUBSYSTEM_FOREIGN_KEYS: ExpectedConstraint[] = [
+  {
+    tableName: 'foss_sessions',
+    constraintName: 'foss_sessions_booking_id_fkey',
+    foreignTableName: 'bookings',
+    definitionSubstrings: [
+      'FOREIGN KEY (booking_id) REFERENCES bookings(booking_id)',
+      'ON DELETE RESTRICT',
+    ],
+  },
+  {
+    tableName: 'foss_sessions',
+    constraintName: 'foss_sessions_room_number_fkey',
+    foreignTableName: 'rooms',
+    definitionSubstrings: [
+      'FOREIGN KEY (room_number) REFERENCES rooms(room_number)',
+      'ON DELETE RESTRICT',
+    ],
+  },
+  {
+    tableName: 'foss_service_requests',
+    constraintName: 'foss_service_requests_booking_id_fkey',
+    foreignTableName: 'bookings',
+    definitionSubstrings: [
+      'FOREIGN KEY (booking_id) REFERENCES bookings(booking_id)',
+      'ON DELETE RESTRICT',
+    ],
+  },
+  {
+    tableName: 'foss_service_requests',
+    constraintName: 'foss_service_requests_room_number_fkey',
+    foreignTableName: 'rooms',
+    definitionSubstrings: [
+      'FOREIGN KEY (room_number) REFERENCES rooms(room_number)',
+      'ON DELETE RESTRICT',
+    ],
+  },
+  {
+    tableName: 'foss_complaints',
+    constraintName: 'foss_complaints_booking_id_fkey',
+    foreignTableName: 'bookings',
+    definitionSubstrings: [
+      'FOREIGN KEY (booking_id) REFERENCES bookings(booking_id)',
+      'ON DELETE RESTRICT',
+    ],
+  },
+  {
+    tableName: 'foss_complaints',
+    constraintName: 'foss_complaints_room_number_fkey',
+    foreignTableName: 'rooms',
+    definitionSubstrings: [
+      'FOREIGN KEY (room_number) REFERENCES rooms(room_number)',
+      'ON DELETE RESTRICT',
+    ],
+  },
+  {
+    tableName: 'foss_complaints',
+    constraintName: 'foss_complaints_referenced_order_id_fkey',
+    foreignTableName: 'kms_food_orders',
+    definitionSubstrings: [
+      'FOREIGN KEY (referenced_order_id) REFERENCES kms_food_orders(order_id)',
+      'DEFERRABLE',
+    ],
+  },
+  {
+    tableName: 'foss_complaints',
+    constraintName: 'foss_complaints_referenced_worker_id_fkey',
+    foreignTableName: 'staff_users',
+    definitionSubstrings: [
+      'FOREIGN KEY (referenced_worker_id) REFERENCES staff_users(worker_id)',
+      'ON DELETE RESTRICT',
+    ],
+  },
+];
+
+const LOCAL_PRESERVED_CONSTRAINT = {
+  tableName: 'foss_complaints',
+  constraintName: 'foss_complaints_referenced_request_id_fkey',
+  foreignTableName: 'foss_service_requests',
+  definitionSubstrings: [
+    'FOREIGN KEY (referenced_request_id) REFERENCES foss_service_requests(request_id)',
+    'ON DELETE RESTRICT',
+  ],
+};
 
 /**
  * Removes physical cross-subsystem foreign keys on FOSS-owned tables.
@@ -7,12 +100,13 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * for booking, room, KMS food order, and worker references is maintained authoritatively
  * via typed service adapters (BookingProvider, KmsProvider, WkmsProvider).
  *
- * Preserved schema objects:
- * - Local FOSS referential integrity: foss_complaints_referenced_request_id_fkey (REFERENCES foss_service_requests)
- * - Primary keys: foss_sessions_pkey, foss_service_requests_pkey, foss_complaints_pkey
- * - Unique constraints: foss_sessions_booking_id_key, foss_sessions_session_token_key
- * - Check constraints: chk_foss_session_expiry, chk_service_request_completion, chk_complaint_resolution
- * - All tables, columns, indexes, and existing data.
+ * Safety Enforcements:
+ * - Re-verifies Neon test branch connection via assertApprovedDatabaseIdentity.
+ * - Inspects all 8 target foreign keys through pg_constraint and pg_get_constraintdef,
+ *   validating exact names, owning tables, referenced tables, and definitions before dropping.
+ * - Rejects execution if any expected constraint is missing or differs unexpectedly.
+ * - Strictly preserves the FOSS-local foreign key (foss_complaints_referenced_request_id_fkey),
+ *   all primary keys, unique constraints, check constraints, and table records.
  */
 export class RemoveCrossDomainForeignKeys1791900000008 implements MigrationInterface {
   name = 'RemoveCrossDomainForeignKeys1791900000008';
@@ -21,110 +115,101 @@ export class RemoveCrossDomainForeignKeys1791900000008 implements MigrationInter
     // -------------------------------------------------------------------------
     // 1. Precondition Gate: Authoritative Neon Branch & Database Identity Check
     // -------------------------------------------------------------------------
-    const approvedProjectId = process.env.APPROVED_NEON_PROJECT_ID;
-    const approvedTestBranchId = process.env.APPROVED_NEON_TEST_BRANCH_ID;
-    const approvedTestEndpointId = process.env.APPROVED_NEON_TEST_ENDPOINT_ID;
-    const parentDevBranchId = process.env.PARENT_DEV_BRANCH_ID;
+    if (queryRunner.connection) {
+      await assertApprovedDatabaseIdentity(queryRunner.connection, process.env);
+    }
 
+    // -------------------------------------------------------------------------
+    // 2. Precondition Gate: Catalog Inspection & Exact Constraint Verification
+    // -------------------------------------------------------------------------
+    const catalogRows = (await queryRunner.query(`
+      SELECT 
+        conrelid::regclass::text AS table_name,
+        conname AS constraint_name,
+        confrelid::regclass::text AS foreign_table_name,
+        pg_get_constraintdef(c.oid) AS definition
+      FROM pg_constraint c
+      JOIN pg_namespace n ON n.oid = c.connamespace
+      WHERE conrelid::regclass::text LIKE 'foss%' AND contype = 'f'
+    `)) as Array<{
+      table_name: string;
+      constraint_name: string;
+      foreign_table_name: string;
+      definition: string;
+    }>;
+
+    const catalogMap = new Map<
+      string,
+      { table_name: string; foreign_table_name: string; definition: string }
+    >();
+    for (const row of catalogRows) {
+      catalogMap.set(row.constraint_name, row);
+    }
+
+    // Assert that the FOSS-local foreign key is present and strictly matches
+    const localFk = catalogMap.get(LOCAL_PRESERVED_CONSTRAINT.constraintName);
+    if (!localFk) {
+      throw new Error(
+        `MIGRATION PRECONDITION FAILED: Local FOSS constraint [${LOCAL_PRESERVED_CONSTRAINT.constraintName}] ` +
+          'was not found in pg_constraint.',
+      );
+    }
     if (
-      !approvedProjectId ||
-      !approvedTestBranchId ||
-      !approvedTestEndpointId
+      localFk.table_name !== LOCAL_PRESERVED_CONSTRAINT.tableName ||
+      localFk.foreign_table_name !== LOCAL_PRESERVED_CONSTRAINT.foreignTableName
     ) {
       throw new Error(
-        'MIGRATION PRECONDITION FAILED: APPROVED_NEON_PROJECT_ID, APPROVED_NEON_TEST_BRANCH_ID, ' +
-          'and APPROVED_NEON_TEST_ENDPOINT_ID must all be configured before running migrations.',
+        `MIGRATION PRECONDITION FAILED: Local FOSS constraint [${LOCAL_PRESERVED_CONSTRAINT.constraintName}] ` +
+          `is attached to table [${localFk.table_name}] referencing [${localFk.foreign_table_name}], ` +
+          `expected [${LOCAL_PRESERVED_CONSTRAINT.tableName}] referencing [${LOCAL_PRESERVED_CONSTRAINT.foreignTableName}].`,
       );
     }
 
-    const settingsRows = (await queryRunner.query(`
-      SELECT name, setting 
-      FROM pg_settings 
-      WHERE name IN ('neon.project_id', 'neon.branch_id', 'neon.endpoint_id')
-    `)) as Array<{ name: string; setting: string }>;
+    // Validate that all eight cross-subsystem foreign keys exist with exact expected definitions
+    for (const expected of EXPECTED_CROSS_SUBSYSTEM_FOREIGN_KEYS) {
+      const observed = catalogMap.get(expected.constraintName);
+      if (!observed) {
+        throw new Error(
+          `MIGRATION PRECONDITION FAILED: Expected foreign key constraint [${expected.constraintName}] ` +
+            `was not found on table [${expected.tableName}]. Aborting to prevent unintended schema modification.`,
+        );
+      }
 
-    const settings: Record<string, string> = {};
-    for (const row of settingsRows) {
-      settings[row.name] = row.setting;
-    }
+      if (
+        observed.table_name !== expected.tableName ||
+        observed.foreign_table_name !== expected.foreignTableName
+      ) {
+        throw new Error(
+          `MIGRATION PRECONDITION FAILED: Constraint [${expected.constraintName}] metadata mismatch.\n` +
+            `  Observed: table [${observed.table_name}], references [${observed.foreign_table_name}]\n` +
+            `  Expected: table [${expected.tableName}], references [${expected.foreignTableName}]\n` +
+            'Aborting to prevent schema corruption.',
+        );
+      }
 
-    const observedProjectId = settings['neon.project_id'];
-    const observedBranchId = settings['neon.branch_id'];
-    const observedEndpointId = settings['neon.endpoint_id'];
-
-    if (parentDevBranchId && observedBranchId === parentDevBranchId) {
-      throw new Error(
-        `MIGRATION SAFETY GATE BLOCKED: Migration target is the parent dev branch [${observedBranchId}]! ` +
-          'Refusing to execute DDL against shared parent or production database.',
-      );
-    }
-
-    if (
-      observedProjectId !== approvedProjectId ||
-      observedBranchId !== approvedTestBranchId ||
-      observedEndpointId !== approvedTestEndpointId
-    ) {
-      throw new Error(
-        'MIGRATION SAFETY GATE BLOCKED: Neon branch identity verification failed.\n' +
-          `  Observed Project: [${observedProjectId || 'none'}], Expected: [${approvedProjectId}]\n` +
-          `  Observed Branch:  [${observedBranchId || 'none'}], Expected: [${approvedTestBranchId}]\n` +
-          `  Observed Endpoint:[${observedEndpointId || 'none'}], Expected: [${approvedTestEndpointId}]\n` +
-          'Refusing to execute DDL against unknown or unapproved database target.',
-      );
+      for (const substr of expected.definitionSubstrings) {
+        if (!observed.definition.includes(substr)) {
+          throw new Error(
+            `MIGRATION PRECONDITION FAILED: Constraint [${expected.constraintName}] definition mismatch.\n` +
+              `  Observed definition: [${observed.definition}]\n` +
+              `  Missing required clause: [${substr}]\n` +
+              'Aborting to prevent schema corruption.',
+          );
+        }
+      }
     }
 
     // -------------------------------------------------------------------------
-    // 2. Precondition Gate: Verify FOSS-Local Constraint Is Present
+    // 3. Drop Exactly the Eight Validated Cross-Subsystem Foreign Keys
     // -------------------------------------------------------------------------
-    const localFkRows = (await queryRunner.query(`
-      SELECT conname 
-      FROM pg_constraint 
-      WHERE conname = 'foss_complaints_referenced_request_id_fkey'
-    `)) as Array<{ conname: string }>;
-
-    if (localFkRows.length === 0) {
-      throw new Error(
-        'MIGRATION PRECONDITION FAILED: Local FOSS constraint ' +
-          'foss_complaints_referenced_request_id_fkey was not found in pg_constraint.',
+    for (const target of EXPECTED_CROSS_SUBSYSTEM_FOREIGN_KEYS) {
+      await queryRunner.query(
+        `ALTER TABLE "${target.tableName}" DROP CONSTRAINT "${target.constraintName}";`,
       );
     }
 
     // -------------------------------------------------------------------------
-    // 3. Drop Approved Cross-Subsystem Foreign Keys
-    // -------------------------------------------------------------------------
-    // foss_sessions -> FDS (bookings, rooms)
-    await queryRunner.query(`
-      ALTER TABLE "foss_sessions" DROP CONSTRAINT IF EXISTS "foss_sessions_booking_id_fkey";
-    `);
-    await queryRunner.query(`
-      ALTER TABLE "foss_sessions" DROP CONSTRAINT IF EXISTS "foss_sessions_room_number_fkey";
-    `);
-
-    // foss_service_requests -> FDS (bookings, rooms)
-    await queryRunner.query(`
-      ALTER TABLE "foss_service_requests" DROP CONSTRAINT IF EXISTS "foss_service_requests_booking_id_fkey";
-    `);
-    await queryRunner.query(`
-      ALTER TABLE "foss_service_requests" DROP CONSTRAINT IF EXISTS "foss_service_requests_room_number_fkey";
-    `);
-
-    // foss_complaints -> FDS (bookings, rooms), KMS (orders), WKMS (staff)
-    await queryRunner.query(`
-      ALTER TABLE "foss_complaints" DROP CONSTRAINT IF EXISTS "foss_complaints_booking_id_fkey";
-    `);
-    await queryRunner.query(`
-      ALTER TABLE "foss_complaints" DROP CONSTRAINT IF EXISTS "foss_complaints_room_number_fkey";
-    `);
-    await queryRunner.query(`
-      ALTER TABLE "foss_complaints" DROP CONSTRAINT IF EXISTS "foss_complaints_referenced_order_id_fkey";
-    `);
-    await queryRunner.query(`
-      ALTER TABLE "foss_complaints" DROP CONSTRAINT IF EXISTS "foss_complaints_referenced_worker_id_fkey";
-    `);
-
-    // -------------------------------------------------------------------------
-    // 4. Post-Drop Assertion: Verify Cross-Subsystem Constraints Are Removed
-    //    and FOSS-Local Referential Integrity & Unique Constraints Are Intact
+    // 4. Post-Drop Assertion: Verify Remaining Foreign Keys
     // -------------------------------------------------------------------------
     const remainingFkRows = (await queryRunner.query(`
       SELECT conname, confrelid::regclass::text as foreign_table
@@ -133,7 +218,7 @@ export class RemoveCrossDomainForeignKeys1791900000008 implements MigrationInter
     `)) as Array<{ conname: string; foreign_table: string }>;
 
     for (const fk of remainingFkRows) {
-      if (fk.conname !== 'foss_complaints_referenced_request_id_fkey') {
+      if (fk.conname !== LOCAL_PRESERVED_CONSTRAINT.constraintName) {
         throw new Error(
           `MIGRATION POST-CONDITION FAILED: Unexpected foreign key [${fk.conname}] ` +
             `referencing [${fk.foreign_table}] is still present on a FOSS table after drop.`,
