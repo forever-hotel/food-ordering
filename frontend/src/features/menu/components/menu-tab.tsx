@@ -14,7 +14,14 @@ import { MenuItemCard } from './menu-item-card.tsx';
 import { MenuItemDetail } from './menu-item-detail.tsx';
 import { CartView } from '../../cart/components/cart-view.tsx';
 
-type CategoryKey = 'Breakfast' | 'Lunch' | 'Dinner' | 'Tea';
+import {
+  CATEGORY_PERIOD_MAP,
+  type CategoryKey,
+  evaluateMealWindowStatus,
+  getColomboTime,
+  isItemCurrentlyOrderable,
+  isItemCutoff,
+} from '../../../lib/utils/meal-windows.ts';
 
 const CATEGORIES: { key: CategoryKey; label: string }[] = [
   { key: 'Breakfast', label: 'Breakfast' },
@@ -35,6 +42,15 @@ export function MenuTab() {
   const [selectedCategory, setSelectedCategory] = useState<CategoryKey>('Lunch');
   const [selectedCourse, setSelectedCourse] = useState<string>('All');
   const [selectedItem, setSelectedItem] = useState<GuestMenuItem | null>(null);
+  const [currentTime, setCurrentTime] = useState<Date>(() => new Date());
+
+  // Periodically refresh current time to update countdowns and trigger window cutoffs smoothly
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 10000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     let isCancelled = false;
@@ -126,6 +142,21 @@ export function MenuTab() {
   };
 
   const handleQuickAdd = (item: GuestMenuItem) => {
+    const colomboTime = getColomboTime(currentTime);
+    const isOrderableNow = isItemCurrentlyOrderable(
+      item,
+      catalog?.mealWindows,
+      colomboTime.totalSecondsOfDay,
+    );
+    if (!item.available) {
+      message.error('Item is sold out.');
+      return;
+    }
+    if (!isOrderableNow) {
+      message.error('This item is outside ordering hours.');
+      return;
+    }
+
     const result = addItem(item, 1);
     if (result.success) {
       message.success(`Added ${item.name} to order.`);
@@ -163,35 +194,37 @@ export function MenuTab() {
     );
   }
 
+  const colomboTime = getColomboTime(currentTime);
+  const currentColomboSeconds = colomboTime.totalSecondsOfDay;
+
   // If viewing item detail screen (Figure 33)
   if (selectedItem) {
-    return <MenuItemDetail item={selectedItem} onBack={handleBackToMenu} />;
+    const isOrderableNow = isItemCurrentlyOrderable(
+      selectedItem,
+      catalog?.mealWindows,
+      currentColomboSeconds,
+    );
+    const isCutoffNow = isItemCutoff(selectedItem, catalog?.mealWindows, currentColomboSeconds);
+    const effectiveSelectedItem: GuestMenuItem = {
+      ...selectedItem,
+      isOrderable: isOrderableNow,
+      isCutoff: isCutoffNow,
+    };
+    return <MenuItemDetail item={effectiveSelectedItem} onBack={handleBackToMenu} />;
   }
 
-  // Dynamic meal window banner calculation for selected category (Figure 32)
-  const categoryPeriodMap: Record<CategoryKey, MealPeriod> = {
-    Breakfast: 'BREAKFAST',
-    Lunch: 'LUNCH',
-    Dinner: 'DINNER',
-    Tea: 'ALL_DAY',
-  };
+  // Authoritative meal period mapping (Tea -> TEA_TIME; ALL_DAY is separate)
+  const targetPeriod: MealPeriod = CATEGORY_PERIOD_MAP[selectedCategory];
 
-  const targetPeriod: MealPeriod = categoryPeriodMap[selectedCategory] || 'ALL_DAY';
-  const categoryWindow =
-    catalog?.mealWindows.find(
-      (w) => w.period === targetPeriod || w.name.toLowerCase() === selectedCategory.toLowerCase(),
-    ) ||
-    catalog?.mealWindows.find((w) => w.isActive) ||
-    catalog?.mealWindows[0];
+  // Exact matching only: do not substitute unrelated active windows or arbitrary fallbacks
+  const categoryWindow = catalog?.mealWindows.find((w) => w.period === targetPeriod);
 
-  const cutoffTimeDisplay = categoryWindow ? categoryWindow.cutoffTime.slice(0, 5) : '14:30';
-  const remainingMinutes = categoryWindow ? Math.floor(categoryWindow.secondsRemaining / 60) : 0;
-  const hoursLeft = Math.floor(remainingMinutes / 60);
-  const minsLeft = remainingMinutes % 60;
-  const timeLeftDisplay =
-    remainingMinutes > 0
-      ? `${hoursLeft > 0 ? `${hoursLeft}h ` : ''}${minsLeft}m left`
-      : 'service ended';
+  // Authoritative meal window evaluation in Asia/Colombo
+  const windowEvaluation = evaluateMealWindowStatus(
+    categoryWindow,
+    currentColomboSeconds,
+    selectedCategory,
+  );
 
   // Canonical data model alignment:
   // Subsystem KMS items provide food course categories (Starters, Mains, Desserts, Beverages)
@@ -200,19 +233,15 @@ export function MenuTab() {
   const displayedItems = (catalog?.items || []).filter((item) => {
     const matchesMealPeriod =
       item.mealPeriods && item.mealPeriods.length > 0
-        ? item.mealPeriods.some(
-            (p) =>
-              p === targetPeriod ||
-              p === 'ALL_DAY' ||
-              (targetPeriod === 'ALL_DAY' && p === 'TEA_TIME'),
-          )
+        ? item.mealPeriods.some((p) => p === targetPeriod || p === 'ALL_DAY')
         : false;
 
     const matchesCategoryDirectly =
       item.category.toLowerCase() === selectedCategory.toLowerCase() ||
       (selectedCategory === 'Tea' &&
         (item.category.toLowerCase().includes('tea') ||
-          item.category.toLowerCase().includes('beverage')));
+          item.category.toLowerCase().includes('beverage') ||
+          item.category.toLowerCase().includes('snack')));
 
     if (!matchesMealPeriod && !matchesCategoryDirectly) {
       return false;
@@ -230,16 +259,12 @@ export function MenuTab() {
     const courseSet = new Set<string>();
     for (const item of catalog.items) {
       const inPeriod =
-        item.mealPeriods?.some(
-          (p) =>
-            p === targetPeriod ||
-            p === 'ALL_DAY' ||
-            (targetPeriod === 'ALL_DAY' && p === 'TEA_TIME'),
-        ) ||
+        item.mealPeriods?.some((p) => p === targetPeriod || p === 'ALL_DAY') ||
         item.category.toLowerCase() === selectedCategory.toLowerCase() ||
         (selectedCategory === 'Tea' &&
           (item.category.toLowerCase().includes('tea') ||
-            item.category.toLowerCase().includes('beverage')));
+            item.category.toLowerCase().includes('beverage') ||
+            item.category.toLowerCase().includes('snack')));
 
       if (
         inPeriod &&
@@ -289,16 +314,30 @@ export function MenuTab() {
         })}
       </div>
 
-      {/* Meal Period Banner (Figure 32: "Lunch orders close at 14:30 — 2h 16m left") */}
-      <div className="w-full bg-[#FFFBEB] border-l-4 border-[#F59E0B] rounded-xl px-3.5 py-2.5 flex items-center gap-2 shadow-xs">
-        <span className="text-sm select-none" aria-hidden="true">
-          ⏱
+      {/* Meal Period Banner (Figure 32: Open, Upcoming, Closed, or Unavailable) */}
+      <div
+        role="status"
+        aria-live="polite"
+        className={`w-full rounded-xl px-3.5 py-2.5 flex items-center gap-2.5 shadow-xs transition-colors ${
+          windowEvaluation.state === 'open'
+            ? 'bg-[#FFFBEB] border-l-4 border-[#F59E0B] text-amber-950'
+            : windowEvaluation.state === 'upcoming'
+              ? 'bg-[#F0F7FF] border-l-4 border-[#3B82F6] text-[#1E3A8A]'
+              : windowEvaluation.state === 'closed'
+                ? 'bg-[#F8FAFC] border-l-4 border-[#94A3B8] text-slate-700'
+                : 'bg-[#FFFDF5] border-l-4 border-[#CBD5E1] text-slate-600'
+        }`}
+      >
+        <span className="text-base select-none flex-shrink-0" aria-hidden="true">
+          {windowEvaluation.state === 'open'
+            ? '⏱'
+            : windowEvaluation.state === 'upcoming'
+              ? '🕒'
+              : windowEvaluation.state === 'closed'
+                ? '🔒'
+                : 'ℹ️'}
         </span>
-        <span className="text-xs font-medium text-amber-950">
-          {selectedCategory} orders close at{' '}
-          <strong className="font-extrabold">{cutoffTimeDisplay}</strong> —{' '}
-          {timeLeftDisplay === 'service ended' ? '2h 16m left' : timeLeftDisplay}
-        </span>
+        <span className="text-xs font-medium leading-relaxed">{windowEvaluation.message}</span>
       </div>
 
       {/* Error state with retry */}
@@ -318,14 +357,27 @@ export function MenuTab() {
       {/* Items List */}
       {!loading && displayedItems.length > 0 && (
         <div className="space-y-3" role="feed" aria-label={`${selectedCategory} menu items`}>
-          {displayedItems.map((item) => (
-            <MenuItemCard
-              key={item.id}
-              item={item}
-              onSelect={handleSelectItem}
-              onQuickAdd={handleQuickAdd}
-            />
-          ))}
+          {displayedItems.map((item) => {
+            const isOrderableNow = isItemCurrentlyOrderable(
+              item,
+              catalog?.mealWindows,
+              currentColomboSeconds,
+            );
+            const isCutoffNow = isItemCutoff(item, catalog?.mealWindows, currentColomboSeconds);
+            const effectiveItem: GuestMenuItem = {
+              ...item,
+              isOrderable: isOrderableNow,
+              isCutoff: isCutoffNow,
+            };
+            return (
+              <MenuItemCard
+                key={item.id}
+                item={effectiveItem}
+                onSelect={handleSelectItem}
+                onQuickAdd={handleQuickAdd}
+              />
+            );
+          })}
         </div>
       )}
 
