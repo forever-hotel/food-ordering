@@ -302,39 +302,91 @@ describe('GuestSessionsController', () => {
 
   describe('getDemoTokens', () => {
     it('returns demo tokens record from service in test/dev with DEMO_MODE=true', () => {
-      const result = controller.getDemoTokens({ ip: '127.0.0.1' } as any);
+      const result = controller.getDemoTokens();
       expect(result).toEqual({
         tokens: { '101-checked-in': 'demo-qr-token-101' },
       });
     });
 
-    it('rejects demo tokens with UnauthorizedException when NODE_ENV is production', () => {
+    it('rejects demo tokens with UnauthorizedException when NODE_ENV is production (production mode rejection)', () => {
       process.env.NODE_ENV = 'production';
-      expect(() =>
-        controller.getDemoTokens({ ip: '127.0.0.1' } as any),
-      ).toThrow(UnauthorizedException);
+      process.env.DEV_DEMO_KEY = 'secret-dev-key';
+      const prodReq = {
+        headers: { 'x-developer-key': 'secret-dev-key' },
+        socket: { remoteAddress: '127.0.0.1' },
+      } as any;
+      expect(() => controller.getDemoTokens(prodReq)).toThrow(
+        UnauthorizedException,
+      );
+      delete process.env.DEV_DEMO_KEY;
     });
 
     it('rejects demo tokens with UnauthorizedException when DEMO_MODE is not true', () => {
       process.env.DEMO_MODE = 'false';
       expect(() =>
-        controller.getDemoTokens({ ip: '127.0.0.1' } as any),
+        controller.getDemoTokens({
+          socket: { remoteAddress: '127.0.0.1' },
+          headers: {},
+        } as any),
       ).toThrow(UnauthorizedException);
     });
 
-    it('rejects demo tokens with ForbiddenException when called from untrusted non-local IP without dev key', () => {
+    it('rejects demo tokens with ForbiddenException on spoofed localhost Host header from non-local socket', () => {
       process.env.NODE_ENV = 'development';
-      const nonLocalReq = { ip: '198.51.100.24', headers: {} } as any;
-      expect(() => controller.getDemoTokens(nonLocalReq)).toThrow(
+      const spoofedReq = {
+        hostname: 'localhost',
+        headers: { host: 'localhost' },
+        socket: { remoteAddress: '198.51.100.24' },
+      } as any;
+      expect(() => controller.getDemoTokens(spoofedReq)).toThrow(
         ForbiddenException,
       );
+    });
+
+    it('rejects demo tokens with ForbiddenException on forwarded IP headers without developer key', () => {
+      process.env.NODE_ENV = 'development';
+      const forwardedReq = {
+        headers: { 'x-forwarded-for': '127.0.0.1' },
+        socket: { remoteAddress: '198.51.100.24' },
+      } as any;
+      expect(() => controller.getDemoTokens(forwardedReq)).toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it('rejects demo tokens with ForbiddenException when routed through local reverse proxy without dev key', () => {
+      process.env.NODE_ENV = 'development';
+      const proxiedReq = {
+        headers: {
+          'x-forwarded-for': '203.0.113.195',
+          'x-forwarded-proto': 'https',
+        },
+        socket: { remoteAddress: '127.0.0.1' },
+      } as any;
+      expect(() => controller.getDemoTokens(proxiedReq)).toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it('rejects demo tokens on missing or invalid developer authorization', () => {
+      process.env.NODE_ENV = 'development';
+      process.env.DEV_DEMO_KEY = 'correct-key';
+
+      const invalidReq = {
+        headers: { 'x-developer-key': 'wrong-key' },
+        socket: { remoteAddress: '127.0.0.1' },
+      } as any;
+      expect(() => controller.getDemoTokens(invalidReq)).toThrow(
+        ForbiddenException,
+      );
+      delete process.env.DEV_DEMO_KEY;
     });
 
     it('allows demo tokens when caller supplies valid DEV_DEMO_KEY', () => {
       process.env.NODE_ENV = 'development';
       process.env.DEV_DEMO_KEY = 'secret-dev-key';
       const authReq = {
-        ip: '198.51.100.24',
+        socket: { remoteAddress: '198.51.100.24' },
         headers: { 'x-developer-key': 'secret-dev-key' },
       } as any;
       const result = controller.getDemoTokens(authReq);
@@ -346,15 +398,22 @@ describe('GuestSessionsController', () => {
       process.env.NODE_ENV = 'production';
       process.env.ALLOW_DEMO_TOKENS = 'true';
       expect(() =>
-        controller.getDemoTokens({ ip: '127.0.0.1' } as any),
+        controller.getDemoTokens({
+          socket: { remoteAddress: '127.0.0.1' },
+          headers: {},
+        } as any),
       ).toThrow(UnauthorizedException);
       delete process.env.ALLOW_DEMO_TOKENS;
     });
   });
 
   describe('resetDemoState', () => {
-    it('executes scoped in-memory demo reset on qrTokenService, orderRepository, and realtimeService', () => {
-      const result = controller.resetDemoState({ ip: '127.0.0.1' } as any);
+    it('executes scoped in-memory demo reset and never allows global reset override', () => {
+      process.env.ALLOW_GLOBAL_DEMO_RESET = 'true'; // Attempt to trigger unsafe global wipe
+      const result = controller.resetDemoState({
+        socket: { remoteAddress: '127.0.0.1' },
+        headers: {},
+      } as any);
 
       expect(result.success).toBe(true);
       expect(result.mode).toBe('scoped_fixtures');
@@ -364,38 +423,87 @@ describe('GuestSessionsController', () => {
         realtimeChannels: true,
         persistentDatabaseRecords: false,
       });
+      // Global wipe methods must NEVER be called
+      expect(mockQrTokenService.reset).not.toHaveBeenCalled();
+      expect(mockDemoOrderRepository.reset).not.toHaveBeenCalled();
+      expect(mockRealtimeService.clearAll).not.toHaveBeenCalled();
+
+      // Scoped methods MUST be called
       expect(mockQrTokenService.resetDemoNonces).toHaveBeenCalledTimes(1);
       expect(mockDemoOrderRepository.resetScopedOrders).toHaveBeenCalledTimes(
         1,
       );
       expect(mockRealtimeService.resetScopedChannels).toHaveBeenCalledTimes(1);
-    });
-
-    it('executes global reset only when ALLOW_GLOBAL_DEMO_RESET=true is explicitly configured', () => {
-      process.env.ALLOW_GLOBAL_DEMO_RESET = 'true';
-      const result = controller.resetDemoState({ ip: '127.0.0.1' } as any);
-
-      expect(result.success).toBe(true);
-      expect(result.mode).toBe('global');
-      expect(mockQrTokenService.reset).toHaveBeenCalledTimes(1);
-      expect(mockDemoOrderRepository.reset).toHaveBeenCalledTimes(1);
-      expect(mockRealtimeService.clearAll).toHaveBeenCalledTimes(1);
       delete process.env.ALLOW_GLOBAL_DEMO_RESET;
     });
 
-    it('rejects destructive demo reset with ForbiddenException when called from untrusted non-local IP without dev key', () => {
+    it('rejects destructive demo reset on spoofed localhost Host header from non-local socket', () => {
       process.env.NODE_ENV = 'development';
-      const nonLocalReq = { ip: '198.51.100.24', headers: {} } as any;
-      expect(() => controller.resetDemoState(nonLocalReq)).toThrow(
+      const spoofedReq = {
+        hostname: 'localhost',
+        headers: { host: 'localhost' },
+        socket: { remoteAddress: '198.51.100.24' },
+      } as any;
+      expect(() => controller.resetDemoState(spoofedReq)).toThrow(
         ForbiddenException,
       );
+    });
+
+    it('rejects destructive demo reset on forwarded IP headers without developer key', () => {
+      process.env.NODE_ENV = 'development';
+      const forwardedReq = {
+        headers: { 'x-forwarded-for': '127.0.0.1' },
+        socket: { remoteAddress: '198.51.100.24' },
+      } as any;
+      expect(() => controller.resetDemoState(forwardedReq)).toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it('rejects destructive demo reset when routed through local reverse proxy without dev key', () => {
+      process.env.NODE_ENV = 'development';
+      const proxiedReq = {
+        headers: {
+          'x-forwarded-for': '203.0.113.195',
+          'x-forwarded-proto': 'https',
+        },
+        socket: { remoteAddress: '127.0.0.1' },
+      } as any;
+      expect(() => controller.resetDemoState(proxiedReq)).toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it('rejects destructive demo reset on missing or invalid developer authorization', () => {
+      process.env.NODE_ENV = 'development';
+      process.env.DEV_DEMO_KEY = 'correct-key';
+
+      // Missing key
+      const missingKeyReq = {
+        headers: {},
+        socket: { remoteAddress: '127.0.0.1' },
+      } as any;
+      expect(() => controller.resetDemoState(missingKeyReq)).toThrow(
+        ForbiddenException,
+      );
+
+      // Wrong key
+      const wrongKeyReq = {
+        headers: { 'x-developer-key': 'incorrect-token' },
+        socket: { remoteAddress: '127.0.0.1' },
+      } as any;
+      expect(() => controller.resetDemoState(wrongKeyReq)).toThrow(
+        ForbiddenException,
+      );
+
+      delete process.env.DEV_DEMO_KEY;
     });
 
     it('allows destructive demo reset when caller supplies valid DEV_DEMO_KEY', () => {
       process.env.NODE_ENV = 'development';
       process.env.DEV_DEMO_KEY = 'secret-dev-key';
       const authReq = {
-        ip: '198.51.100.24',
+        socket: { remoteAddress: '198.51.100.24' },
         headers: { 'x-developer-key': 'secret-dev-key' },
       } as any;
       const result = controller.resetDemoState(authReq);
@@ -403,17 +511,26 @@ describe('GuestSessionsController', () => {
       delete process.env.DEV_DEMO_KEY;
     });
 
-    it('rejects demo reset with UnauthorizedException when NODE_ENV is production', () => {
+    it('unconditionally rejects demo reset in production mode regardless of developer key or loopback IP', () => {
       process.env.NODE_ENV = 'production';
-      expect(() =>
-        controller.resetDemoState({ ip: '127.0.0.1' } as any),
-      ).toThrow(UnauthorizedException);
+      process.env.DEV_DEMO_KEY = 'secret-dev-key';
+      const prodReq = {
+        headers: { 'x-developer-key': 'secret-dev-key' },
+        socket: { remoteAddress: '127.0.0.1' },
+      } as any;
+      expect(() => controller.resetDemoState(prodReq)).toThrow(
+        UnauthorizedException,
+      );
+      delete process.env.DEV_DEMO_KEY;
     });
 
     it('rejects demo reset with UnauthorizedException when DEMO_MODE is not true', () => {
       process.env.DEMO_MODE = 'false';
       expect(() =>
-        controller.resetDemoState({ ip: '127.0.0.1' } as any),
+        controller.resetDemoState({
+          socket: { remoteAddress: '127.0.0.1' },
+          headers: {},
+        } as any),
       ).toThrow(UnauthorizedException);
     });
   });

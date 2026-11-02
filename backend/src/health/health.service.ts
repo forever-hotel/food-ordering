@@ -34,7 +34,6 @@ export class HealthService {
       return {
         isDisposableTestDb: false,
         isCloudShared: false,
-        sanitizedTarget: 'none',
         classification: 'unknown',
       };
     }
@@ -91,25 +90,20 @@ export class HealthService {
       classification = 'shared_cloud_dev';
     }
 
-    const sanitizedTarget = host
-      ? `${host}/${database || 'default'}`
-      : database || 'unknown';
-
     return {
       isDisposableTestDb,
       isCloudShared: isCloud,
-      sanitizedTarget,
       classification,
     };
   }
 
   /**
-   * Evaluates system readiness including live database query probe and isolation inspection.
+   * Evaluates system readiness including live database query probe.
+   * Public readiness probe returns minimal health status without internal infrastructure details.
    */
   async checkReadiness(): Promise<ReadinessResponseDto> {
     const uptime = Number(process.uptime().toFixed(2));
     const timestamp = new Date().toISOString();
-    const isolation = this.getDatabaseIsolationInfo();
 
     if (!this.dataSource) {
       return {
@@ -119,7 +113,6 @@ export class HealthService {
         database: {
           status: 'up',
           type: 'postgres',
-          isolation,
         },
       };
     }
@@ -133,7 +126,6 @@ export class HealthService {
         database: {
           status: 'up',
           type: 'postgres',
-          isolation,
         },
       };
     } catch (error) {
@@ -148,7 +140,6 @@ export class HealthService {
           status: 'down',
           type: 'postgres',
           error: errorMessage,
-          isolation,
         },
       };
     }

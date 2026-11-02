@@ -75,26 +75,39 @@ describe('Phase 5 — Live NestJS Backend HTTP and SSE Integration Tests (#101)'
     const healthBody = (await healthRes.json()) as { status: string };
     assert.equal(healthBody.status, 'ok');
 
-    // Trustworthy Database Isolation Target Verification
+    // Public Readiness Probe Verification (minimal public health response)
     const readyRes = await fetch(`${BACKEND_URL}/health/ready`);
     assert.equal(readyRes.status, 200);
     const readyBody = (await readyRes.json()) as {
       database?: {
         status: string;
-        isolation?: {
-          isDisposableTestDb: boolean;
-          isCloudShared: boolean;
-          sanitizedTarget: string;
-          classification: string;
-        };
       };
     };
+    assert.equal(readyBody.database?.status, 'up');
 
-    const isolation = readyBody.database?.isolation;
+    // Trustworthy Database Isolation Inspection via Internal Diagnostics
+    const internalKey = process.env.INTERNAL_SERVICE_KEY || 'fds-internal-secret-demo';
+    const diagRes = await fetch(`${BACKEND_URL}/health/internal/database-isolation`, {
+      headers: {
+        'x-internal-service-key': internalKey,
+      },
+    });
+
+    if (diagRes.status === 401 || diagRes.status === 403) {
+      throw new Error(
+        `DATABASE SAFETY GATE BLOCKED: Failed to authenticate to internal database diagnostics at ${BACKEND_URL}/health/internal/database-isolation.`,
+      );
+    }
+
+    const isolation = (await diagRes.json()) as {
+      isDisposableTestDb: boolean;
+      isCloudShared: boolean;
+      classification: string;
+    };
+
     if (!isolation || !isolation.isDisposableTestDb || isolation.isCloudShared) {
       throw new Error(
         `DATABASE SAFETY GATE BLOCKED: The backend at ${BACKEND_URL} is NOT connected to an approved isolated disposable test database.\n` +
-          `  Actual Target: ${isolation?.sanitizedTarget || 'unknown'}\n` +
           `  Classification: ${isolation?.classification || 'unknown'}\n` +
           `  isCloudShared: ${isolation?.isCloudShared}\n` +
           `  isDisposableTestDb: ${isolation?.isDisposableTestDb}\n` +

@@ -36,14 +36,6 @@ export class DatabaseIsolationDto {
   isCloudShared!: boolean;
 
   @ApiProperty({
-    description:
-      'Sanitized database target (hostname and database name, no credentials)',
-    example:
-      'ep-long-fog-azwbvdgr-pooler.c-3.ap-southeast-1.aws.neon.tech/forever',
-  })
-  sanitizedTarget!: string;
-
-  @ApiProperty({
     description: 'Explicit isolation environment classification',
     example: 'shared_cloud_dev',
   })
@@ -70,14 +62,6 @@ export class DatabaseHealthDto {
     example: null,
   })
   error?: string | null;
-
-  @ApiProperty({
-    description:
-      'Trustworthy database isolation metadata for integration test safety gate',
-    required: false,
-    type: DatabaseIsolationDto,
-  })
-  isolation?: DatabaseIsolationDto;
 }
 
 export class ReadinessResponseDto {

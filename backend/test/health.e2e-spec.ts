@@ -1,6 +1,7 @@
 import { jest } from '@jest/globals';
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { ConfigModule } from '@nestjs/config';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
 
@@ -9,14 +10,29 @@ import { HealthService } from '../src/health/health.service.js';
 
 describe('Health Checks (e2e)', () => {
   let app: INestApplication;
-  let mockDataSource: { query: jest.Mock };
+  let mockDataSource: { query: jest.Mock; options?: any };
 
   beforeAll(async () => {
     mockDataSource = {
       query: jest.fn().mockResolvedValue([{ '?column?': 1 }]),
+      options: {
+        host: '127.0.0.1',
+        database: 'foss_disposable_test',
+      },
     };
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
+      imports: [
+        ConfigModule.forRoot({
+          isGlobal: true,
+          load: [
+            () => ({
+              DEMO_MODE: 'true',
+              INTERNAL_SERVICE_KEY: 'test-internal-secret',
+            }),
+          ],
+        }),
+      ],
       controllers: [HealthController],
       providers: [
         HealthService,
@@ -82,6 +98,28 @@ describe('Health Checks (e2e)', () => {
       expect(response.body.status).toBe('error');
       expect(response.body.database.status).toBe('down');
       expect(response.body.database.error).toBe('Database connection failed');
+    });
+  });
+
+  describe('GET /health/internal/database-isolation', () => {
+    it('rejects unauthenticated requests with 401 Unauthorized', async () => {
+      await request(app.getHttpServer())
+        .get('/health/internal/database-isolation')
+        .expect(401);
+    });
+
+    it('returns database isolation classification with valid internal service key', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/health/internal/database-isolation')
+        .set('x-internal-service-key', 'test-internal-secret')
+        .expect(200);
+
+      expect(response.body.isDisposableTestDb).toBeDefined();
+      expect(response.body.isCloudShared).toBeDefined();
+      expect(response.body.classification).toBeDefined();
+      // Ensure no credentials or connection string are leaked
+      expect(response.body.sanitizedTarget).toBeUndefined();
+      expect(response.body.url).toBeUndefined();
     });
   });
 });

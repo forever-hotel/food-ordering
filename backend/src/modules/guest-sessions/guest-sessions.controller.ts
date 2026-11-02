@@ -1,3 +1,4 @@
+import * as crypto from 'node:crypto';
 import {
   BadRequestException,
   Body,
@@ -63,26 +64,112 @@ export const AUTHORIZED_DEMO_STAYS: Array<{
   { bookingId: 'b1060000-0000-4000-8000-000000000106', roomNumber: '106' },
 ];
 
-function isLoopbackOrLocal(req?: Request): boolean {
-  if (!req) return false;
-  const ip = req.ip || req.socket?.remoteAddress;
-  if (!ip) return false;
-  return (
-    ip === '127.0.0.1' ||
-    ip === '::1' ||
-    ip === '::ffff:127.0.0.1' ||
-    ip.startsWith('127.') ||
-    req.hostname === 'localhost'
-  );
-}
-
 function isDevAuthorized(req?: Request): boolean {
   if (!req) return false;
   const devKey =
     (req.headers?.['x-developer-key'] as string) ||
     (req.headers?.['x-demo-admin-key'] as string);
   const expectedKey = process.env.DEV_DEMO_KEY;
-  return Boolean(expectedKey && devKey === expectedKey);
+
+  if (!expectedKey || !devKey) {
+    return false;
+  }
+
+  try {
+    const devKeyBuf = Buffer.from(devKey, 'utf8');
+    const expectedKeyBuf = Buffer.from(expectedKey, 'utf8');
+    if (devKeyBuf.length !== expectedKeyBuf.length) {
+      return false;
+    }
+    return crypto.timingSafeEqual(devKeyBuf, expectedKeyBuf);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Validates access to demo endpoints.
+ *
+ * Rules:
+ * 1. Production must reject all demo operations unconditionally.
+ * 2. Only active when DEMO_MODE=true in non-production environments.
+ * 3. Never trusts HTTP Host headers (e.g. Host: localhost) or forwarded client IP headers.
+ * 4. Requests routed through a reverse proxy or gateway cannot bypass developer authorization.
+ * 5. Direct local-only access is permitted ONLY via unproxied loopback socket connection when DEV_DEMO_KEY is not set.
+ */
+function assertDemoAccessAuthorized(
+  req?: Request,
+  operationName: string = 'Demo operations',
+): void {
+  // 1. Unconditional production rejection
+  if (process.env.NODE_ENV === 'production') {
+    throw new UnauthorizedException(
+      `${operationName} are strictly disabled in production environments.`,
+    );
+  }
+
+  // 2. Must be in development or test environment with DEMO_MODE enabled
+  const isDevOrTest =
+    process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test';
+  const isDemo = process.env.DEMO_MODE === 'true';
+
+  if (!isDevOrTest || !isDemo) {
+    throw new UnauthorizedException(
+      `${operationName} are strictly disabled in unauthorized environments.`,
+    );
+  }
+
+  // Check developer authorization first (constant-time token comparison)
+  if (isDevAuthorized(req)) {
+    return;
+  }
+
+  // If DEV_DEMO_KEY is configured and token did not match, reject immediately
+  if (process.env.DEV_DEMO_KEY) {
+    throw new ForbiddenException(
+      `${operationName} require valid developer authorization.`,
+    );
+  }
+
+  // For internal mock calls in unit tests without a request object
+  if (!req && process.env.NODE_ENV === 'test') {
+    return;
+  }
+
+  if (!req) {
+    throw new ForbiddenException(
+      `${operationName} require a valid request context or developer authorization.`,
+    );
+  }
+
+  // 3. Reverse proxy / Gateway protection:
+  // If ANY forwarded headers exist, the request was routed through a reverse proxy or gateway.
+  // In that case, loopback socket IP alone cannot be trusted to represent a local developer.
+  const hasForwardedHeaders = Boolean(
+    req.headers?.['x-forwarded-for'] ||
+    req.headers?.['x-forwarded-host'] ||
+    req.headers?.['x-forwarded-proto'],
+  );
+
+  if (hasForwardedHeaders) {
+    throw new ForbiddenException(
+      `Access through a reverse proxy or gateway requires valid developer authorization.`,
+    );
+  }
+
+  // 4. Physical socket check: inspect direct TCP socket address only.
+  // Do NOT trust req.hostname or Host header.
+  const remoteIp = req.socket?.remoteAddress;
+  const isLoopbackSocket =
+    remoteIp === '127.0.0.1' ||
+    remoteIp === '::1' ||
+    remoteIp === '::ffff:127.0.0.1';
+
+  if (!isLoopbackSocket) {
+    throw new ForbiddenException(
+      `${operationName} require direct local-only access or valid developer authorization.`,
+    );
+  }
 }
 
 interface AuthenticatedRequest extends Request {
@@ -258,25 +345,7 @@ export class GuestSessionsController {
    */
   @Get('demo-tokens')
   getDemoTokens(@Req() req?: Request): { tokens: Record<string, string> } {
-    const isDevOrTest =
-      process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test';
-    const isDemo = process.env.DEMO_MODE === 'true';
-
-    if (!isDevOrTest || !isDemo || process.env.NODE_ENV === 'production') {
-      throw new UnauthorizedException(
-        'Demo tokens are strictly disabled in production and unauthorized environments.',
-      );
-    }
-
-    if (
-      process.env.NODE_ENV !== 'test' &&
-      !isLoopbackOrLocal(req) &&
-      !isDevAuthorized(req)
-    ) {
-      throw new ForbiddenException(
-        'Demo utilities require trusted local-only access or valid developer authorization.',
-      );
-    }
+    assertDemoAccessAuthorized(req, 'Demo utilities');
 
     return {
       tokens: this.qrTokenService.getDemoTokens(),
@@ -292,8 +361,8 @@ export class GuestSessionsController {
    *
    * Gated strictly by DEMO_MODE=true and non-production development/test environment.
    * Destructive operation: requires trusted local-only access or developer authorization.
-   * Multi-tenant safety: global reset is disabled by default to protect unrelated sessions.
-   * Only authorized demonstration fixtures are reset unless explicitly overridden.
+   * Reverse proxy / Gateway protection: requests through proxies cannot bypass developer authorization.
+   * Multi-tenant safety: scoped demonstration reset only. Unrelated sessions remain preserved.
    * Never modifies persistent PostgreSQL records.
    */
   @Post('demo-reset')
@@ -301,7 +370,7 @@ export class GuestSessionsController {
   resetDemoState(@Req() req?: Request): {
     success: boolean;
     message: string;
-    mode: 'global' | 'scoped_fixtures';
+    mode: 'scoped_fixtures';
     cleared: {
       inMemoryOrders: boolean;
       qrSeenNonces: boolean;
@@ -309,45 +378,19 @@ export class GuestSessionsController {
       persistentDatabaseRecords: boolean;
     };
   } {
-    const isDevOrTest =
-      process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test';
-    const isDemo = process.env.DEMO_MODE === 'true';
+    assertDemoAccessAuthorized(req, 'Destructive demo operations');
 
-    if (!isDevOrTest || !isDemo || process.env.NODE_ENV === 'production') {
-      throw new UnauthorizedException(
-        'Demo reset is strictly disabled in production and unauthorized environments.',
-      );
-    }
-
-    if (
-      process.env.NODE_ENV !== 'test' &&
-      !isLoopbackOrLocal(req) &&
-      !isDevAuthorized(req)
-    ) {
-      throw new ForbiddenException(
-        'Destructive demo operations require trusted local-only access or valid developer authorization.',
-      );
-    }
-
-    const allowGlobal = process.env.ALLOW_GLOBAL_DEMO_RESET === 'true';
-
-    if (allowGlobal) {
-      this.qrTokenService.reset();
-      this.demoOrderRepository?.reset();
-      this.realtimeService?.clearAll();
-    } else {
-      // Scoped reset: cleans only authorized demonstration fixtures to guarantee session isolation
-      this.qrTokenService.resetDemoNonces();
-      this.demoOrderRepository?.resetScopedOrders(AUTHORIZED_DEMO_BOOKING_IDS);
-      this.realtimeService?.resetScopedChannels(AUTHORIZED_DEMO_STAYS);
-    }
+    // Scoped reset: cleans only authorized demonstration fixtures to guarantee session isolation.
+    // Global reset is strictly disabled to prevent clearing unrelated in-memory state.
+    this.qrTokenService.resetDemoNonces();
+    this.demoOrderRepository?.resetScopedOrders(AUTHORIZED_DEMO_BOOKING_IDS);
+    this.realtimeService?.resetScopedChannels(AUTHORIZED_DEMO_STAYS);
 
     return {
       success: true,
-      message: allowGlobal
-        ? 'Global demo in-memory state reset successfully.'
-        : 'Authorized demo in-memory state and fixture channels reset successfully (scoped). Global reset is disabled to ensure isolation.',
-      mode: allowGlobal ? 'global' : 'scoped_fixtures',
+      message:
+        'Authorized demo in-memory state and fixture channels reset successfully (scoped). Session isolation preserved.',
+      mode: 'scoped_fixtures',
       cleared: {
         inMemoryOrders: true,
         qrSeenNonces: true,

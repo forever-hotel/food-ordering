@@ -58,12 +58,24 @@ describe('HealthService', () => {
 
       expect(result.status).toBe('ok');
       expect(result.database.status).toBe('up');
-      expect(result.database.isolation?.isDisposableTestDb).toBe(false);
+      expect((result.database as any).isolation).toBeUndefined();
+    });
+
+    it('ensures public checkReadiness returns minimal database health without infrastructure details', async () => {
+      const result = await service.checkReadiness();
+      expect(result.status).toBe('ok');
+      expect(result.database).toEqual({
+        status: 'up',
+        type: 'postgres',
+      });
+      // Guarantees no infrastructure details or hostnames are leaked on public probe
+      expect((result.database as any).isolation).toBeUndefined();
+      expect((result.database as any).sanitizedTarget).toBeUndefined();
     });
   });
 
   describe('getDatabaseIsolationInfo', () => {
-    it('classifies Neon cloud development as shared_cloud_dev and not disposable', () => {
+    it('classifies Neon cloud development as shared_cloud_dev and not disposable (shared Neon rejection)', () => {
       const neonService = new HealthService({
         options: {
           url: 'postgres://user:supersecretpass@ep-long-fog-azwbvdgr-pooler.c-3.ap-southeast-1.aws.neon.tech/forever?sslmode=require',
@@ -74,12 +86,9 @@ describe('HealthService', () => {
       expect(isolation.isCloudShared).toBe(true);
       expect(isolation.isDisposableTestDb).toBe(false);
       expect(isolation.classification).toBe('shared_cloud_dev');
-      expect(isolation.sanitizedTarget).toBe(
-        'ep-long-fog-azwbvdgr-pooler.c-3.ap-southeast-1.aws.neon.tech/forever',
-      );
-      // Verify no password or secret is in sanitizedTarget
-      expect(isolation.sanitizedTarget).not.toContain('supersecretpass');
-      expect(isolation.sanitizedTarget).not.toContain('user:');
+      // Verifies no connection string, credentials, or hostname are exposed
+      expect((isolation as any).sanitizedTarget).toBeUndefined();
+      expect((isolation as any).url).toBeUndefined();
     });
 
     it('classifies localhost test database as disposable_test when NODE_ENV is test', () => {
@@ -95,7 +104,7 @@ describe('HealthService', () => {
       expect(isolation.isCloudShared).toBe(false);
       expect(isolation.isDisposableTestDb).toBe(true);
       expect(isolation.classification).toBe('disposable_test');
-      expect(isolation.sanitizedTarget).toBe('127.0.0.1/foss_disposable_test');
+      expect((isolation as any).sanitizedTarget).toBeUndefined();
     });
   });
 });
