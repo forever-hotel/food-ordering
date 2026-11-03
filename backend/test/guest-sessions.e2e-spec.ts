@@ -252,5 +252,25 @@ describe('Guest Sessions Lifecycle (e2e)', () => {
         .post('/guest-sessions/demo-reset')
         .expect(404);
     });
+
+    it('unconditionally rejects signed fixture tokens when NODE_ENV is production', async () => {
+      process.env.NODE_ENV = 'production';
+      process.env.ALLOW_LEGACY_QR_TOKENS = 'true'; // Attempt override
+
+      try {
+        const qrToken = qrTokenService.createToken(
+          'b1010000-0000-4000-8000-000000000101',
+          '101',
+        );
+
+        await request(app.getHttpServer())
+          .post('/guest-sessions/qr')
+          .send({ qrToken })
+          .expect(401);
+      } finally {
+        process.env.NODE_ENV = 'test';
+        delete process.env.ALLOW_LEGACY_QR_TOKENS;
+      }
+    });
   });
 });

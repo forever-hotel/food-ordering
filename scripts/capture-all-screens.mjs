@@ -126,13 +126,24 @@ async function main() {
     // Screen 1: Figure 31 - QR Scan / Session Start
     console.log('Capturing Figure 31: QR Scan...');
     const shot1 = await client.send('Page.captureScreenshot', { format: 'png' });
-    fs.writeFileSync(path.join(OUTPUT_DIR, 'current_fig31_qr_scan.png'), Buffer.from(shot1.data, 'base64'));
+    fs.writeFileSync(
+      path.join(OUTPUT_DIR, 'current_fig31_qr_scan.png'),
+      Buffer.from(shot1.data, 'base64'),
+    );
 
     // Authenticate session via Room 103 QR token (matching approved designs Room 103)
     console.log('Authenticating session Room 103...');
-    const secret =
-      process.env.QR_SIGNING_SECRET ||
-      'development-demo-qr-signing-secret-at-least-32-chars-long';
+    let secret = process.env.QR_SIGNING_SECRET;
+    if (!secret && fs.existsSync('backend/.env')) {
+      const envContent = fs.readFileSync('backend/.env', 'utf8');
+      const match = envContent.match(/^QR_SIGNING_SECRET=(.+)$/m);
+      if (match) secret = match[1].trim();
+    }
+    if (!secret) {
+      throw new Error(
+        'QR_SIGNING_SECRET must be explicitly configured in environment or backend/.env. Falling back to a predictable default secret is strictly prohibited.',
+      );
+    }
     const now = Date.now();
     const payload = {
       bookingId: 'b1030000-0000-4000-8000-000000000103',
@@ -142,7 +153,10 @@ async function main() {
       nonce: crypto.randomUUID(),
     };
     const encodedPayload = Buffer.from(JSON.stringify(payload)).toString('base64url');
-    const signature = crypto.createHmac('sha256', secret).update(encodedPayload).digest('base64url');
+    const signature = crypto
+      .createHmac('sha256', secret)
+      .update(encodedPayload)
+      .digest('base64url');
     const token103 = `${encodedPayload}.${signature}`;
 
     await client.send('Runtime.evaluate', {
@@ -165,7 +179,10 @@ async function main() {
     // Screen 2: Figure 32 - Menu Home
     console.log('Capturing Figure 32: Menu Home...');
     const shot2 = await client.send('Page.captureScreenshot', { format: 'png' });
-    fs.writeFileSync(path.join(OUTPUT_DIR, 'current_fig32_menu_home.png'), Buffer.from(shot2.data, 'base64'));
+    fs.writeFileSync(
+      path.join(OUTPUT_DIR, 'current_fig32_menu_home.png'),
+      Buffer.from(shot2.data, 'base64'),
+    );
 
     // Screen 3: Figure 33 - Menu Item Detail
     console.log('Opening Menu Item Detail...');
@@ -191,7 +208,10 @@ async function main() {
 
     console.log('Capturing Figure 33: Menu Item Detail...');
     const shot3 = await client.send('Page.captureScreenshot', { format: 'png' });
-    fs.writeFileSync(path.join(OUTPUT_DIR, 'current_fig33_item_detail.png'), Buffer.from(shot3.data, 'base64'));
+    fs.writeFileSync(
+      path.join(OUTPUT_DIR, 'current_fig33_item_detail.png'),
+      Buffer.from(shot3.data, 'base64'),
+    );
 
     // Add to Cart
     console.log('Clicking Add to Cart...');
@@ -222,7 +242,10 @@ async function main() {
     // Screen 4: Figure 34 - Cart + Allergy Notes
     console.log('Capturing Figure 34: Cart + Allergy Notes...');
     const shot4 = await client.send('Page.captureScreenshot', { format: 'png' });
-    fs.writeFileSync(path.join(OUTPUT_DIR, 'current_fig34_cart.png'), Buffer.from(shot4.data, 'base64'));
+    fs.writeFileSync(
+      path.join(OUTPUT_DIR, 'current_fig34_cart.png'),
+      Buffer.from(shot4.data, 'base64'),
+    );
 
     // Place Order
     console.log('Placing Order...');
@@ -240,7 +263,10 @@ async function main() {
     // Screen 5: Figure 35 - Order Confirmation
     console.log('Capturing Figure 35: Order Confirmation...');
     const shot5 = await client.send('Page.captureScreenshot', { format: 'png' });
-    fs.writeFileSync(path.join(OUTPUT_DIR, 'current_fig35_confirmation.png'), Buffer.from(shot5.data, 'base64'));
+    fs.writeFileSync(
+      path.join(OUTPUT_DIR, 'current_fig35_confirmation.png'),
+      Buffer.from(shot5.data, 'base64'),
+    );
 
     // Click Track Order Status
     console.log('Clicking Track Order Status...');
@@ -258,7 +284,10 @@ async function main() {
     // Screen 6: Figure 36 - Order Status Tracker
     console.log('Capturing Figure 36: Order Status Tracker...');
     const shot6 = await client.send('Page.captureScreenshot', { format: 'png' });
-    fs.writeFileSync(path.join(OUTPUT_DIR, 'current_fig36_tracker.png'), Buffer.from(shot6.data, 'base64'));
+    fs.writeFileSync(
+      path.join(OUTPUT_DIR, 'current_fig36_tracker.png'),
+      Buffer.from(shot6.data, 'base64'),
+    );
 
     // Screen 7: Figure 37 - Order History (click Orders tab)
     console.log('Navigating to Orders Tab (Order History)...');
@@ -274,7 +303,10 @@ async function main() {
 
     console.log('Capturing Figure 37: Order History...');
     const shot7 = await client.send('Page.captureScreenshot', { format: 'png' });
-    fs.writeFileSync(path.join(OUTPUT_DIR, 'current_fig37_history.png'), Buffer.from(shot7.data, 'base64'));
+    fs.writeFileSync(
+      path.join(OUTPUT_DIR, 'current_fig37_history.png'),
+      Buffer.from(shot7.data, 'base64'),
+    );
 
     // Screen 8: Figure 38 - Service Request Form
     console.log('Navigating to Services Tab...');
@@ -290,7 +322,10 @@ async function main() {
 
     console.log('Capturing Figure 38: Service Request Form...');
     const shot8 = await client.send('Page.captureScreenshot', { format: 'png' });
-    fs.writeFileSync(path.join(OUTPUT_DIR, 'current_fig38_services.png'), Buffer.from(shot8.data, 'base64'));
+    fs.writeFileSync(
+      path.join(OUTPUT_DIR, 'current_fig38_services.png'),
+      Buffer.from(shot8.data, 'base64'),
+    );
 
     // Screen 9: Figure 39 - Complaint Submission
     console.log('Navigating to Complaints Tab...');
@@ -306,7 +341,10 @@ async function main() {
 
     console.log('Capturing Figure 39: Complaint Submission...');
     const shot9 = await client.send('Page.captureScreenshot', { format: 'png' });
-    fs.writeFileSync(path.join(OUTPUT_DIR, 'current_fig39_complaints.png'), Buffer.from(shot9.data, 'base64'));
+    fs.writeFileSync(
+      path.join(OUTPUT_DIR, 'current_fig39_complaints.png'),
+      Buffer.from(shot9.data, 'base64'),
+    );
 
     console.log('All 9 current screen screenshots successfully captured in:', OUTPUT_DIR);
 

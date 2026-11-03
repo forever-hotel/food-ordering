@@ -1,5 +1,5 @@
 import { jest } from '@jest/globals';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 
 import { GuestSessionResponseDto } from './dto/guest-session-response.dto.js';
 import { IssueQrDto, IssueQrResponseDto } from './dto/issue-qr.dto.js';
@@ -205,6 +205,48 @@ describe('GuestSessionsController', () => {
       await expect(
         controller.authenticateWithQr({ qrToken: '' } as VerifyQrDto),
       ).rejects.toThrow(BadRequestException);
+    });
+
+    it('production safety: unconditionally rejects signed development tokens with 401 in production', async () => {
+      process.env.NODE_ENV = 'production';
+      try {
+        await expect(
+          controller.authenticateWithQr({
+            qrToken: 'header.payload.signature',
+          }),
+        ).rejects.toThrow(UnauthorizedException);
+      } finally {
+        process.env.NODE_ENV = 'test';
+      }
+    });
+
+    it('production safety: rejects signed tokens even if ALLOW_LEGACY_QR_TOKENS=true override is set (no backdoor)', async () => {
+      process.env.NODE_ENV = 'production';
+      process.env.ALLOW_LEGACY_QR_TOKENS = 'true';
+      try {
+        await expect(
+          controller.authenticateWithQr({
+            qrToken: 'header.payload.signature',
+          }),
+        ).rejects.toThrow(UnauthorizedException);
+      } finally {
+        process.env.NODE_ENV = 'test';
+        delete process.env.ALLOW_LEGACY_QR_TOKENS;
+      }
+    });
+
+    it('production safety: fails securely with ServiceUnavailableException when qrActivationService is missing', async () => {
+      const controllerWithoutActivation = new GuestSessionsController(
+        mockGuestSessionsService as unknown as GuestSessionsService,
+        mockQrTokenService as unknown as QrTokenService,
+        undefined,
+      );
+
+      await expect(
+        controllerWithoutActivation.authenticateWithQr({
+          qrToken: 'opaque-activation-token-no-dot',
+        }),
+      ).rejects.toThrow('QR activation service is unconfigured.');
     });
   });
 

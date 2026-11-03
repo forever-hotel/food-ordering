@@ -145,5 +145,20 @@ describe('Production-Ready Guest Authentication & Removal of DEV_DEMO_KEY (#101)
         },
       );
     });
+
+    it('ApiSessionsProvider rejects empty or whitespace QR activation code with 400', async () => {
+      const provider = new ApiSessionsProvider();
+
+      await assert.rejects(
+        async () => {
+          await provider.redeemQrToken('   ');
+        },
+        {
+          name: 'ApiError',
+          status: 400,
+          message: 'QR activation code is required.',
+        },
+      );
+    });
   });
 });

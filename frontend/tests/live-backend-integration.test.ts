@@ -176,9 +176,12 @@ describe(
       roomNumber: string,
       ttlMs: number = 24 * 60 * 60 * 1000,
     ): string {
-      const secret =
-        process.env.QR_SIGNING_SECRET ||
-        'development-demo-qr-signing-secret-at-least-32-chars-long';
+      const secret = process.env.QR_SIGNING_SECRET;
+      if (!secret) {
+        throw new Error(
+          'TEST SAFETY GATE BLOCKED: QR_SIGNING_SECRET environment variable is required to generate test QR tokens for live backend testing. Falling back to a predictable secret is forbidden.',
+        );
+      }
       const now = Date.now();
       const payload = {
         bookingId: bookingId.trim(),

@@ -34,9 +34,26 @@ export class QrTokenService {
     @Optional() @Inject('QR_CLOCK') clock?: () => number,
   ) {
     this.clock = clock ?? (() => Date.now());
-    this.signingSecret =
-      this.configService.get<string>('QR_SIGNING_SECRET') ||
-      DEFAULT_DEV_SIGNING_SECRET;
+    const configuredSecret =
+      this.configService.get<string>('QR_SIGNING_SECRET');
+    const isProduction =
+      process.env.NODE_ENV === 'production' ||
+      this.configService.get<string>('NODE_ENV') === 'production';
+
+    if (isProduction) {
+      if (
+        !configuredSecret ||
+        configuredSecret === DEFAULT_DEV_SIGNING_SECRET ||
+        configuredSecret.length < 32
+      ) {
+        throw new Error(
+          'SECURITY VIOLATION: Production requires a dedicated, high-entropy QR_SIGNING_SECRET (at least 32 characters). Default development fallback signing secret is strictly forbidden in production.',
+        );
+      }
+      this.signingSecret = configuredSecret;
+    } else {
+      this.signingSecret = configuredSecret || DEFAULT_DEV_SIGNING_SECRET;
+    }
   }
 
   /**
@@ -78,6 +95,16 @@ export class QrTokenService {
    * Enforces cryptographic integrity, expiration, and replay protection.
    */
   verifyToken(qrToken: string): QrTokenPayload {
+    const isProduction =
+      process.env.NODE_ENV === 'production' ||
+      this.configService.get<string>('NODE_ENV') === 'production';
+
+    if (isProduction) {
+      throw new UnauthorizedException(
+        'Legacy signed QR tokens are strictly disabled in production environments.',
+      );
+    }
+
     if (!qrToken || typeof qrToken !== 'string') {
       throw new BadRequestException('QR token is required.');
     }

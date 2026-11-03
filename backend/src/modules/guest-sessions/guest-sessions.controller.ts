@@ -118,13 +118,10 @@ export class GuestSessionsController {
       return this.qrActivationService.redeemActivationCredential(token);
     }
 
-    // Signed tokens (used in local development demo fixtures)
-    if (
-      process.env.NODE_ENV === 'production' &&
-      process.env.ALLOW_LEGACY_QR_TOKENS !== 'true'
-    ) {
+    // Signed tokens (strictly prohibited in production environments; overrides forbidden)
+    if (process.env.NODE_ENV === 'production') {
       throw new UnauthorizedException(
-        'Legacy signed QR tokens are disabled in production. Please use an authoritative FDS-issued activation slip.',
+        'Legacy signed QR tokens are strictly disabled in production. Authoritative single-use FDS-issued QR activation credentials are required.',
       );
     }
 
