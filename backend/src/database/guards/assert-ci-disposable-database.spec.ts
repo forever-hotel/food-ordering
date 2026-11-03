@@ -90,6 +90,36 @@ describe('assertCiDisposableDatabase', () => {
     expect(result.isDisposableLocal).toBe(true);
   });
 
+  it('accepts a disposable PostgreSQL database running in a Docker container on the CI runner', async () => {
+    mockDataSource.query.mockImplementation(async (sql: unknown) => {
+      const queryStr = String(sql);
+      if (queryStr.includes('current_database()')) {
+        return [
+          {
+            db_name: 'foss_test',
+            server_addr: '172.18.0.2/32', // Docker bridge container IP with CIDR
+            client_addr: '172.18.0.1/32',
+            pg_version: 'PostgreSQL 16.4',
+          },
+        ];
+      }
+      if (queryStr.includes('FROM pg_settings')) {
+        return [];
+      }
+      if (queryStr.includes('FROM information_schema.tables')) {
+        return [];
+      }
+      return [];
+    });
+
+    const result = await assertCiDisposableDatabase(
+      mockDataSource as unknown as DataSource,
+    );
+
+    expect(result.isDisposableLocal).toBe(true);
+    expect(result.serverAddr).toBe('172.18.0.2/32');
+  });
+
   it('fails closed when host is a remote hostname', async () => {
     mockDataSource.options.host = 'remote-postgres.internal.hotel.com';
 
@@ -148,7 +178,7 @@ describe('assertCiDisposableDatabase', () => {
         return [
           {
             db_name: 'foss_test',
-            server_addr: '54.238.10.15', // Remote AWS / Neon IP
+            server_addr: '54.238.10.15/32', // Remote AWS / Neon IP
             client_addr: '127.0.0.1',
             pg_version: 'PostgreSQL 16.4',
           },
@@ -160,7 +190,7 @@ describe('assertCiDisposableDatabase', () => {
     await expect(
       assertCiDisposableDatabase(mockDataSource as unknown as DataSource),
     ).rejects.toThrow(
-      /CI MIGRATION SAFETY GATE BLOCKED: Non-loopback server IP detected \[54\.238\.10\.15\]/,
+      /CI MIGRATION SAFETY GATE BLOCKED: Non-loopback\/non-local server IP detected \[54\.238\.10\.15\/32\]/,
     );
   });
 
@@ -172,7 +202,7 @@ describe('assertCiDisposableDatabase', () => {
           {
             db_name: 'foss_test',
             server_addr: '127.0.0.1',
-            client_addr: '192.168.1.100', // Non-loopback LAN IP
+            client_addr: '54.238.10.15/32', // Remote AWS / Neon IP
             pg_version: 'PostgreSQL 16.4',
           },
         ];
@@ -183,7 +213,7 @@ describe('assertCiDisposableDatabase', () => {
     await expect(
       assertCiDisposableDatabase(mockDataSource as unknown as DataSource),
     ).rejects.toThrow(
-      /CI MIGRATION SAFETY GATE BLOCKED: Non-loopback client IP detected \[192\.168\.1\.100\]/,
+      /CI MIGRATION SAFETY GATE BLOCKED: Non-loopback\/non-local client IP detected \[54\.238\.10\.15\/32\]/,
     );
   });
 

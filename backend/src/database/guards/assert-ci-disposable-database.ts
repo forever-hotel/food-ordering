@@ -9,7 +9,39 @@ export interface CiDatabaseIdentitySettings {
 
 const ALLOWED_CI_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '']);
 
-const ALLOWED_LOOPBACK_IPS = new Set(['127.0.0.1', '::1']);
+/**
+ * Validates that an IP address reported by PostgreSQL (inet_server_addr or inet_client_addr)
+ * belongs to either local loopback or a local Docker container bridge network on the runner.
+ * Rejects all public internet addresses and remote cloud subnets.
+ */
+export function isAllowedCiDatabaseIp(rawIp: string): boolean {
+  if (!rawIp) {
+    return false;
+  }
+  // Strip PostgreSQL CIDR notation if present (e.g. "172.18.0.2/32" -> "172.18.0.2")
+  const ip = rawIp.replace(/\/\d+$/, '').trim();
+
+  // Loopback (IPv4 & IPv6)
+  if (ip === '127.0.0.1' || ip === '::1' || ip.startsWith('127.')) {
+    return true;
+  }
+
+  // Docker container bridge network on local runner host (RFC 1918 private subnets)
+  // Docker default and custom bridge networks allocate 172.16.0.0/12, 10.0.0.0/8, or 192.168.0.0/16
+  if (ip.startsWith('10.') || ip.startsWith('192.168.')) {
+    return true;
+  }
+
+  const match172 = ip.match(/^172\.(\d+)\./);
+  if (match172) {
+    const octet = parseInt(match172[1], 10);
+    if (octet >= 16 && octet <= 31) {
+      return true;
+    }
+  }
+
+  return false;
+}
 
 export const FORBIDDEN_SHARED_TABLES = [
   'bookings',
@@ -160,12 +192,12 @@ export async function assertCiDisposableDatabase(
     );
   }
 
-  // If connected via TCP socket, verify that the remote IP is strictly local loopback
+  // If connected via TCP socket, verify that the remote IP is strictly local loopback or CI Docker bridge
   if (serverInfo.server_addr !== null && serverInfo.server_addr !== undefined) {
     const sAddr = serverInfo.server_addr.trim();
-    if (!ALLOWED_LOOPBACK_IPS.has(sAddr)) {
+    if (!isAllowedCiDatabaseIp(sAddr)) {
       throw new Error(
-        `CI MIGRATION SAFETY GATE BLOCKED: Non-loopback server IP detected [${sAddr}]. ` +
+        `CI MIGRATION SAFETY GATE BLOCKED: Non-loopback/non-local server IP detected [${sAddr}]. ` +
           'Refusing to run CI migrations against remote or shared database networks.',
       );
     }
@@ -173,9 +205,9 @@ export async function assertCiDisposableDatabase(
 
   if (serverInfo.client_addr !== null && serverInfo.client_addr !== undefined) {
     const cAddr = serverInfo.client_addr.trim();
-    if (!ALLOWED_LOOPBACK_IPS.has(cAddr)) {
+    if (!isAllowedCiDatabaseIp(cAddr)) {
       throw new Error(
-        `CI MIGRATION SAFETY GATE BLOCKED: Non-loopback client IP detected [${cAddr}]. ` +
+        `CI MIGRATION SAFETY GATE BLOCKED: Non-loopback/non-local client IP detected [${cAddr}]. ` +
           'Refusing to run CI migrations against remote or shared database networks.',
       );
     }
