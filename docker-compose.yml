@@ -20,6 +20,7 @@ services:
       - RABBITMQ_URL=${RABBITMQ_URL:-amqp://rabbitmq:5672}
       - RABBITMQ_ENABLED=${RABBITMQ_ENABLED:-true}
       - REDIS_ENABLED=${REDIS_ENABLED:-false}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
     depends_on:
       rabbitmq:
         condition: service_started
