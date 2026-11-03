@@ -366,7 +366,7 @@ describe('RemoveCrossDomainForeignKeys1791900000008', () => {
       ).resolves.not.toThrow();
     });
 
-    it('fails closed on CI runner if local FOSS constraint is missing from catalog', async () => {
+    it('succeeds cleanly on fresh CI disposable database where no foreign keys exist in catalog', async () => {
       (mockConnection as any).isCiDisposableRunner = true;
       (mockConnection as any).options = {
         type: 'postgres',
@@ -388,15 +388,78 @@ describe('RemoveCrossDomainForeignKeys1791900000008', () => {
               },
             ];
           }
+          if (queryStr.includes('FROM pg_settings')) {
+            return [];
+          }
+          if (queryStr.includes('FROM information_schema.tables')) {
+            return [];
+          }
           return [];
         }) as any;
 
-      mockQueryRunner.query = jest.fn().mockImplementation(async () => []);
+      // In a fresh disposable CI database, pg_constraint has 0 rows for foss% tables
+      mockQueryRunner.query = jest
+        .fn()
+        .mockImplementation(async () => []) as any;
+
+      await expect(
+        migration.up(mockQueryRunner as QueryRunner),
+      ).resolves.not.toThrow();
+    });
+
+    it('fails closed on CI runner if local FOSS constraint is corrupted', async () => {
+      (mockConnection as any).isCiDisposableRunner = true;
+      (mockConnection as any).options = {
+        type: 'postgres',
+        host: '127.0.0.1',
+        database: 'foss_test',
+      };
+
+      mockConnection.query = jest
+        .fn()
+        .mockImplementation(async (sql: unknown) => {
+          const queryStr = String(sql);
+          if (queryStr.includes('current_database()')) {
+            return [
+              {
+                db_name: 'foss_test',
+                server_addr: '127.0.0.1',
+                client_addr: '127.0.0.1',
+                pg_version: 'PostgreSQL 16.4',
+              },
+            ];
+          }
+          if (queryStr.includes('FROM pg_settings')) {
+            return [];
+          }
+          if (queryStr.includes('FROM information_schema.tables')) {
+            return [];
+          }
+          return [];
+        }) as any;
+
+      mockQueryRunner.query = jest
+        .fn()
+        .mockImplementation(async (sql: unknown) => {
+          const queryStr = String(sql);
+          if (queryStr.includes('pg_get_constraintdef')) {
+            return [
+              {
+                table_name: 'foss_complaints',
+                constraint_name: 'foss_complaints_referenced_request_id_fkey',
+                foreign_table_name: 'corrupted_external_table',
+                definition:
+                  'FOREIGN KEY (referenced_request_id) REFERENCES corrupted_external_table(id)',
+              },
+            ];
+          }
+          return [];
+        }) as any;
 
       await expect(
         migration.up(mockQueryRunner as QueryRunner),
       ).rejects.toThrow(
-        /MIGRATION PRECONDITION FAILED: Local FOSS constraint \[foss_complaints_referenced_request_id_fkey\] was not found in pg_constraint/,
+        /MIGRATION PRECONDITION FAILED: Local FOSS constraint \[foss_complaints_referenced_request_id_fkey\] is attached to table/,
       );
     });
   });

@@ -14,9 +14,27 @@ export class AddToiletriesToServiceRequestCategory1791900000009 implements Migra
   transaction = false;
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`
-      ALTER TYPE service_request_category ADD VALUE IF NOT EXISTS 'TOILETRIES';
-    `);
+    const typeExists = (await queryRunner.query(`
+      SELECT 1 FROM pg_type WHERE typname = 'service_request_category';
+    `)) as Array<{ '?column?': number }>;
+
+    if (!typeExists || typeExists.length === 0) {
+      await queryRunner.query(`
+        CREATE TYPE service_request_category AS ENUM (
+          'EXTRA_TOWELS',
+          'ROOM_CLEANING',
+          'WATER_BOTTLES',
+          'MAINTENANCE',
+          'PILLOWS_BLANKETS',
+          'TOILETRIES',
+          'OTHER'
+        );
+      `);
+    } else {
+      await queryRunner.query(`
+        ALTER TYPE service_request_category ADD VALUE IF NOT EXISTS 'TOILETRIES';
+      `);
+    }
   }
 
   public async down(_queryRunner: QueryRunner): Promise<void> {

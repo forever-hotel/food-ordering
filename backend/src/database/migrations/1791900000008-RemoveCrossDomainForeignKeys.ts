@@ -164,12 +164,14 @@ export class RemoveCrossDomainForeignKeys1791900000008 implements MigrationInter
     // Assert that the FOSS-local foreign key is present and strictly matches
     const localFk = catalogMap.get(LOCAL_PRESERVED_CONSTRAINT.constraintName);
     if (!localFk) {
-      throw new Error(
-        `MIGRATION PRECONDITION FAILED: Local FOSS constraint [${LOCAL_PRESERVED_CONSTRAINT.constraintName}] ` +
-          'was not found in pg_constraint.',
-      );
-    }
-    if (
+      if (!isCiDisposable) {
+        throw new Error(
+          `MIGRATION PRECONDITION FAILED: Local FOSS constraint [${LOCAL_PRESERVED_CONSTRAINT.constraintName}] ` +
+            'was not found in pg_constraint.',
+        );
+      }
+      // In a fresh disposable CI database, foreign key constraints on FOSS tables were never created.
+    } else if (
       localFk.table_name !== LOCAL_PRESERVED_CONSTRAINT.tableName ||
       localFk.foreign_table_name !== LOCAL_PRESERVED_CONSTRAINT.foreignTableName
     ) {
