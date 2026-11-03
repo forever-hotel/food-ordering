@@ -1,20 +1,18 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { NextRequest } from 'next/server.js';
+import fs from 'node:fs';
+import path from 'node:path';
 
-import { GET } from '../src/app/api/dev/demo-tokens/route.ts';
 import { ApiSessionsProvider } from '../src/lib/data-mode/api/api-sessions.provider.ts';
+import { DemoSessionsProvider } from '../src/lib/data-mode/demo/demo-sessions.provider.ts';
 
-describe('Server-Side Development Proxy & Demo Token Authorization Tests (#101)', () => {
+describe('Production-Ready Guest Authentication & Removal of DEV_DEMO_KEY (#101)', () => {
   const originalEnv = { ...process.env };
   const originalFetch = globalThis.fetch;
 
   beforeEach(() => {
     process.env = { ...originalEnv };
-    (process.env as Record<string, string | undefined>).NODE_ENV = 'development';
-    process.env.DEMO_MODE = 'true';
-    process.env.DEV_DEMO_KEY = 'test-dev-secret-key';
-    process.env.INTERNAL_API_URL = 'http://backend:4300';
+    delete process.env.DEV_DEMO_KEY;
   });
 
   afterEach(() => {
@@ -22,173 +20,130 @@ describe('Server-Side Development Proxy & Demo Token Authorization Tests (#101)'
     globalThis.fetch = originalFetch;
   });
 
-  describe('Next.js route handler /api/dev/demo-tokens', () => {
-    it('1. Rejects with 404 when in production mode without demo mode opt-in', async () => {
-      (process.env as Record<string, string | undefined>).NODE_ENV = 'production';
-      process.env.DEMO_MODE = 'false';
-
-      const req = new NextRequest('http://localhost:3000/api/dev/demo-tokens', {
-        headers: { host: 'localhost:3000' },
-      });
-
-      const res = await GET(req);
-      assert.equal(res.status, 404);
+  describe('1. Retirement of HTTP Demo-Token Retrieval & Dev Proxy', () => {
+    it('confirms server-side development proxy route /api/dev/demo-tokens is deleted', () => {
+      const proxyRoutePath = path.resolve(process.cwd(), 'src/app/api/dev/demo-tokens/route.ts');
+      assert.equal(
+        fs.existsSync(proxyRoutePath),
+        false,
+        'Server proxy route /api/dev/demo-tokens/route.ts must be completely removed.',
+      );
     });
 
-    it('2. Rejects with 403 when untrusted forwarded headers are present', async () => {
-      const forwardedHeaders: Record<string, string>[] = [
-        { 'x-forwarded-for': '203.0.113.195' },
-        { 'x-forwarded-host': 'public-hotel.com' },
-        { 'x-forwarded-proto': 'https' },
-      ];
+    it('ApiSessionsProvider.fetchDemoTokens() returns empty {} without making HTTP calls', async () => {
+      let fetchCalled = false;
+      globalThis.fetch = (async () => {
+        fetchCalled = true;
+        return new Response('Should not be called', { status: 500 });
+      }) as unknown as typeof fetch;
 
-      for (const headers of forwardedHeaders) {
-        const req = new NextRequest('http://localhost:3000/api/dev/demo-tokens', {
-          headers: { host: 'localhost:3000', ...headers },
-        });
+      const provider = new ApiSessionsProvider();
+      const tokens = await provider.fetchDemoTokens();
 
-        const res = await GET(req);
-        assert.equal(res.status, 403);
-        const data = await res.json();
-        assert.ok(data.error.includes('Forwarded requests are strictly rejected'));
-      }
+      assert.deepEqual(tokens, {});
+      assert.equal(fetchCalled, false, 'fetchDemoTokens must not make any HTTP calls in API mode.');
     });
 
-    it('3. Rejects cross-origin requests with 403 when sec-fetch-site is cross-site', async () => {
-      const req = new NextRequest('http://localhost:3000/api/dev/demo-tokens', {
-        headers: {
-          host: 'localhost:3000',
-          'sec-fetch-site': 'cross-site',
-        },
-      });
+    it('ApiSessionsProvider.resetDemo() does not call backend demo-reset HTTP route', async () => {
+      let fetchCalled = false;
+      globalThis.fetch = (async () => {
+        fetchCalled = true;
+        return new Response('Should not be called', { status: 500 });
+      }) as unknown as typeof fetch;
 
-      const res = await GET(req);
-      assert.equal(res.status, 403);
-      const data = await res.json();
-      assert.ok(data.error.includes('Cross-origin'));
+      const provider = new ApiSessionsProvider();
+      const result = await provider.resetDemo();
+
+      assert.equal(result.success, true);
+      assert.equal(fetchCalled, false, 'resetDemo must not call backend demo-reset HTTP route.');
+    });
+  });
+
+  describe('2. Absence of DEV_DEMO_KEY in Frontend Configuration & Bundles', () => {
+    it('verifies DEV_DEMO_KEY is not defined in frontend source or public environment', () => {
+      assert.equal(process.env.DEV_DEMO_KEY, undefined);
+      assert.equal(process.env.NEXT_PUBLIC_DEV_DEMO_KEY, undefined);
     });
 
-    it('4. Rejects non-localhost host headers with 403', async () => {
-      const untrustedHosts = ['evil-attacker.com', '192.168.1.50:3000', '10.0.0.1:3000'];
+    it('verifies ApiSessionsProvider does not transmit x-developer-key or x-demo-admin-key headers', async () => {
+      const recordedHeaders: Record<string, string>[] = [];
 
-      for (const host of untrustedHosts) {
-        const req = new NextRequest(`http://${host}/api/dev/demo-tokens`, {
-          headers: { host },
-        });
-
-        const res = await GET(req);
-        assert.equal(res.status, 403);
-        const data = await res.json();
-        assert.ok(data.error.includes('restricted to local hosts'));
-      }
-    });
-
-    it('5. Rejects with 403 when server DEV_DEMO_KEY is not configured', async () => {
-      delete process.env.DEV_DEMO_KEY;
-
-      const req = new NextRequest('http://localhost:3000/api/dev/demo-tokens', {
-        headers: {
-          host: 'localhost:3000',
-          'sec-fetch-site': 'same-origin',
-        },
-      });
-
-      const res = await GET(req);
-      assert.equal(res.status, 403);
-      const data = await res.json();
-      assert.ok(data.error.includes('not configured'));
-    });
-
-    it('6. Proxies to backend with server-only x-developer-key on valid same-origin localhost request', async () => {
-      let forwardedKey = '';
-      let requestedUrl = '';
-
-      globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
-        requestedUrl = url.toString();
-        const headers = (init?.headers || {}) as Record<string, string>;
-        forwardedKey = headers['x-developer-key'] || '';
-
+      globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+        recordedHeaders.push((init?.headers || {}) as Record<string, string>);
         return new Response(
           JSON.stringify({
-            tokens: {
-              '101': 'mock-qr-token-101',
-              'Room 101 (John Doe)': 'mock-qr-token-101',
-            },
+            sessionToken: 'test-session-jwt',
+            expiresAt: '2026-11-04T12:00:00.000Z',
+            sessionId: 'sess-101',
+            roomNumber: '101',
+            bookingId: 'b-101',
+            guestName: 'John Doe',
           }),
           { status: 200, headers: { 'Content-Type': 'application/json' } },
         );
       }) as unknown as typeof fetch;
 
-      const req = new NextRequest('http://localhost:3000/api/dev/demo-tokens', {
-        headers: {
-          host: 'localhost:3000',
-          'sec-fetch-site': 'same-origin',
-        },
-      });
+      const provider = new ApiSessionsProvider();
+      await provider.redeemQrToken('legitimate-fds-qr-token-uuid-12345');
 
-      const res = await GET(req);
-      assert.equal(res.status, 200);
-      assert.equal(requestedUrl, 'http://backend:4300/guest-sessions/demo-tokens');
-      assert.equal(forwardedKey, 'test-dev-secret-key');
-
-      const data = await res.json();
-      assert.equal(data.tokens['101'], 'mock-qr-token-101');
+      assert.ok(recordedHeaders.length > 0);
+      for (const headers of recordedHeaders) {
+        assert.equal(headers['x-developer-key'], undefined);
+        assert.equal(headers['x-demo-admin-key'], undefined);
+      }
     });
   });
 
-  describe('ApiSessionsProvider.fetchDemoTokens', () => {
-    it('7. Fetches from same-origin /api/dev/demo-tokens when window is available (browser context)', async () => {
-      // Mock browser window object
-      (globalThis as unknown as { window: unknown }).window = {};
-
-      globalThis.fetch = (async (url: string | URL | Request) => {
-        const urlStr = url.toString();
-        if (urlStr === '/api/dev/demo-tokens') {
-          return new Response(
-            JSON.stringify({
-              tokens: {
-                'Room 101 (John Doe)': 'browser-dev-token-101',
-              },
-            }),
-            { status: 200, headers: { 'Content-Type': 'application/json' } },
-          );
-        }
-        return new Response('Not found', { status: 404 });
+  describe('3. Isolated Frontend Mock Mode Boundary & Demo Room Handling', () => {
+    it('DemoSessionsProvider resolves demo tokens and stays strictly in-memory', async () => {
+      let fetchCalled = false;
+      globalThis.fetch = (async () => {
+        fetchCalled = true;
+        return new Response('Must not be contacted', { status: 500 });
       }) as unknown as typeof fetch;
 
-      const provider = new ApiSessionsProvider();
-      const tokens = await provider.fetchDemoTokens();
-      assert.equal(tokens['Room 101 (John Doe)'], 'browser-dev-token-101');
+      const demoProvider = new DemoSessionsProvider();
+      const demoTokens = await demoProvider.fetchDemoTokens();
 
-      delete (globalThis as unknown as { window?: unknown }).window;
+      assert.ok(Object.keys(demoTokens).length > 0);
+      assert.equal(fetchCalled, false, 'Mock mode must never issue live network requests.');
+
+      // Redeem mock stay
+      const room101Token = demoTokens['Room 101 (John Doe)'];
+      assert.ok(room101Token);
+
+      const session = await demoProvider.redeemQrToken(room101Token);
+      assert.equal(session.guest.roomNumber, '101');
+      assert.equal(session.guest.guestName, 'John Doe');
+      assert.equal(fetchCalled, false, 'Mock redemption must remain strictly in-memory.');
     });
 
-    it('8. Falls back to direct backend URL when /api/dev/demo-tokens is unavailable', async () => {
-      (globalThis as unknown as { window: unknown }).window = {};
-
-      globalThis.fetch = (async (url: string | URL | Request) => {
-        const urlStr = url.toString();
-        if (urlStr === '/api/dev/demo-tokens') {
-          return new Response('Forbidden', { status: 403 });
-        }
-        if (urlStr.includes('/guest-sessions/demo-tokens')) {
-          return new Response(
-            JSON.stringify({
-              tokens: {
-                '102': 'direct-loopback-token-102',
-              },
-            }),
-            { status: 200, headers: { 'Content-Type': 'application/json' } },
-          );
-        }
-        return new Response('Not found', { status: 404 });
-      }) as unknown as typeof fetch;
-
+    it('ApiSessionsProvider rejects demonstration QR tokens against live backend', async () => {
       const provider = new ApiSessionsProvider();
-      const tokens = await provider.fetchDemoTokens();
-      assert.equal(tokens['102'], 'direct-loopback-token-102');
 
-      delete (globalThis as unknown as { window?: unknown }).window;
+      await assert.rejects(
+        async () => {
+          await provider.redeemQrToken('act-demo-101');
+        },
+        {
+          name: 'ApiError',
+          message: 'Demonstration QR tokens cannot be redeemed against the real API.',
+        },
+      );
+    });
+
+    it('ApiSessionsProvider rejects demonstration session tokens against live backend', async () => {
+      const provider = new ApiSessionsProvider();
+
+      await assert.rejects(
+        async () => {
+          await provider.fetchCurrentSession('demo-token-101');
+        },
+        {
+          name: 'ApiError',
+          message: 'Demonstration session tokens cannot be transmitted to real API endpoints.',
+        },
+      );
     });
   });
 });

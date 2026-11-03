@@ -1,9 +1,5 @@
 import { jest } from '@jest/globals';
-import {
-  BadRequestException,
-  ForbiddenException,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { BadRequestException } from '@nestjs/common';
 
 import { GuestSessionResponseDto } from './dto/guest-session-response.dto.js';
 import { IssueQrDto, IssueQrResponseDto } from './dto/issue-qr.dto.js';
@@ -32,12 +28,6 @@ describe('GuestSessionsController', () => {
   let mockQrTokenService: {
     getDemoTokens: jest.MockedFunction<() => Record<string, string>>;
     reset: jest.MockedFunction<() => void>;
-  };
-  let mockDemoOrderRepository: {
-    reset: jest.MockedFunction<() => void>;
-  };
-  let mockRealtimeService: {
-    clearAll: jest.MockedFunction<() => void>;
   };
   let mockQrActivationService: {
     issueActivationCredential: jest.MockedFunction<
@@ -68,16 +58,6 @@ describe('GuestSessionsController', () => {
       resetDemoNonces: jest.fn<() => number>().mockReturnValue(5),
     };
 
-    mockDemoOrderRepository = {
-      reset: jest.fn<() => void>(),
-      resetScopedOrders: jest.fn<() => number>().mockReturnValue(3),
-    };
-
-    mockRealtimeService = {
-      clearAll: jest.fn<() => void>(),
-      resetScopedChannels: jest.fn<() => number>().mockReturnValue(8),
-    };
-
     mockQrActivationService = {
       issueActivationCredential: jest.fn<() => Promise<IssueQrResponseDto>>(),
       redeemActivationCredential:
@@ -92,8 +72,6 @@ describe('GuestSessionsController', () => {
       mockGuestSessionsService as unknown as GuestSessionsService,
       mockQrTokenService as unknown as QrTokenService,
       mockQrActivationService as unknown as QrActivationService,
-      mockDemoOrderRepository as any,
-      mockRealtimeService as any,
     );
   });
 
@@ -300,342 +278,65 @@ describe('GuestSessionsController', () => {
     });
   });
 
-  describe('getDemoTokens', () => {
-    it('returns demo tokens record from service in test/dev with DEMO_MODE=true', () => {
-      const result = controller.getDemoTokens();
-      expect(result).toEqual({
-        tokens: { '101-checked-in': 'demo-qr-token-101' },
+  describe('Retired Demo Utility Endpoints (#101)', () => {
+    it('confirms getDemoTokens endpoint is retired and not defined on controller', () => {
+      expect((controller as any).getDemoTokens).toBeUndefined();
+    });
+
+    it('confirms resetDemoState endpoint is retired and not defined on controller', () => {
+      expect((controller as any).resetDemoState).toBeUndefined();
+    });
+
+    it('confirms guest QR activation does not require or depend on DEV_DEMO_KEY', async () => {
+      delete process.env.DEV_DEMO_KEY;
+
+      const mockResponse: GuestSessionResponseDto = {
+        sessionId: 'sess-123',
+        sessionToken: 'jwt-guest-token',
+        bookingId: 'b1010000-0000-4000-8000-000000000101',
+        roomNumber: '101',
+        guestName: 'John Doe',
+        active: true,
+        expiresAt: '2026-11-04T12:00:00.000Z',
+      };
+
+      mockGuestSessionsService.authenticateWithQr.mockResolvedValue(
+        mockResponse,
+      );
+
+      const result = await controller.authenticateWithQr({
+        qrToken: 'header.payload.signature',
       });
-    });
 
-    it('rejects demo tokens with UnauthorizedException when NODE_ENV is production (production mode rejection)', () => {
-      process.env.NODE_ENV = 'production';
-      process.env.DEV_DEMO_KEY = 'secret-dev-key';
-      const prodReq = {
-        headers: { 'x-developer-key': 'secret-dev-key' },
-        socket: { remoteAddress: '127.0.0.1' },
-      } as any;
-      expect(() => controller.getDemoTokens(prodReq)).toThrow(
-        UnauthorizedException,
-      );
-      delete process.env.DEV_DEMO_KEY;
-    });
-
-    it('rejects demo tokens with UnauthorizedException when DEMO_MODE is not true', () => {
-      process.env.DEMO_MODE = 'false';
-      expect(() =>
-        controller.getDemoTokens({
-          socket: { remoteAddress: '127.0.0.1' },
-          headers: {},
-        } as any),
-      ).toThrow(UnauthorizedException);
-    });
-
-    it('rejects demo tokens with ForbiddenException on spoofed localhost Host header from non-local socket', () => {
-      process.env.NODE_ENV = 'development';
-      const spoofedReq = {
-        hostname: 'localhost',
-        headers: { host: 'localhost' },
-        socket: { remoteAddress: '198.51.100.24' },
-      } as any;
-      expect(() => controller.getDemoTokens(spoofedReq)).toThrow(
-        ForbiddenException,
+      expect(result).toEqual(mockResponse);
+      expect(mockGuestSessionsService.authenticateWithQr).toHaveBeenCalledWith(
+        'header.payload.signature',
       );
     });
 
-    it('rejects demo tokens with ForbiddenException on forwarded IP headers without developer key', () => {
-      process.env.NODE_ENV = 'development';
-      const forwardedReq = {
-        headers: { 'x-forwarded-for': '127.0.0.1' },
-        socket: { remoteAddress: '198.51.100.24' },
-      } as any;
-      expect(() => controller.getDemoTokens(forwardedReq)).toThrow(
-        ForbiddenException,
+    it('confirms x-developer-key and x-demo-admin-key headers are not required for guest authentication', async () => {
+      delete process.env.DEV_DEMO_KEY;
+
+      const mockResponse: GuestSessionResponseDto = {
+        sessionId: 'sess-123',
+        sessionToken: 'jwt-guest-token',
+        bookingId: 'b1010000-0000-4000-8000-000000000101',
+        roomNumber: '101',
+        guestName: 'John Doe',
+        active: true,
+        expiresAt: '2026-11-04T12:00:00.000Z',
+      };
+
+      mockGuestSessionsService.authenticateWithQr.mockResolvedValue(
+        mockResponse,
       );
-    });
 
-    it('rejects demo tokens with ForbiddenException when routed through local reverse proxy without dev key', () => {
-      process.env.NODE_ENV = 'development';
-      const proxiedReq = {
-        headers: {
-          'x-forwarded-for': '203.0.113.195',
-          'x-forwarded-proto': 'https',
-        },
-        socket: { remoteAddress: '127.0.0.1' },
-      } as any;
-      expect(() => controller.getDemoTokens(proxiedReq)).toThrow(
-        ForbiddenException,
-      );
-    });
-
-    it('rejects demo tokens on missing or invalid developer authorization', () => {
-      process.env.NODE_ENV = 'development';
-      process.env.DEV_DEMO_KEY = 'correct-key';
-
-      const invalidReq = {
-        headers: { 'x-developer-key': 'wrong-key' },
-        socket: { remoteAddress: '127.0.0.1' },
-      } as any;
-      expect(() => controller.getDemoTokens(invalidReq)).toThrow(
-        ForbiddenException,
-      );
-      delete process.env.DEV_DEMO_KEY;
-    });
-
-    it('allows demo tokens when caller supplies valid DEV_DEMO_KEY', () => {
-      process.env.NODE_ENV = 'development';
-      process.env.DEV_DEMO_KEY = 'secret-dev-key';
-      const authReq = {
-        socket: { remoteAddress: '198.51.100.24' },
-        headers: { 'x-developer-key': 'secret-dev-key' },
-      } as any;
-      const result = controller.getDemoTokens(authReq);
-      expect(result.tokens).toBeDefined();
-      delete process.env.DEV_DEMO_KEY;
-    });
-
-    it('rejects demo tokens from unauthorized private-LAN clients (192.168.0.0/16, 10.0.0.0/8) without developer key', () => {
-      process.env.NODE_ENV = 'development';
-      const lanIps = ['192.168.1.100', '10.0.0.50', '192.168.1.1', '10.254.0.1'];
-      for (const ip of lanIps) {
-        const lanReq = {
-          socket: { remoteAddress: ip },
-          headers: {},
-        } as any;
-        expect(() => controller.getDemoTokens(lanReq)).toThrow(ForbiddenException);
-      }
-    });
-
-    it('rejects demo tokens from unauthorized Docker bridge clients (172.16-31.*, 192.168.65.1) without developer key', () => {
-      process.env.NODE_ENV = 'development';
-      const dockerIps = [
-        '172.17.0.1',
-        '172.18.0.1',
-        '172.20.0.5',
-        '192.168.65.1',
-        '::ffff:172.18.0.1',
-      ];
-      for (const ip of dockerIps) {
-        const dockerReq = {
-          socket: { remoteAddress: ip },
-          headers: {},
-        } as any;
-        expect(() => controller.getDemoTokens(dockerReq)).toThrow(ForbiddenException);
-      }
-    });
-
-    it('allows demo tokens from Docker bridge or private LAN when valid developer key is supplied', () => {
-      process.env.NODE_ENV = 'development';
-      process.env.DEV_DEMO_KEY = 'docker-dev-secret';
-
-      // Docker bridge with x-developer-key
-      const dockerReq = {
-        socket: { remoteAddress: '172.18.0.1' },
-        headers: { 'x-developer-key': 'docker-dev-secret' },
-      } as any;
-      expect(controller.getDemoTokens(dockerReq).tokens).toBeDefined();
-
-      // WSL2 gateway with x-demo-admin-key
-      const wslReq = {
-        socket: { remoteAddress: '192.168.65.1' },
-        headers: { 'x-demo-admin-key': 'docker-dev-secret' },
-      } as any;
-      expect(controller.getDemoTokens(wslReq).tokens).toBeDefined();
-
-      delete process.env.DEV_DEMO_KEY;
-    });
-
-    it('rejects demo tokens from Docker bridge when developer key is invalid or missing', () => {
-      process.env.NODE_ENV = 'development';
-      process.env.DEV_DEMO_KEY = 'docker-dev-secret';
-
-      // Wrong key from Docker bridge
-      const invalidKeyReq = {
-        socket: { remoteAddress: '172.18.0.1' },
-        headers: { 'x-developer-key': 'wrong-dev-key' },
-      } as any;
-      expect(() => controller.getDemoTokens(invalidKeyReq)).toThrow(ForbiddenException);
-
-      // Missing key from Docker bridge
-      const missingKeyReq = {
-        socket: { remoteAddress: '172.18.0.1' },
-        headers: {},
-      } as any;
-      expect(() => controller.getDemoTokens(missingKeyReq)).toThrow(ForbiddenException);
-
-      delete process.env.DEV_DEMO_KEY;
-    });
-
-    it('strictly rejects in production even if ALLOW_DEMO_TOKENS=true is set (no backdoor)', () => {
-      process.env.NODE_ENV = 'production';
-      process.env.ALLOW_DEMO_TOKENS = 'true';
-      expect(() =>
-        controller.getDemoTokens({
-          socket: { remoteAddress: '127.0.0.1' },
-          headers: {},
-        } as any),
-      ).toThrow(UnauthorizedException);
-      delete process.env.ALLOW_DEMO_TOKENS;
-    });
-  });
-
-  describe('resetDemoState', () => {
-    it('executes scoped in-memory demo reset and never allows global reset override', () => {
-      process.env.ALLOW_GLOBAL_DEMO_RESET = 'true'; // Attempt to trigger unsafe global wipe
-      const result = controller.resetDemoState({
-        socket: { remoteAddress: '127.0.0.1' },
-        headers: {},
-      } as any);
-
-      expect(result.success).toBe(true);
-      expect(result.mode).toBe('scoped_fixtures');
-      expect(result.cleared).toEqual({
-        inMemoryOrders: true,
-        qrSeenNonces: true,
-        realtimeChannels: true,
-        persistentDatabaseRecords: false,
+      const result = await controller.authenticateWithQr({
+        qrToken: 'valid.signed.token',
       });
-      // Global wipe methods must NEVER be called
-      expect(mockQrTokenService.reset).not.toHaveBeenCalled();
-      expect(mockDemoOrderRepository.reset).not.toHaveBeenCalled();
-      expect(mockRealtimeService.clearAll).not.toHaveBeenCalled();
 
-      // Scoped methods MUST be called
-      expect(mockQrTokenService.resetDemoNonces).toHaveBeenCalledTimes(1);
-      expect(mockDemoOrderRepository.resetScopedOrders).toHaveBeenCalledTimes(
-        1,
-      );
-      expect(mockRealtimeService.resetScopedChannels).toHaveBeenCalledTimes(1);
-      delete process.env.ALLOW_GLOBAL_DEMO_RESET;
-    });
-
-    it('rejects destructive demo reset on spoofed localhost Host header from non-local socket', () => {
-      process.env.NODE_ENV = 'development';
-      const spoofedReq = {
-        hostname: 'localhost',
-        headers: { host: 'localhost' },
-        socket: { remoteAddress: '198.51.100.24' },
-      } as any;
-      expect(() => controller.resetDemoState(spoofedReq)).toThrow(
-        ForbiddenException,
-      );
-    });
-
-    it('rejects destructive demo reset on forwarded IP headers without developer key', () => {
-      process.env.NODE_ENV = 'development';
-      const forwardedReq = {
-        headers: { 'x-forwarded-for': '127.0.0.1' },
-        socket: { remoteAddress: '198.51.100.24' },
-      } as any;
-      expect(() => controller.resetDemoState(forwardedReq)).toThrow(
-        ForbiddenException,
-      );
-    });
-
-    it('rejects destructive demo reset when routed through local reverse proxy without dev key', () => {
-      process.env.NODE_ENV = 'development';
-      const proxiedReq = {
-        headers: {
-          'x-forwarded-for': '203.0.113.195',
-          'x-forwarded-proto': 'https',
-        },
-        socket: { remoteAddress: '127.0.0.1' },
-      } as any;
-      expect(() => controller.resetDemoState(proxiedReq)).toThrow(
-        ForbiddenException,
-      );
-    });
-
-    it('rejects destructive demo reset on missing or invalid developer authorization', () => {
-      process.env.NODE_ENV = 'development';
-      process.env.DEV_DEMO_KEY = 'correct-key';
-
-      // Missing key
-      const missingKeyReq = {
-        headers: {},
-        socket: { remoteAddress: '127.0.0.1' },
-      } as any;
-      expect(() => controller.resetDemoState(missingKeyReq)).toThrow(
-        ForbiddenException,
-      );
-
-      // Wrong key
-      const wrongKeyReq = {
-        headers: { 'x-developer-key': 'incorrect-token' },
-        socket: { remoteAddress: '127.0.0.1' },
-      } as any;
-      expect(() => controller.resetDemoState(wrongKeyReq)).toThrow(
-        ForbiddenException,
-      );
-
-      delete process.env.DEV_DEMO_KEY;
-    });
-
-    it('allows destructive demo reset when caller supplies valid DEV_DEMO_KEY', () => {
-      process.env.NODE_ENV = 'development';
-      process.env.DEV_DEMO_KEY = 'secret-dev-key';
-      const authReq = {
-        socket: { remoteAddress: '198.51.100.24' },
-        headers: { 'x-developer-key': 'secret-dev-key' },
-      } as any;
-      const result = controller.resetDemoState(authReq);
-      expect(result.success).toBe(true);
-      delete process.env.DEV_DEMO_KEY;
-    });
-
-    it('rejects destructive demo reset from unauthorized private-LAN and Docker bridge clients without developer key', () => {
-      process.env.NODE_ENV = 'development';
-      const unauthorizedIps = [
-        '192.168.1.100',
-        '10.0.0.50',
-        '172.17.0.1',
-        '172.18.0.1',
-        '192.168.65.1',
-      ];
-      for (const ip of unauthorizedIps) {
-        const req = {
-          socket: { remoteAddress: ip },
-          headers: {},
-        } as any;
-        expect(() => controller.resetDemoState(req)).toThrow(ForbiddenException);
-      }
-    });
-
-    it('allows destructive demo reset from Docker bridge when valid developer key is supplied', () => {
-      process.env.NODE_ENV = 'development';
-      process.env.DEV_DEMO_KEY = 'docker-reset-key';
-
-      const dockerReq = {
-        socket: { remoteAddress: '172.18.0.1' },
-        headers: { 'x-developer-key': 'docker-reset-key' },
-      } as any;
-      const result = controller.resetDemoState(dockerReq);
-      expect(result.success).toBe(true);
-
-      delete process.env.DEV_DEMO_KEY;
-    });
-
-    it('unconditionally rejects demo reset in production mode regardless of developer key or loopback IP', () => {
-      process.env.NODE_ENV = 'production';
-      process.env.DEV_DEMO_KEY = 'secret-dev-key';
-      const prodReq = {
-        headers: { 'x-developer-key': 'secret-dev-key' },
-        socket: { remoteAddress: '127.0.0.1' },
-      } as any;
-      expect(() => controller.resetDemoState(prodReq)).toThrow(
-        UnauthorizedException,
-      );
-      delete process.env.DEV_DEMO_KEY;
-    });
-
-    it('rejects demo reset with UnauthorizedException when DEMO_MODE is not true', () => {
-      process.env.DEMO_MODE = 'false';
-      expect(() =>
-        controller.resetDemoState({
-          socket: { remoteAddress: '127.0.0.1' },
-          headers: {},
-        } as any),
-      ).toThrow(UnauthorizedException);
+      expect(result.sessionToken).toBe('jwt-guest-token');
+      expect(result.roomNumber).toBe('101');
     });
   });
 

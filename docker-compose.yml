@@ -17,7 +17,6 @@ services:
       - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
       - MOCK_EXTERNAL_SERVICES=${MOCK_EXTERNAL_SERVICES:-true}
       - DEMO_MODE=${DEMO_MODE:-true}
-      - DEV_DEMO_KEY=${DEV_DEMO_KEY:-development-demo-admin-key-at-least-32-chars}
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:4300/health/live"]
       interval: 10s
@@ -43,7 +42,6 @@ services:
       - NEXT_PUBLIC_GATEWAY_URL=${NEXT_PUBLIC_GATEWAY_URL:-http://localhost:8080}
       - INTERNAL_API_URL=http://backend:4300
       - DEMO_MODE=${DEMO_MODE:-true}
-      - DEV_DEMO_KEY=${DEV_DEMO_KEY:-development-demo-admin-key-at-least-32-chars}
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3000/"]
       interval: 15s

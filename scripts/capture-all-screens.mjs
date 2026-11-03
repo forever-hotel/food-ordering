@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -127,11 +128,22 @@ async function main() {
     const shot1 = await client.send('Page.captureScreenshot', { format: 'png' });
     fs.writeFileSync(path.join(OUTPUT_DIR, 'current_fig31_qr_scan.png'), Buffer.from(shot1.data, 'base64'));
 
-    // Authenticate session via Demo 103 token (matching approved designs Room 103)
+    // Authenticate session via Room 103 QR token (matching approved designs Room 103)
     console.log('Authenticating session Room 103...');
-    const demoTokenRes = await fetch('http://localhost:4300/foss/guest-sessions/demo-tokens');
-    const demoData = await demoTokenRes.json();
-    const token103 = demoData.tokens['103'] || demoData.tokens['Room 103 (Robert Frost)'] || Object.values(demoData.tokens)[0];
+    const secret =
+      process.env.QR_SIGNING_SECRET ||
+      'development-demo-qr-signing-secret-at-least-32-chars-long';
+    const now = Date.now();
+    const payload = {
+      bookingId: 'b1030000-0000-4000-8000-000000000103',
+      roomNumber: '103',
+      issuedAt: now,
+      expiresAt: now + 24 * 60 * 60 * 1000,
+      nonce: crypto.randomUUID(),
+    };
+    const encodedPayload = Buffer.from(JSON.stringify(payload)).toString('base64url');
+    const signature = crypto.createHmac('sha256', secret).update(encodedPayload).digest('base64url');
+    const token103 = `${encodedPayload}.${signature}`;
 
     await client.send('Runtime.evaluate', {
       expression: `

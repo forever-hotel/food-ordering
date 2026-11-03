@@ -6,6 +6,7 @@
  */
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 
 import {
   redeemQrToken,
@@ -170,6 +171,30 @@ describe(
       await ensureApprovedTestDatabaseVerified();
     });
 
+    function createTestQrToken(
+      bookingId: string,
+      roomNumber: string,
+      ttlMs: number = 24 * 60 * 60 * 1000,
+    ): string {
+      const secret =
+        process.env.QR_SIGNING_SECRET ||
+        'development-demo-qr-signing-secret-at-least-32-chars-long';
+      const now = Date.now();
+      const payload = {
+        bookingId: bookingId.trim(),
+        roomNumber: roomNumber.trim(),
+        issuedAt: now,
+        expiresAt: now + ttlMs,
+        nonce: crypto.randomUUID(),
+      };
+      const encodedPayload = Buffer.from(JSON.stringify(payload)).toString('base64url');
+      const signature = crypto
+        .createHmac('sha256', secret)
+        .update(encodedPayload)
+        .digest('base64url');
+      return `${encodedPayload}.${signature}`;
+    }
+
     async function getOrInitTokens(): Promise<{
       token101: string;
       token102: string;
@@ -178,16 +203,15 @@ describe(
       if (!tokensPromise) {
         tokensPromise = (async () => {
           await ensureApprovedTestDatabaseVerified();
-          demoTokensMap = await fetchDemoTokens();
-          const token101Qr = demoTokensMap['101'] || demoTokensMap['Room 101 (John Doe)'];
+          const token101Qr = createTestQrToken('b1010000-0000-4000-8000-000000000101', '101');
           const session101 = await redeemQrToken(token101Qr);
           room101Token = session101.sessionToken;
 
-          const token102Qr = demoTokensMap['102'] || demoTokensMap['Room 102 (Jane Smith)'];
+          const token102Qr = createTestQrToken('b1020000-0000-4000-8000-000000000102', '102');
           const session102 = await redeemQrToken(token102Qr);
           room102Token = session102.sessionToken;
 
-          const token103Qr = demoTokensMap['103'] || demoTokensMap['Room 103 (Robert Frost)'];
+          const token103Qr = createTestQrToken('b1030000-0000-4000-8000-000000000103', '103');
           const session103 = await redeemQrToken(token103Qr);
           room103Token = session103.sessionToken;
 
@@ -197,15 +221,15 @@ describe(
       return tokensPromise;
     }
 
-    it('1. Verifies NestJS backend health, database isolation target, and retrieves demo tokens', async () => {
+    it('1. Verifies NestJS backend health, database isolation target, and confirms demo tokens HTTP route is retired', async () => {
       await ensureApprovedTestDatabaseVerified();
 
       demoTokensMap = await fetchDemoTokens();
-      assert.ok(demoTokensMap);
-      assert.ok(demoTokensMap['101'] || demoTokensMap['Room 101 (John Doe)']);
-      assert.ok(demoTokensMap['102'] || demoTokensMap['Room 102 (Jane Smith)']);
-      assert.ok(demoTokensMap['103'] || demoTokensMap['Room 103 (Robert Frost)']);
-      assert.ok(demoTokensMap['999'] || demoTokensMap['Room 999 (Expired Session)']);
+      assert.deepEqual(demoTokensMap, {});
+
+      // Confirm backend /guest-sessions/demo-tokens returns 404
+      const res = await fetch(`${BACKEND_URL}/guest-sessions/demo-tokens`);
+      assert.equal(res.status, 404);
     });
 
     it('2. Authenticates Guest QR tokens via redeemQrToken() into genuine database sessions', async () => {
@@ -217,7 +241,11 @@ describe(
 
     it('3. Rejects expired stay scenarios with 401 Unauthorized via redeemQrToken()', async () => {
       await getOrInitTokens();
-      const tokenExpiredQr = demoTokensMap['999'] || demoTokensMap['Room 999 (Expired Session)'];
+      const tokenExpiredQr = createTestQrToken(
+        'b9990000-0000-4000-8000-000000000999',
+        '999',
+        -24 * 60 * 60 * 1000,
+      );
       await assert.rejects(
         async () => redeemQrToken(tokenExpiredQr),
         (err: unknown) => {
@@ -520,11 +548,11 @@ describe(
       );
     });
 
-    it('15. Executes development demo-reset via resetBackendDemo()', async () => {
+    it('15. Validates retired demo-reset handling via resetBackendDemo()', async () => {
       await ensureApprovedTestDatabaseVerified();
       const resetResult = await resetBackendDemo();
       assert.equal(resetResult.success, true);
-      assert.match(resetResult.message, /reset successfully/i);
+      assert.match(resetResult.message, /retired/i);
     });
 
     it('16. Validates session logout and subsequent revocation via logoutSession()', async () => {

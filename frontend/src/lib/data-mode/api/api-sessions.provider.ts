@@ -46,21 +46,13 @@ export class ApiSessionsProvider implements SessionsProvider {
   }
 
   async resetDemo(): Promise<{ success: boolean; message: string }> {
-    const response = await fetch(`${API_URL}/guest-sessions/demo-reset`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-
-    const body = await response.json().catch(() => null);
-
-    if (!response.ok) {
-      const errorMsg = body?.message || 'Failed to reset backend demo state.';
-      throw new ApiError(errorMsg, response.status, body);
-    }
-
-    return body as { success: boolean; message: string };
+    // Demo reset HTTP endpoint has been retired (#101).
+    // State reset is only available in isolated mock mode via DemoSessionsProvider.
+    return {
+      success: true,
+      message:
+        'Demo reset HTTP endpoint retired. Live API mode uses legitimate backend session lifecycle.',
+    };
   }
 
   async fetchCurrentSession(sessionToken: string): Promise<GuestContext> {
@@ -110,33 +102,8 @@ export class ApiSessionsProvider implements SessionsProvider {
   }
 
   async fetchDemoTokens(): Promise<Record<string, string>> {
-    try {
-      // 1. In browser environment, check same-origin server development proxy first
-      if (typeof window !== 'undefined') {
-        const devProxyRes = await fetch('/api/dev/demo-tokens', {
-          method: 'GET',
-          headers: { Accept: 'application/json' },
-        }).catch(() => null);
-
-        if (devProxyRes && devProxyRes.ok) {
-          const devBody = await devProxyRes.json().catch(() => null);
-          if (devBody?.tokens && Object.keys(devBody.tokens).length > 0) {
-            return devBody.tokens;
-          }
-        }
-      }
-
-      // 2. Direct backend endpoint (for Node.js integration tests or genuine loopback dev)
-      const response = await fetch(`${API_URL}/guest-sessions/demo-tokens`, {
-        method: 'GET',
-      });
-      if (!response.ok) {
-        return {};
-      }
-      const body = await response.json();
-      return body?.tokens || {};
-    } catch {
-      return {};
-    }
+    // Production & live API mode does not expose demo-token retrieval endpoints (#101).
+    // Real QR activation via redeemQrToken is required to establish authenticated backend sessions.
+    return {};
   }
 }

@@ -3,6 +3,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Button, Modal, Spin, Typography } from 'antd';
 
+import { getDataMode } from '../../../lib/data-mode/data-mode.ts';
+
 const { Text, Paragraph } = Typography;
 
 interface QrScannerModalProps {
@@ -256,11 +258,11 @@ export function QrScannerModal({ open, onClose, onScan, demoTokens = {} }: QrSca
           </div>
         )}
 
-        {/* Demo QR Simulator (disabled in production environments) */}
-        {!isProduction && (
+        {/* Demo QR Simulator (operational ONLY in isolated frontend mock mode; hidden in live API mode) */}
+        {!isProduction && getDataMode() === 'demo' && Object.keys(demoTokens).length > 0 && (
           <div className="w-full mt-4 pt-3 border-t border-slate-100">
             <Text className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-2 text-center">
-              Development QR Simulator
+              Mock Mode QR Simulator
             </Text>
             <div className="grid grid-cols-2 gap-2">
               <Button

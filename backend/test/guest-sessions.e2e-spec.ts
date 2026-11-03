@@ -240,30 +240,17 @@ describe('Guest Sessions Lifecycle (e2e)', () => {
     });
   });
 
-  describe('GET /guest-sessions/demo-tokens', () => {
-    it('TC-DDP-123-AC4: returns pre-signed demo tokens for testing and demo flows', async () => {
-      const response = await request(app.getHttpServer())
+  describe('Retired Demo Utility Endpoints (#101)', () => {
+    it('returns 404 Not Found for GET /guest-sessions/demo-tokens (retired endpoint)', async () => {
+      await request(app.getHttpServer())
         .get('/guest-sessions/demo-tokens')
-        .expect(200);
-
-      expect(response.body.tokens).toBeDefined();
-      expect(response.body.tokens['101-checked-in']).toBeDefined();
-      expect(response.body.tokens['102-reserved']).toBeDefined();
+        .expect(404);
     });
-  });
 
-  describe('POST /guest-sessions/demo-reset', () => {
-    it('executes scoped demo reset and preserves database records', async () => {
-      const response = await request(app.getHttpServer())
+    it('returns 404 Not Found for POST /guest-sessions/demo-reset (retired endpoint)', async () => {
+      await request(app.getHttpServer())
         .post('/guest-sessions/demo-reset')
-        .expect(200);
-
-      expect(response.body.success).toBe(true);
-      expect(response.body.mode).toBe('scoped_fixtures');
-      expect(response.body.cleared.inMemoryOrders).toBe(true);
-      expect(response.body.cleared.qrSeenNonces).toBe(true);
-      expect(response.body.cleared.realtimeChannels).toBe(true);
-      expect(response.body.cleared.persistentDatabaseRecords).toBe(false);
+        .expect(404);
     });
   });
 });

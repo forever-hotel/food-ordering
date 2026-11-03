@@ -1,15 +1,11 @@
-import * as crypto from 'node:crypto';
 import {
   BadRequestException,
   Body,
   Controller,
-  ForbiddenException,
-  forwardRef,
   Get,
   Header,
   HttpCode,
   HttpStatus,
-  Inject,
   Optional,
   Param,
   Post,
@@ -22,8 +18,6 @@ import type { Request } from 'express';
 
 import { InternalServiceGuard } from '../../common/auth/internal-service.guard.js';
 import { RoomOwnershipGuard } from '../../common/auth/room-ownership.guard.js';
-import { RealtimeService } from '../../realtime/realtime.service.js';
-import { FossDemoOrderRepository } from '../food-orders/repositories/foss-demo-order.repository.js';
 import { CurrentGuest } from './decorators/current-guest.decorator.js';
 import {
   FdsCheckoutEventDto,
@@ -39,143 +33,6 @@ import { GuestSessionsService } from './services/guest-sessions.service.js';
 import { QrActivationService } from './services/qr-activation.service.js';
 import { QrTokenService } from './services/qr-token.service.js';
 
-export const AUTHORIZED_DEMO_BOOKING_IDS = new Set<string>([
-  'b1010000-0000-4000-8000-000000000101',
-  'b1020000-0000-4000-8000-000000000102',
-  'b1030000-0000-4000-8000-000000000103',
-  'b2040000-0000-4000-8000-000000000204',
-  'b9990000-0000-4000-8000-000000000999',
-  'b1040000-0000-4000-8000-000000000104',
-  'b1050000-0000-4000-8000-000000000105',
-  'b1060000-0000-4000-8000-000000000106',
-]);
-
-export const AUTHORIZED_DEMO_STAYS: Array<{
-  bookingId: string;
-  roomNumber: string;
-}> = [
-  { bookingId: 'b1010000-0000-4000-8000-000000000101', roomNumber: '101' },
-  { bookingId: 'b1020000-0000-4000-8000-000000000102', roomNumber: '102' },
-  { bookingId: 'b1030000-0000-4000-8000-000000000103', roomNumber: '103' },
-  { bookingId: 'b2040000-0000-4000-8000-000000000204', roomNumber: '204' },
-  { bookingId: 'b9990000-0000-4000-8000-000000000999', roomNumber: '999' },
-  { bookingId: 'b1040000-0000-4000-8000-000000000104', roomNumber: '104' },
-  { bookingId: 'b1050000-0000-4000-8000-000000000105', roomNumber: '105' },
-  { bookingId: 'b1060000-0000-4000-8000-000000000106', roomNumber: '106' },
-];
-
-function isDevAuthorized(req?: Request): boolean {
-  if (!req) return false;
-  const devKey =
-    (req.headers?.['x-developer-key'] as string) ||
-    (req.headers?.['x-demo-admin-key'] as string);
-  const expectedKey = process.env.DEV_DEMO_KEY;
-
-  if (!expectedKey || !devKey) {
-    return false;
-  }
-
-  try {
-    const devKeyBuf = Buffer.from(devKey, 'utf8');
-    const expectedKeyBuf = Buffer.from(expectedKey, 'utf8');
-    if (devKeyBuf.length !== expectedKeyBuf.length) {
-      return false;
-    }
-    return crypto.timingSafeEqual(devKeyBuf, expectedKeyBuf);
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Validates access to demo endpoints.
- *
- * Rules:
- * 1. Production must reject all demo operations unconditionally.
- * 2. Only active when DEMO_MODE=true in non-production environments.
- * 3. Never trusts HTTP Host headers (e.g. Host: localhost) or forwarded client IP headers.
- * 4. Requests routed through a reverse proxy or gateway cannot bypass developer authorization.
- * 5. Direct local-only access is permitted ONLY via unproxied loopback socket connection when DEV_DEMO_KEY is not set.
- */
-function assertDemoAccessAuthorized(
-  req?: Request,
-  operationName: string = 'Demo operations',
-): void {
-  // 1. Unconditional production rejection
-  if (process.env.NODE_ENV === 'production') {
-    throw new UnauthorizedException(
-      `${operationName} are strictly disabled in production environments.`,
-    );
-  }
-
-  // 2. Must be in development or test environment with DEMO_MODE enabled
-  const isDevOrTest =
-    !process.env.NODE_ENV ||
-    process.env.NODE_ENV === 'development' ||
-    process.env.NODE_ENV === 'test';
-  const isDemo = process.env.DEMO_MODE === 'true';
-
-  if (!isDevOrTest || !isDemo) {
-    throw new UnauthorizedException(
-      `${operationName} are strictly disabled in unauthorized environments.`,
-    );
-  }
-
-  // Check developer authorization first (constant-time token comparison)
-  if (isDevAuthorized(req)) {
-    return;
-  }
-
-  // If DEV_DEMO_KEY is configured and token did not match, reject immediately
-  if (process.env.DEV_DEMO_KEY) {
-    throw new ForbiddenException(
-      `${operationName} require valid developer authorization.`,
-    );
-  }
-
-  // For internal mock calls in unit tests without a request object
-  if (!req && process.env.NODE_ENV === 'test') {
-    return;
-  }
-
-  if (!req) {
-    throw new ForbiddenException(
-      `${operationName} require a valid request context or developer authorization.`,
-    );
-  }
-
-  // 3. Reverse proxy / Gateway protection:
-  // If ANY forwarded headers exist, the request was routed through a reverse proxy or gateway.
-  // In that case, loopback socket IP alone cannot be trusted to represent a local developer.
-  const hasForwardedHeaders = Boolean(
-    req.headers?.['x-forwarded-for'] ||
-    req.headers?.['x-forwarded-host'] ||
-    req.headers?.['x-forwarded-proto'],
-  );
-
-  if (hasForwardedHeaders) {
-    throw new ForbiddenException(
-      `Access through a reverse proxy or gateway requires valid developer authorization.`,
-    );
-  }
-
-  // 4. Physical socket check: inspect direct TCP socket address only.
-  // Do NOT trust req.hostname or Host header.
-  // Direct unauthenticated access is permitted ONLY via genuine unproxied loopback socket connection (127.0.0.1, ::1, ::ffff:127.0.0.1) when DEV_DEMO_KEY is not set.
-  // Non-loopback callers (including private LANs and Docker bridge gateways) require explicit developer authorization.
-  const remoteIp = req.socket?.remoteAddress;
-  const isLoopbackSocket =
-    remoteIp === '127.0.0.1' ||
-    remoteIp === '::1' ||
-    remoteIp === '::ffff:127.0.0.1';
-
-  if (!isLoopbackSocket) {
-    throw new ForbiddenException(
-      `${operationName} require direct local-only access or valid developer authorization.`,
-    );
-  }
-}
-
 interface AuthenticatedRequest extends Request {
   guest: GuestContext;
   sessionToken: string;
@@ -187,12 +44,6 @@ export class GuestSessionsController {
     private readonly guestSessionsService: GuestSessionsService,
     private readonly qrTokenService: QrTokenService,
     @Optional() private readonly qrActivationService?: QrActivationService,
-    @Optional()
-    @Inject(forwardRef(() => FossDemoOrderRepository))
-    private readonly demoOrderRepository?: FossDemoOrderRepository,
-    @Optional()
-    @Inject(forwardRef(() => RealtimeService))
-    private readonly realtimeService?: RealtimeService,
   ) {}
 
   /**
@@ -340,68 +191,6 @@ export class GuestSessionsController {
     @Req() req: AuthenticatedRequest,
   ): Promise<{ success: boolean; message: string }> {
     return this.guestSessionsService.logout(req.sessionToken);
-  }
-
-  /**
-   * Helper endpoint providing pre-signed QR tokens for demo rooms.
-   * Strictly disabled in production and unauthorized environments.
-   * Requires trusted local-only access or valid developer authorization.
-   */
-  @Get('demo-tokens')
-  getDemoTokens(@Req() req?: Request): { tokens: Record<string, string> } {
-    assertDemoAccessAuthorized(req, 'Demo utilities');
-
-    return {
-      tokens: this.qrTokenService.getDemoTokens(),
-    };
-  }
-
-  /**
-   * Development-only demo reset endpoint.
-   * Cleans authorized demo in-memory state:
-   * 1. QrTokenService redeemed nonces
-   * 2. FossDemoOrderRepository in-memory demonstration food orders
-   * 3. RealtimeService stay channels, subscriptions, and buffered events
-   *
-   * Gated strictly by DEMO_MODE=true and non-production development/test environment.
-   * Destructive operation: requires trusted local-only access or developer authorization.
-   * Reverse proxy / Gateway protection: requests through proxies cannot bypass developer authorization.
-   * Multi-tenant safety: scoped demonstration reset only. Unrelated sessions remain preserved.
-   * Never modifies persistent PostgreSQL records.
-   */
-  @Post('demo-reset')
-  @HttpCode(HttpStatus.OK)
-  resetDemoState(@Req() req?: Request): {
-    success: boolean;
-    message: string;
-    mode: 'scoped_fixtures';
-    cleared: {
-      inMemoryOrders: boolean;
-      qrSeenNonces: boolean;
-      realtimeChannels: boolean;
-      persistentDatabaseRecords: boolean;
-    };
-  } {
-    assertDemoAccessAuthorized(req, 'Destructive demo operations');
-
-    // Scoped reset: cleans only authorized demonstration fixtures to guarantee session isolation.
-    // Global reset is strictly disabled to prevent clearing unrelated in-memory state.
-    this.qrTokenService.resetDemoNonces();
-    this.demoOrderRepository?.resetScopedOrders(AUTHORIZED_DEMO_BOOKING_IDS);
-    this.realtimeService?.resetScopedChannels(AUTHORIZED_DEMO_STAYS);
-
-    return {
-      success: true,
-      message:
-        'Authorized demo in-memory state and fixture channels reset successfully (scoped). Session isolation preserved.',
-      mode: 'scoped_fixtures',
-      cleared: {
-        inMemoryOrders: true,
-        qrSeenNonces: true,
-        realtimeChannels: true,
-        persistentDatabaseRecords: false,
-      },
-    };
   }
 
   /**

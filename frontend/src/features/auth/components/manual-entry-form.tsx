@@ -74,31 +74,33 @@ export function ManualEntryForm({ loading, onSubmit, demoTokens = {} }: ManualEn
         </Button>
       </form>
 
-      {/* Demo shortcuts helper */}
-      <div className="text-center mt-3">
-        <button
-          type="button"
-          onClick={() => setShowDemoChips(!showDemoChips)}
-          className="text-xs text-slate-500 hover:text-slate-700 underline focus:outline-none"
-        >
-          {showDemoChips ? 'Hide demo codes' : 'Quick demo access codes'}
-        </button>
+      {/* Demo shortcuts helper (rendered ONLY in isolated frontend mock mode when demo tokens are present) */}
+      {Object.keys(demoTokens).length > 0 && (
+        <div className="text-center mt-3">
+          <button
+            type="button"
+            onClick={() => setShowDemoChips(!showDemoChips)}
+            className="text-xs text-slate-500 hover:text-slate-700 underline focus:outline-none"
+          >
+            {showDemoChips ? 'Hide demo codes' : 'Quick demo access codes'}
+          </button>
 
-        {showDemoChips && (
-          <div className="mt-2 flex flex-wrap gap-1.5 justify-center">
-            {Object.keys(demoTokens).map((key) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => handleSelectDemo(key)}
-                className="text-[11px] bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-1 rounded border border-slate-200 transition-colors"
-              >
-                {key}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
+          {showDemoChips && (
+            <div className="mt-2 flex flex-wrap gap-1.5 justify-center">
+              {Object.keys(demoTokens).map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => handleSelectDemo(key)}
+                  className="text-[11px] bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-1 rounded border border-slate-200 transition-colors"
+                >
+                  {key}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
