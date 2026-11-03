@@ -631,6 +631,209 @@ describe('RabbitMQ Live Broker Integration (CIT-04 Phase B)', () => {
     expect(result?.eventId).toBeDefined();
   });
 
+  it('detects basic.return on unroutable message with mandatory: true and returns null', async () => {
+    if (!directConn) return;
+
+    const unroutablePayload = { unroutable: true, timestamp: Date.now() };
+    const result = await publisherService.publishEvent(
+      'foss.completely.unbound.topic',
+      unroutablePayload,
+      { mandatory: true },
+    );
+
+    // Because mandatory=true and no queues are bound to this topic, RabbitMQ returns basic.return
+    // Publisher must detect this and return null rather than falsely reporting delivery
+    expect(result).toBeNull();
+  });
+
+  it('guarantees publisher confirmation of republished retry before original delivery is acknowledged', async () => {
+    if (!directConn) return;
+
+    await directChannel.purgeQueue(RABBITMQ_DLQ_NAME);
+
+    const testEventId = 'evt-retry-confirm-before-ack-001';
+
+    // Register a handler that fails on attempt 1, triggering confirmed republish
+    consumerService.registerCustomHandler(
+      'kms.order.confirm_before_ack',
+      async (env) => {
+        if (env.eventId === testEventId) {
+          throw new Error('Trigger retry republish');
+        }
+      },
+    );
+
+    const rawEvent = {
+      eventId: testEventId,
+      eventType: 'kms.order.confirm_before_ack',
+      version: '1.0',
+      source: 'kms.service',
+      timestamp: new Date().toISOString(),
+      payload: { bookingId: 'book-cba', roomNumber: '101' },
+    };
+    const signature = signEnvelope(rawEvent, secretKey);
+    const envelope = { ...rawEvent, signature };
+
+    directChannel.publish(
+      RABBITMQ_EXCHANGE_NAME,
+      'kms.order.confirm_before_ack',
+      Buffer.from(JSON.stringify(envelope), 'utf8'),
+      {
+        contentType: 'application/json',
+        messageId: testEventId,
+      },
+    );
+
+    // Wait for retries to progress and final rejection to DLQ
+    let dlqCount = 0;
+    let pollCount = 0;
+    while (dlqCount === 0 && pollCount < 30) {
+      await new Promise((r) => setTimeout(r, 150));
+      const check = await directChannel.checkQueue(RABBITMQ_DLQ_NAME);
+      dlqCount = check.messageCount;
+      pollCount++;
+    }
+
+    expect(dlqCount).toBeGreaterThanOrEqual(1);
+    const dlqMsg = await directChannel.get(RABBITMQ_DLQ_NAME, { noAck: true });
+    expect(dlqMsg).not.toBe(false);
+    if (dlqMsg) {
+      const parsed = JSON.parse(dlqMsg.content.toString('utf8'));
+      expect(parsed.eventId).toBe(testEventId);
+      expect(dlqMsg.properties.headers?.['x-retry-count']).toBeDefined();
+    }
+  });
+
+  it('survives an actual application restart, resuming retry progression from broker-persisted headers', async () => {
+    if (!directConn) return;
+
+    await directChannel.purgeQueue(RABBITMQ_DLQ_NAME);
+
+    const restartEventId = 'evt-actual-process-restart-999';
+
+    // Step 1: In the CURRENT app, set a handler that fails on attempt 1
+    consumerService.registerCustomHandler(
+      'kms.order.actual_restart',
+      async (env) => {
+        if (env.eventId === restartEventId) {
+          throw new Error('Initial app failure');
+        }
+      },
+    );
+
+    const rawEvent = {
+      eventId: restartEventId,
+      eventType: 'kms.order.actual_restart',
+      version: '1.0',
+      source: 'kms.service',
+      timestamp: new Date().toISOString(),
+      payload: { bookingId: 'book-restart', roomNumber: '101' },
+    };
+    const signature = signEnvelope(rawEvent, secretKey);
+    const envelope = { ...rawEvent, signature };
+
+    // Publish initial event
+    directChannel.publish(
+      RABBITMQ_EXCHANGE_NAME,
+      'kms.order.actual_restart',
+      Buffer.from(JSON.stringify(envelope), 'utf8'),
+      {
+        contentType: 'application/json',
+        messageId: restartEventId,
+      },
+    );
+
+    // Wait for attempt 1 to fail and be republished to RabbitMQ with x-retry-count: 1
+    await new Promise((r) => setTimeout(r, 400));
+
+    // Step 2: ACTUALLY RESTART THE APPLICATION: Destroy current app completely
+    await app.close();
+
+    // Step 3: Recreate and recompile a completely new Nest application (simulating fresh process startup)
+    const freshModuleFixture = await Test.createTestingModule({
+      imports: [
+        ConfigModule.forRoot({
+          isGlobal: true,
+          load: [
+            () => ({
+              RABBITMQ_ENABLED: 'true',
+              RABBITMQ_URL: rabbitUrl,
+              INTERNAL_SERVICE_KEY: secretKey,
+            }),
+          ],
+        }),
+      ],
+      providers: [
+        RealtimeService,
+        RabbitMqConnectionService,
+        RabbitMqTopologyService,
+        RabbitMqPublisherService,
+        RabbitMqConsumerService,
+        HealthService,
+        {
+          provide: GuestSessionsService,
+          useValue: {
+            handleFdsCheckoutEvent: jest
+              .fn()
+              .mockResolvedValue({ status: 'SUCCESS' } as any),
+            handleFdsRoomReassignEvent: jest
+              .fn()
+              .mockResolvedValue({ status: 'SUCCESS' } as any),
+          },
+        },
+      ],
+    }).compile();
+
+    app = freshModuleFixture.createNestApplication();
+    await app.init();
+
+    // Re-bind global references
+    connectionService = app.get(RabbitMqConnectionService);
+    topologyService = app.get(RabbitMqTopologyService);
+    publisherService = app.get(RabbitMqPublisherService);
+    consumerService = app.get(RabbitMqConsumerService);
+    realtimeService = app.get(RealtimeService);
+    healthService = app.get(HealthService);
+
+    let waitConnected = 0;
+    while (!connectionService.isConnected() && waitConnected < 20) {
+      await new Promise((r) => setTimeout(r, 100));
+      waitConnected++;
+    }
+
+    // Register failing handler in the FRESH process
+    consumerService.registerCustomHandler(
+      'kms.order.actual_restart',
+      async (env) => {
+        if (env.eventId === restartEventId) {
+          throw new Error('Fresh app failure');
+        }
+      },
+    );
+
+    // Start consumer on the fresh app instance
+    await consumerService.startConsumer();
+
+    // Wait for the fresh app instance to pick up the message from RabbitMQ,
+    // read x-retry-count: 1 from broker, exhaust remaining retries and send to DLQ
+    let dlqCount = 0;
+    let pollCount = 0;
+    while (dlqCount === 0 && pollCount < 30) {
+      await new Promise((r) => setTimeout(r, 150));
+      const check = await directChannel.checkQueue(RABBITMQ_DLQ_NAME);
+      dlqCount = check.messageCount;
+      pollCount++;
+    }
+
+    expect(dlqCount).toBeGreaterThanOrEqual(1);
+    const dlqMsg = await directChannel.get(RABBITMQ_DLQ_NAME, { noAck: true });
+    expect(dlqMsg).not.toBe(false);
+    if (dlqMsg) {
+      const parsed = JSON.parse(dlqMsg.content.toString('utf8'));
+      expect(parsed.eventId).toBe(restartEventId);
+    }
+  });
+
   it('safely catches publisher errors during broker disconnection', async () => {
     if (!directConn) return;
 

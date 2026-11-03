@@ -170,14 +170,12 @@ export class RabbitMqConsumerService implements OnModuleInit, OnModuleDestroy {
       );
     }
 
-    const redeliveryIncrement =
-      msg.fields.redelivered && headerRetries === 0 && xDeathCount === 0
-        ? 1
-        : 0;
-    const internalRetries = this.retryCounts.get(eventRetryKey) || 0;
-    const currentRetries =
-      Math.max(headerRetries, xDeathCount, internalRetries) +
-      redeliveryIncrement;
+    const brokerPersistedRetries = Math.max(headerRetries, xDeathCount);
+    const crashRedelivery = msg.fields.redelivered ? 1 : 0;
+    const currentRetries = Math.max(
+      brokerPersistedRetries + crashRedelivery,
+      this.retryCounts.get(eventRetryKey) || 0,
+    );
 
     if (currentRetries >= RABBITMQ_MAX_RETRIES) {
       this.logger.warn(
@@ -223,7 +221,7 @@ export class RabbitMqConsumerService implements OnModuleInit, OnModuleDestroy {
         channel.nack(msg, false, false);
       } else {
         this.logger.warn(
-          `Retrying event [${envelope.eventId}] (attempt ${nextAttempt}/${RABBITMQ_MAX_RETRIES}) with broker-persisted retry header.`,
+          `Retrying event [${envelope.eventId}] (attempt ${nextAttempt}/${RABBITMQ_MAX_RETRIES}) with broker-confirmed republish before acknowledgement.`,
         );
 
         // Bounded backoff delay before requeuing to avoid CPU hot-loops
@@ -231,31 +229,52 @@ export class RabbitMqConsumerService implements OnModuleInit, OnModuleDestroy {
           setTimeout(r, Math.min(100 * nextAttempt, 1000)),
         );
 
-        try {
-          channel.publish(
-            RABBITMQ_EXCHANGE_NAME,
-            routingKey,
-            msg.content,
-            {
-              ...msg.properties,
-              persistent: true,
-              headers: {
-                ...msg.properties.headers,
-                'x-retry-count': nextAttempt,
-                'x-last-error': String(
-                  processErr instanceof Error
-                    ? processErr.message
-                    : processErr,
-                ),
-              },
-            },
+        const confirmChannel = this.connectionService.getConfirmChannel();
+        if (!confirmChannel || !this.connectionService.isConnected()) {
+          this.logger.warn(
+            `Broker unavailable during retry of [${envelope.eventId}]. Requeueing original delivery to prevent message loss.`,
           );
+          channel.nack(msg, false, true);
+          return;
+        }
+
+        try {
+          // Await broker publisher confirmation before acknowledging the original delivery
+          await new Promise<void>((resolve, reject) => {
+            confirmChannel.publish(
+              RABBITMQ_EXCHANGE_NAME,
+              routingKey,
+              msg.content,
+              {
+                ...msg.properties,
+                persistent: true,
+                headers: {
+                  ...msg.properties.headers,
+                  'x-retry-count': nextAttempt,
+                  'x-last-error': String(
+                    processErr instanceof Error
+                      ? processErr.message
+                      : processErr,
+                  ),
+                },
+              },
+              (err) => {
+                if (err) {
+                  return reject(err);
+                }
+                resolve();
+              },
+            );
+          });
+
+          // ONLY acknowledge original delivery AFTER the republished message is confirmed by broker
           channel.ack(msg);
         } catch (repubErr) {
           this.logger.error(
-            'Failed to republish retry message, falling back to basic.nack requeue:',
+            `Failed to confirm republished retry message for [${envelope.eventId}]. Requeueing original message safely:`,
             repubErr,
           );
+          // Never acknowledge the original delivery if republishing failed
           channel.nack(msg, false, true);
         }
       }

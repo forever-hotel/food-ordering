@@ -13,6 +13,7 @@ import { signEnvelope } from './utils/envelope-signer.js';
 describe('RabbitMqConsumerService', () => {
   let service: RabbitMqConsumerService;
   let mockChannel: Partial<Channel>;
+  let mockConfirmChannel: any;
   let mockRealtimeService: Partial<RealtimeService>;
   let mockGuestSessionsService: Partial<GuestSessionsService>;
   const secretKey = 'test-secret-key-at-least-32-chars-long';
@@ -39,8 +40,25 @@ describe('RabbitMqConsumerService', () => {
       handleFdsRoomReassignEvent: jest.fn().mockResolvedValue({} as any),
     };
 
+    mockConfirmChannel = {
+      publish: jest.fn(
+        (
+          _exchange: string,
+          _routingKey: string,
+          _content: Buffer,
+          _options: any,
+          callback?: (err?: any) => void,
+        ) => {
+          if (callback) callback();
+          return true;
+        },
+      ),
+    };
+
     const mockConnectionService = {
       getChannel: jest.fn().mockReturnValue(mockChannel),
+      getConfirmChannel: jest.fn().mockReturnValue(mockConfirmChannel),
+      isConnected: jest.fn().mockReturnValue(true),
       onConnected: jest.fn((cb) => cb()),
     };
 
@@ -214,7 +232,7 @@ describe('RabbitMqConsumerService', () => {
     expect(mockChannel.ack).toHaveBeenCalledWith(msg);
   });
 
-  it('requeues failed event when retry count is below threshold', async () => {
+  it('republishes with confirmation and acks failed event when retry count is below threshold', async () => {
     const msg = createSignedMessage(
       'kms.order.status_changed',
       { bookingId: 'b1', roomNumber: '101' },
@@ -228,7 +246,19 @@ describe('RabbitMqConsumerService', () => {
 
     await service.handleIncomingMessage(mockChannel as Channel, msg);
 
-    expect(mockChannel.nack).toHaveBeenCalledWith(msg, false, true); // requeue = true
+    expect(mockConfirmChannel.publish).toHaveBeenCalledWith(
+      expect.any(String),
+      'kms.order.status_changed',
+      expect.any(Buffer),
+      expect.objectContaining({
+        persistent: true,
+        headers: expect.objectContaining({
+          'x-retry-count': 2,
+        }),
+      }),
+      expect.any(Function),
+    );
+    expect(mockChannel.ack).toHaveBeenCalledWith(msg);
   });
 
   it('dead-letters failed event when max retries reached', async () => {

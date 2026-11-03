@@ -66,6 +66,20 @@ export class RabbitMqPublisherService {
       return null;
     }
 
+    let returnedUnrouted = false;
+    const returnListener = (returnedMsg: any) => {
+      if (returnedMsg?.properties?.messageId === eventId) {
+        returnedUnrouted = true;
+        this.logger.warn(
+          `Message [${eventId}] with routingKey [${eventType}] was returned unrouted by broker (basic.return).`,
+        );
+      }
+    };
+
+    if (options?.mandatory) {
+      confirmChannel.on('return', returnListener);
+    }
+
     try {
       const content = Buffer.from(JSON.stringify(envelope), 'utf8');
 
@@ -92,6 +106,13 @@ export class RabbitMqPublisherService {
         );
       });
 
+      if (returnedUnrouted) {
+        this.logger.warn(
+          `Publisher mandatory check failed: message [${eventId}] dropped because no queue was bound to routingKey [${eventType}].`,
+        );
+        return null;
+      }
+
       this.logger.log(
         `Published confirmed event [${eventType}] to [${RABBITMQ_EXCHANGE_NAME}] (id: ${eventId}).`,
       );
@@ -103,6 +124,10 @@ export class RabbitMqPublisherService {
       );
       // Return null rather than falsely reporting successful broker delivery
       return null;
+    } finally {
+      if (options?.mandatory) {
+        confirmChannel.off('return', returnListener);
+      }
     }
   }
 }
