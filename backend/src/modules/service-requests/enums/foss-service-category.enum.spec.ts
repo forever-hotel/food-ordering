@@ -25,7 +25,8 @@ describe('FossServiceCategory', () => {
       'LAUNDRY_PICKUP',
       'OTHER',
     ]);
-    expect(Object.values(ActiveFossServiceCategory)).not.toContain('WATER_BOTTLES');
+    expect(Object.values(ActiveFossServiceCategory)).not.toContain(
+      'WATER_BOTTLES',
+    );
   });
 });
-

@@ -24,4 +24,3 @@ export enum ActiveFossServiceCategory {
   LAUNDRY_PICKUP = 'LAUNDRY_PICKUP',
   OTHER = 'OTHER',
 }
-

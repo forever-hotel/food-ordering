@@ -25,7 +25,9 @@
     "migration:generate": "typeorm-ts-node-esm migration:generate -d ./src/database/data-source.ts",
     "migration:show": "typeorm-ts-node-esm migration:show -d ./src/database/data-source.ts",
     "migration:run": "typeorm-ts-node-esm migration:run -d ./src/database/data-source.ts",
-    "migration:revert": "typeorm-ts-node-esm migration:revert -d ./src/database/data-source.ts"
+    "migration:run:ci": "typeorm-ts-node-esm migration:run -d ./src/database/data-source.ci.ts",
+    "migration:revert": "typeorm-ts-node-esm migration:revert -d ./src/database/data-source.ts",
+    "verify:db:ci": "node --loader ts-node/esm ./src/database/scripts/verify-ci-database.ts"
   },
   "dependencies": {
     "@nestjs/common": "^12.0.1",

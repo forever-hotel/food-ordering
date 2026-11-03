@@ -1,5 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 import { assertApprovedDatabaseIdentity } from '../guards/assert-approved-database-identity.js';
+import { assertCiDisposableDatabase } from '../guards/assert-ci-disposable-database.js';
 
 interface ExpectedConstraint {
   tableName: string;
@@ -113,10 +114,24 @@ export class RemoveCrossDomainForeignKeys1791900000008 implements MigrationInter
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     // -------------------------------------------------------------------------
-    // 1. Precondition Gate: Authoritative Neon Branch & Database Identity Check
+    // 1. Precondition Gate: Authoritative Database Identity Check
     // -------------------------------------------------------------------------
+    const isCiDisposable = Boolean(
+      (queryRunner.connection as unknown as Record<string, unknown>)
+        ?.isCiDisposableRunner,
+    );
+
     if (queryRunner.connection) {
-      await assertApprovedDatabaseIdentity(queryRunner.connection, process.env);
+      if (isCiDisposable) {
+        await assertCiDisposableDatabase(
+          queryRunner.connection as unknown as import('typeorm').DataSource,
+        );
+      } else {
+        await assertApprovedDatabaseIdentity(
+          queryRunner.connection,
+          process.env,
+        );
+      }
     }
 
     // -------------------------------------------------------------------------
@@ -165,15 +180,18 @@ export class RemoveCrossDomainForeignKeys1791900000008 implements MigrationInter
       );
     }
 
-    // Validate that all eight cross-subsystem foreign keys exist with exact expected definitions
+    // Validate that all eight cross-subsystem foreign keys exist with exact expected definitions (Neon test branch).
+    // In a fresh disposable CI database, these cross-subsystem foreign keys were never introduced.
+    const missingConstraints: string[] = [];
+    const presentConstraints: ExpectedConstraint[] = [];
+
     for (const expected of EXPECTED_CROSS_SUBSYSTEM_FOREIGN_KEYS) {
       const observed = catalogMap.get(expected.constraintName);
       if (!observed) {
-        throw new Error(
-          `MIGRATION PRECONDITION FAILED: Expected foreign key constraint [${expected.constraintName}] ` +
-            `was not found on table [${expected.tableName}]. Aborting to prevent unintended schema modification.`,
-        );
+        missingConstraints.push(expected.constraintName);
+        continue;
       }
+      presentConstraints.push(expected);
 
       if (
         observed.table_name !== expected.tableName ||
@@ -199,13 +217,33 @@ export class RemoveCrossDomainForeignKeys1791900000008 implements MigrationInter
       }
     }
 
-    // -------------------------------------------------------------------------
-    // 3. Drop Exactly the Eight Validated Cross-Subsystem Foreign Keys
-    // -------------------------------------------------------------------------
-    for (const target of EXPECTED_CROSS_SUBSYSTEM_FOREIGN_KEYS) {
-      await queryRunner.query(
-        `ALTER TABLE "${target.tableName}" DROP CONSTRAINT "${target.constraintName}";`,
-      );
+    if (missingConstraints.length > 0) {
+      // If any constraint is missing on Neon, or if only a subset is missing in CI, abort.
+      if (
+        !isCiDisposable ||
+        missingConstraints.length !==
+          EXPECTED_CROSS_SUBSYSTEM_FOREIGN_KEYS.length
+      ) {
+        throw new Error(
+          `MIGRATION PRECONDITION FAILED: Expected foreign key constraint [${missingConstraints[0]}] ` +
+            `was not found on table [${
+              EXPECTED_CROSS_SUBSYSTEM_FOREIGN_KEYS.find(
+                (k) => k.constraintName === missingConstraints[0],
+              )?.tableName || 'unknown'
+            }]. Aborting to prevent unintended schema modification.`,
+        );
+      }
+      // On fresh CI disposable database where all 8 cross-subsystem foreign keys are absent,
+      // the schema is already cleanly decoupled. No drop DDL needed.
+    } else {
+      // -------------------------------------------------------------------------
+      // 3. Drop Exactly the Eight Validated Cross-Subsystem Foreign Keys
+      // -------------------------------------------------------------------------
+      for (const target of presentConstraints) {
+        await queryRunner.query(
+          `ALTER TABLE "${target.tableName}" DROP CONSTRAINT "${target.constraintName}";`,
+        );
+      }
     }
 
     // -------------------------------------------------------------------------

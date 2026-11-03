@@ -13,7 +13,8 @@ export class CreateServiceRequestDto {
   @ApiProperty({
     enum: ActiveFossServiceCategory,
     example: ActiveFossServiceCategory.TOILETRIES,
-    description: 'Category of service request matching approved active FOSS service options',
+    description:
+      'Category of service request matching approved active FOSS service options',
   })
   @IsNotEmpty({ message: 'requestType is required' })
   @IsEnum(ActiveFossServiceCategory, {

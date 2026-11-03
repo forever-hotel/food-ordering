@@ -9,9 +9,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * Preserves 'WATER_BOTTLES' in the enum for historical stay query compatibility.
  * Configured with transaction = false to ensure safe ALTER TYPE execution across PostgreSQL/Neon environments.
  */
-export class AddToiletriesToServiceRequestCategory1791900000009
-  implements MigrationInterface
-{
+export class AddToiletriesToServiceRequestCategory1791900000009 implements MigrationInterface {
   name = 'AddToiletriesToServiceRequestCategory1791900000009';
   transaction = false;
 

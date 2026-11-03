@@ -194,7 +194,6 @@ describe('ServiceRequestsService', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
-
     it('correctly maps LAUNDRY_PICKUP to WKMS LAUNDRY_PICKUP task', async () => {
       mockRequestRepository.findByIdempotencyKey.mockResolvedValue(null);
       const createTaskSpy = jest.spyOn(mockWkms, 'createTask');
@@ -710,7 +709,9 @@ describe('ServiceRequestsService', () => {
         ),
       ).toBe(TaskType.LAUNDRY_PICKUP);
       expect(
-        service.translateCategoryToWkmsTaskType(ActiveFossServiceCategory.OTHER),
+        service.translateCategoryToWkmsTaskType(
+          ActiveFossServiceCategory.OTHER,
+        ),
       ).toBe(TaskType.OTHER);
     });
 
@@ -720,9 +721,9 @@ describe('ServiceRequestsService', () => {
           FossServiceCategory.WATER_BOTTLES,
         ),
       ).toThrow(BadRequestException);
-      expect(() =>
-        service.translateCategoryToWkmsTaskType('UNKNOWN'),
-      ).toThrow(BadRequestException);
+      expect(() => service.translateCategoryToWkmsTaskType('UNKNOWN')).toThrow(
+        BadRequestException,
+      );
       expect(() =>
         service.translateCategoryToWkmsTaskType('LUGGAGE_ASSISTANCE'),
       ).toThrow(BadRequestException);

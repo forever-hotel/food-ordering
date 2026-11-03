@@ -297,7 +297,9 @@ describe('Service Requests & WKMS Worker Dispatch (e2e)', () => {
         });
 
       expect(response.status).toBe(201);
-      expect(response.body.requestType).toBe(ActiveFossServiceCategory.TOILETRIES);
+      expect(response.body.requestType).toBe(
+        ActiveFossServiceCategory.TOILETRIES,
+      );
       expect(response.body.description).toBe('Extra shampoo and body wash');
     });
 
