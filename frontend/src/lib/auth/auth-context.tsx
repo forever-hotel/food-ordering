@@ -92,8 +92,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const sessionToken = explicitToken ?? initialToken;
 
-  // Load demo tokens in background
+  // Load demo tokens in background only in demo mode
   useEffect(() => {
+    if (getDataMode() !== 'demo') {
+      return;
+    }
     const reqId = requestIdRef.current;
     fetchDemoTokens().then((tokens) => {
       if (reqId === requestIdRef.current && tokens && Object.keys(tokens).length > 0) {
@@ -119,13 +122,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setExplicitToken(newStoredToken);
       }
 
-      fetchDemoTokens()
-        .then((tokens) => {
-          if (reqId === requestIdRef.current) {
-            setDemoTokens(tokens || {});
-          }
-        })
-        .catch(() => {});
+      if (getDataMode() === 'demo') {
+        fetchDemoTokens()
+          .then((tokens) => {
+            if (reqId === requestIdRef.current) {
+              setDemoTokens(tokens || {});
+            }
+          })
+          .catch(() => {});
+      } else {
+        setDemoTokens({});
+      }
     };
 
     window.addEventListener(DATA_MODE_CHANGE_EVENT, handleModeChange);
