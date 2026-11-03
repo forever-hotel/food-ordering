@@ -20,6 +20,7 @@ export interface RabbitMQConfig {
 export interface PublishOptions {
   correlationId?: string;
   headers?: Record<string, unknown>;
+  mandatory?: boolean;
 }
 
 export type ConsumerHandler<T = Record<string, unknown>> = (

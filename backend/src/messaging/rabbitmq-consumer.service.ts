@@ -16,6 +16,7 @@ import {
   SignedEventEnvelope,
 } from './interfaces/messaging.interfaces.js';
 import {
+  RABBITMQ_EXCHANGE_NAME,
   RABBITMQ_INCOMING_QUEUE,
   RABBITMQ_MAX_RETRIES,
 } from './messaging.constants.js';
@@ -151,13 +152,41 @@ export class RabbitMqConsumerService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    // 4. Bounded Retry Inspection & Dispatch
+    // 4. Bounded Broker-Supported Retry Inspection & Dispatch
     const eventRetryKey =
       envelope.eventId || `${routingKey}:${msg.fields.deliveryTag}`;
     const headerRetries =
-      (msg.properties.headers?.['x-retry-count'] as number) || 0;
+      typeof msg.properties.headers?.['x-retry-count'] === 'number'
+        ? (msg.properties.headers['x-retry-count'] as number)
+        : 0;
+
+    let xDeathCount = 0;
+    const xDeath = msg.properties.headers?.['x-death'];
+    if (Array.isArray(xDeath)) {
+      xDeathCount = xDeath.reduce(
+        (sum, d) =>
+          sum + (typeof d.count === 'number' ? (d.count as number) : 1),
+        0,
+      );
+    }
+
+    const redeliveryIncrement =
+      msg.fields.redelivered && headerRetries === 0 && xDeathCount === 0
+        ? 1
+        : 0;
     const internalRetries = this.retryCounts.get(eventRetryKey) || 0;
-    const currentRetries = Math.max(headerRetries, internalRetries);
+    const currentRetries =
+      Math.max(headerRetries, xDeathCount, internalRetries) +
+      redeliveryIncrement;
+
+    if (currentRetries >= RABBITMQ_MAX_RETRIES) {
+      this.logger.warn(
+        `Event [${envelope.eventId || 'unknown'}] on [${routingKey}] reached maximum retries (${currentRetries}/${RABBITMQ_MAX_RETRIES}). Rejecting to DLQ.`,
+      );
+      this.retryCounts.delete(eventRetryKey);
+      channel.nack(msg, false, false);
+      return;
+    }
 
     try {
       await this.dispatchEnvelope(envelope, routingKey);
@@ -188,17 +217,57 @@ export class RabbitMqConsumerService implements OnModuleInit, OnModuleDestroy {
 
       if (nextAttempt >= RABBITMQ_MAX_RETRIES) {
         this.logger.warn(
-          `Max retries (${RABBITMQ_MAX_RETRIES}) reached for event [${envelope.eventId}]. Dead-lettering message.`,
+          `Max retries (${RABBITMQ_MAX_RETRIES}) reached for event [${envelope.eventId}]. Dead-lettering message to DLQ.`,
         );
         this.retryCounts.delete(eventRetryKey);
         channel.nack(msg, false, false);
       } else {
         this.logger.warn(
-          `Retrying event [${envelope.eventId}] (requeue attempt ${nextAttempt}/${RABBITMQ_MAX_RETRIES}).`,
+          `Retrying event [${envelope.eventId}] (attempt ${nextAttempt}/${RABBITMQ_MAX_RETRIES}) with broker-persisted retry header.`,
         );
-        channel.nack(msg, false, true);
+
+        // Bounded backoff delay before requeuing to avoid CPU hot-loops
+        await new Promise((r) =>
+          setTimeout(r, Math.min(100 * nextAttempt, 1000)),
+        );
+
+        try {
+          channel.publish(
+            RABBITMQ_EXCHANGE_NAME,
+            routingKey,
+            msg.content,
+            {
+              ...msg.properties,
+              persistent: true,
+              headers: {
+                ...msg.properties.headers,
+                'x-retry-count': nextAttempt,
+                'x-last-error': String(
+                  processErr instanceof Error
+                    ? processErr.message
+                    : processErr,
+                ),
+              },
+            },
+          );
+          channel.ack(msg);
+        } catch (repubErr) {
+          this.logger.error(
+            'Failed to republish retry message, falling back to basic.nack requeue:',
+            repubErr,
+          );
+          channel.nack(msg, false, true);
+        }
       }
     }
+  }
+
+  /**
+   * Resets internal in-memory caches for crash / restart simulation in tests.
+   */
+  public resetInMemoryState(): void {
+    this.processedEventIds.clear();
+    this.retryCounts.clear();
   }
 
   /**

@@ -55,7 +55,7 @@ export class RabbitMqPublisherService {
       this.logger.debug(
         `RabbitMQ disabled: Skipping publishing event [${eventType}] (id: ${eventId}).`,
       );
-      return envelope;
+      return null;
     }
 
     const confirmChannel = this.connectionService.getConfirmChannel();
@@ -63,7 +63,7 @@ export class RabbitMqPublisherService {
       this.logger.warn(
         `RabbitMQ disconnected: Dropping live broadcast for event [${eventType}] (id: ${eventId}). Outbox record required.`,
       );
-      return envelope;
+      return null;
     }
 
     try {
@@ -76,6 +76,7 @@ export class RabbitMqPublisherService {
           content,
           {
             persistent: true,
+            mandatory: options?.mandatory ?? false,
             contentType: 'application/json',
             messageId: eventId,
             timestamp: Date.now(),
@@ -100,8 +101,8 @@ export class RabbitMqPublisherService {
         `Failed to publish confirmed event [${eventType}] (id: ${eventId}):`,
         err,
       );
-      // Return envelope rather than throwing, preserving upstream caller success
-      return envelope;
+      // Return null rather than falsely reporting successful broker delivery
+      return null;
     }
   }
 }

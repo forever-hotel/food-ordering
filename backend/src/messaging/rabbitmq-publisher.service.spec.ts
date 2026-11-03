@@ -89,29 +89,29 @@ describe('RabbitMqPublisherService', () => {
     );
   });
 
-  it('fails safely and returns envelope when RabbitMQ is disabled', async () => {
+  it('fails safely and returns null when RabbitMQ is disabled', async () => {
     connectionService.isEnabled.mockReturnValue(false);
 
     const result = await service.publishEvent('foss.order.created', {
       test: true,
     });
 
-    expect(result).not.toBeNull();
+    expect(result).toBeNull();
     expect(mockConfirmChannel.publish).not.toHaveBeenCalled();
   });
 
-  it('fails safely without throwing when RabbitMQ is disconnected', async () => {
+  it('fails safely and returns null when RabbitMQ is disconnected', async () => {
     connectionService.isConnected.mockReturnValue(false);
 
     const result = await service.publishEvent('foss.order.created', {
       test: true,
     });
 
-    expect(result).not.toBeNull();
+    expect(result).toBeNull();
     expect(mockConfirmChannel.publish).not.toHaveBeenCalled();
   });
 
-  it('catches channel publish errors and does not throw', async () => {
+  it('catches channel publish errors and returns null', async () => {
     (mockConfirmChannel.publish as jest.Mock).mockImplementation(
       (
         _exchange: string,
@@ -129,6 +129,6 @@ describe('RabbitMqPublisherService', () => {
       test: true,
     });
 
-    expect(result).not.toBeNull();
+    expect(result).toBeNull();
   });
 });

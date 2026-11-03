@@ -428,6 +428,291 @@ describe('RabbitMQ Live Broker Integration (CIT-04 Phase B)', () => {
     expect(eventsForIsolated.length).toBe(0);
   });
 
+  it('progresses bounded retries with broker-persisted headers and routes to DLQ on exhaustion', async () => {
+    if (!directConn) return;
+
+    await directChannel.purgeQueue(RABBITMQ_DLQ_NAME);
+
+    const failingEventId = 'evt-retry-exhaust-test-999';
+    const attemptsSeen: number[] = [];
+
+    // Register a custom handler that always fails to trigger retry progression
+    consumerService.registerCustomHandler(
+      'kms.order.failing_test',
+      async (envelope) => {
+        if (envelope.eventId === failingEventId) {
+          attemptsSeen.push(Date.now());
+          throw new Error('Simulated transient worker failure');
+        }
+      },
+    );
+
+    const rawEvent = {
+      eventId: failingEventId,
+      eventType: 'kms.order.failing_test',
+      version: '1.0',
+      source: 'kms.service',
+      timestamp: new Date().toISOString(),
+      payload: {
+        bookingId: 'book-retry',
+        roomNumber: '101',
+      },
+    };
+
+    const signature = signEnvelope(rawEvent, secretKey);
+    const envelope = { ...rawEvent, signature };
+
+    // Publish to exchange -> routed to foss.incoming.events
+    directChannel.publish(
+      RABBITMQ_EXCHANGE_NAME,
+      'kms.order.failing_test',
+      Buffer.from(JSON.stringify(envelope), 'utf8'),
+      {
+        contentType: 'application/json',
+        messageId: failingEventId,
+      },
+    );
+
+    // Wait for retries to progress and final rejection to DLQ
+    let dlqCount = 0;
+    let pollCount = 0;
+    while (dlqCount === 0 && pollCount < 30) {
+      await new Promise((r) => setTimeout(r, 200));
+      const check = await directChannel.checkQueue(RABBITMQ_DLQ_NAME);
+      dlqCount = check.messageCount;
+      pollCount++;
+    }
+
+    expect(dlqCount).toBeGreaterThanOrEqual(1);
+    expect(attemptsSeen.length).toBeGreaterThanOrEqual(2);
+
+    // Inspect dead-lettered message from DLQ
+    const dlqMsg = await directChannel.get(RABBITMQ_DLQ_NAME, { noAck: true });
+    expect(dlqMsg).not.toBe(false);
+    if (dlqMsg) {
+      const parsed = JSON.parse(dlqMsg.content.toString('utf8'));
+      expect(parsed.eventId).toBe(failingEventId);
+      expect(dlqMsg.properties.headers?.['x-retry-count']).toBeDefined();
+    }
+  });
+
+  it('survives consumer restart during retry progression without resetting retry count', async () => {
+    if (!directConn) return;
+
+    await directChannel.purgeQueue(RABBITMQ_DLQ_NAME);
+
+    const restartEventId = 'evt-restart-retry-test-777';
+
+    // Directly publish a message that already carries x-retry-count: 2 (as if from earlier consumer)
+    const rawEvent = {
+      eventId: restartEventId,
+      eventType: 'kms.order.restart_fail',
+      version: '1.0',
+      source: 'kms.service',
+      timestamp: new Date().toISOString(),
+      payload: { bookingId: 'book-restart', roomNumber: '101' },
+    };
+    const signature = signEnvelope(rawEvent, secretKey);
+    const envelope = { ...rawEvent, signature };
+
+    // Simulate consumer restart
+    await consumerService.stopConsumer();
+    consumerService.resetInMemoryState();
+    await consumerService.startConsumer();
+
+    // Register handler that fails
+    consumerService.registerCustomHandler(
+      'kms.order.restart_fail',
+      async (env) => {
+        if (env.eventId === restartEventId) {
+          throw new Error('Failure after consumer restart');
+        }
+      },
+    );
+
+    // Publish with header x-retry-count: 2
+    directChannel.publish(
+      RABBITMQ_EXCHANGE_NAME,
+      'kms.order.restart_fail',
+      Buffer.from(JSON.stringify(envelope), 'utf8'),
+      {
+        contentType: 'application/json',
+        messageId: restartEventId,
+        headers: {
+          'x-retry-count': 2,
+        },
+      },
+    );
+
+    // Because it started at 2, on failure (attempt 3) it must immediately go to DLQ
+    let dlqCount = 0;
+    let pollCount = 0;
+    while (dlqCount === 0 && pollCount < 20) {
+      await new Promise((r) => setTimeout(r, 150));
+      const check = await directChannel.checkQueue(RABBITMQ_DLQ_NAME);
+      dlqCount = check.messageCount;
+      pollCount++;
+    }
+
+    expect(dlqCount).toBeGreaterThanOrEqual(1);
+
+    const dlqMsg = await directChannel.get(RABBITMQ_DLQ_NAME, { noAck: true });
+    expect(dlqMsg).not.toBe(false);
+    if (dlqMsg) {
+      const parsed = JSON.parse(dlqMsg.content.toString('utf8'));
+      expect(parsed.eventId).toBe(restartEventId);
+    }
+  });
+
+  it('handles duplicate delivery safely after process restart simulation', async () => {
+    if (!directConn) return;
+
+    const testEventId = 'evt-dedup-restart-444';
+    const rawEvent = {
+      eventId: testEventId,
+      eventType: 'fds.guest.checkout',
+      version: '1.0',
+      source: 'fds.service',
+      timestamp: new Date().toISOString(),
+      payload: {
+        bookingId: 'booking-dedup-restart',
+        roomNumber: '101',
+      },
+    };
+    const signature = signEnvelope(rawEvent, secretKey);
+    const envelope = { ...rawEvent, signature };
+
+    // First delivery
+    directChannel.publish(
+      RABBITMQ_EXCHANGE_NAME,
+      'fds.guest.checkout',
+      Buffer.from(JSON.stringify(envelope), 'utf8'),
+      {
+        contentType: 'application/json',
+        messageId: testEventId,
+      },
+    );
+
+    await new Promise((r) => setTimeout(r, 200));
+
+    // Clear in-memory deduplication set to simulate process reboot
+    consumerService.resetInMemoryState();
+
+    // Redelivery after process restart
+    directChannel.publish(
+      RABBITMQ_EXCHANGE_NAME,
+      'fds.guest.checkout',
+      Buffer.from(JSON.stringify(envelope), 'utf8'),
+      {
+        contentType: 'application/json',
+        messageId: testEventId,
+      },
+    );
+
+    await new Promise((r) => setTimeout(r, 200));
+
+    // Queue must be empty (both were acknowledged cleanly without unhandled rejections)
+    const queueCheck = await directChannel.checkQueue(RABBITMQ_INCOMING_QUEUE);
+    expect(queueCheck.messageCount).toBe(0);
+  });
+
+  it('handles unroutable messages and publisher confirms safely without throwing', async () => {
+    if (!directConn) return;
+
+    // Publish to a routing key that has no queue bindings
+    const unroutablePayload = { unroutable: true, timestamp: Date.now() };
+    const result = await publisherService.publishEvent(
+      'foss.unroutable.unknown_topic',
+      unroutablePayload,
+      { mandatory: false },
+    );
+
+    expect(result).not.toBeNull();
+    expect(result?.eventId).toBeDefined();
+  });
+
+  it('safely catches publisher errors during broker disconnection', async () => {
+    if (!directConn) return;
+
+    // Disconnect
+    await connectionService.close();
+
+    const result = await publisherService.publishEvent(
+      'foss.disconnected.test',
+      {
+        offline: true,
+      },
+    );
+
+    // Should return null (not false positive envelope) when disconnected
+    expect(result).toBeNull();
+
+    // Reconnect for remaining tests
+    await connectionService.connect();
+    expect(connectionService.isConnected()).toBe(true);
+  });
+
+  it('maintains strict room isolation after message redelivery', async () => {
+    if (!directConn) return;
+
+    const targetBooking = 'booking-redelivery-A';
+    const targetRoom = '101';
+    const foreignRoom = '102';
+
+    const eventsForTarget: any[] = [];
+    const eventsForForeign: any[] = [];
+
+    const subTarget = realtimeService
+      .getChannelStream(targetBooking, targetRoom)
+      .subscribe((msg) => eventsForTarget.push(msg.data));
+
+    const subForeign = realtimeService
+      .getChannelStream('booking-foreign-B', foreignRoom)
+      .subscribe((msg) => eventsForForeign.push(msg.data));
+
+    const rawEvent = {
+      eventId: 'evt-redelivered-isolation',
+      eventType: 'kms.order.status_changed',
+      version: '1.0',
+      source: 'kms.service',
+      timestamp: new Date().toISOString(),
+      payload: {
+        orderId: 'ord-redelivered-101',
+        bookingId: targetBooking,
+        roomNumber: targetRoom,
+        status: 'READY_FOR_DELIVERY',
+      },
+    };
+    const signature = signEnvelope(rawEvent, secretKey);
+    const envelope = { ...rawEvent, signature };
+
+    // Publish with redelivery header
+    directChannel.publish(
+      RABBITMQ_EXCHANGE_NAME,
+      'kms.order.status_changed',
+      Buffer.from(JSON.stringify(envelope), 'utf8'),
+      {
+        contentType: 'application/json',
+        messageId: rawEvent.eventId,
+        headers: { 'x-retry-count': 1 },
+      },
+    );
+
+    let waitCount = 0;
+    while (eventsForTarget.length === 0 && waitCount < 25) {
+      await new Promise((r) => setTimeout(r, 100));
+      waitCount++;
+    }
+
+    await new Promise((r) => setTimeout(r, 200));
+
+    subTarget.unsubscribe();
+    subForeign.unsubscribe();
+
+    expect(eventsForTarget.length).toBe(1);
+    expect(eventsForForeign.length).toBe(0);
+  });
+
   it('detects connection drop, reports down in health probe, and recovers after reconnect', async () => {
     if (!directConn) return;
 
