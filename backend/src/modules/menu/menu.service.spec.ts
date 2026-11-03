@@ -1,7 +1,8 @@
-import { beforeEach, describe, expect, it } from '@jest/globals';
+import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { NotFoundException } from '@nestjs/common';
 import { MockKmsAdapter } from '../../integrations/internal-services/kms/adapters/mock-kms.adapter.js';
 import { MealPeriod } from '../../integrations/internal-services/kms/dto/kms-menu.dto.js';
+import { RedisService } from '../../redis/redis.service.js';
 import { MenuService } from './menu.service.js';
 import { HotelClockService } from './services/hotel-clock.service.js';
 import { MealWindowService } from './services/meal-window.service.js';
@@ -10,13 +11,33 @@ describe('MenuService', () => {
   let mockKms: MockKmsAdapter;
   let clock: HotelClockService;
   let mealWindowService: MealWindowService;
+  let mockRedis: RedisService;
   let service: MenuService;
 
   beforeEach(() => {
     mockKms = new MockKmsAdapter();
     clock = new HotelClockService();
     mealWindowService = new MealWindowService(clock);
-    service = new MenuService(mockKms, mealWindowService, clock);
+
+    const store = new Map<string, unknown>();
+    mockRedis = {
+      get: jest.fn(async (key: string) => (store.get(key) as unknown) || null),
+      set: jest.fn(async (key: string, val: unknown) => {
+        store.set(key, val);
+      }),
+      del: jest.fn(async (key: string) => {
+        store.delete(key);
+      }),
+      flushPattern: jest.fn(async (prefix: string) => {
+        for (const k of store.keys()) {
+          if (k.startsWith(prefix.replace('*', ''))) {
+            store.delete(k);
+          }
+        }
+      }),
+    } as unknown as RedisService;
+
+    service = new MenuService(mockKms, mealWindowService, clock, mockRedis);
 
     // Set time to 13:00 Colombo (Lunch & All Day active)
     clock.setFixedTime(new Date('2026-10-28T07:30:00.000Z'));
@@ -86,6 +107,34 @@ describe('MenuService', () => {
       await expect(service.getItemById('non-existent-id')).rejects.toThrow(
         NotFoundException,
       );
+    });
+  });
+
+  describe('caching behavior', () => {
+    it('caches KMS catalog on first call and serves subsequent requests from cache', async () => {
+      const kmsSpy = jest.spyOn(mockKms, 'getMenuCatalog');
+
+      // First call: cache miss, calls KMS
+      const firstResult = await service.getGuestMenu();
+      expect(firstResult.items.length).toBeGreaterThan(0);
+      expect(kmsSpy).toHaveBeenCalledTimes(1);
+
+      // Second call: cache hit, serves from cache without querying KMS again
+      const secondResult = await service.getGuestMenu();
+      expect(secondResult.items.length).toBe(firstResult.items.length);
+      expect(kmsSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('re-queries KMS after invalidateMenuCache()', async () => {
+      const kmsSpy = jest.spyOn(mockKms, 'getMenuCatalog');
+
+      await service.getGuestMenu();
+      expect(kmsSpy).toHaveBeenCalledTimes(1);
+
+      await service.invalidateMenuCache();
+
+      await service.getGuestMenu();
+      expect(kmsSpy).toHaveBeenCalledTimes(2);
     });
   });
 
