@@ -217,8 +217,8 @@ describe('Secure FDS QR Activation Lifecycle (e2e)', () => {
         .post('/guest-sessions/internal/qr/issue')
         .set('X-Internal-Service-Key', FDS_SECRET)
         .send({
-          bookingId: 'b1020000-0000-4000-8000-000000000102',
-          roomNumber: '102',
+          bookingId: 'b1060000-0000-4000-8000-000000000106',
+          roomNumber: '106',
         })
         .expect(403);
 

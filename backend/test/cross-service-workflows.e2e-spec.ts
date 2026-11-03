@@ -53,7 +53,7 @@ describe('Cross-Service FOSS -> KMS -> WKMS -> FDS -> MAD Integration & Money Ow
       );
       expect(booking.roomNumber).toBe('101');
       expect(booking.bookingId).toBe('b1010000-0000-4000-8000-000000000101');
-      expect(booking.guestName).toBe('Demo Guest 101');
+      expect(booking.guestName).toBe('John Doe');
       expect(booking.status).toBe(BookingStatus.CHECKED_IN);
 
       // Step 2: KMS Authoritative Menu & Pricing Retrieval
