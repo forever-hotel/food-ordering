@@ -21,6 +21,8 @@ import {
 } from '../../integrations/internal-services/kms/interfaces/kms-provider.interface.js';
 import { RealtimeEventType } from '../../realtime/enums/realtime-event-type.enum.js';
 import { RealtimeService } from '../../realtime/realtime.service.js';
+import { FOSS_ROUTING_KEYS } from '../../messaging/messaging.constants.js';
+import { RabbitMqPublisherService } from '../../messaging/rabbitmq-publisher.service.js';
 import type { GuestContext } from '../guest-sessions/interfaces/guest-context.interface.js';
 import { HotelClockService } from '../menu/services/hotel-clock.service.js';
 import { MealWindowService } from '../menu/services/meal-window.service.js';
@@ -48,6 +50,8 @@ export class FoodOrdersService {
     private readonly configService: ConfigService,
     @Optional()
     private readonly realtimeService?: RealtimeService,
+    @Optional()
+    private readonly rabbitMqPublisher?: RabbitMqPublisherService,
   ) {}
 
   /**
@@ -234,6 +238,16 @@ export class FoodOrdersService {
       RealtimeEventType.FOOD_ORDER_STATUS_UPDATED,
       response,
     );
+
+    void this.rabbitMqPublisher?.publishEvent(FOSS_ROUTING_KEYS.ORDER_CREATED, {
+      orderId: demoOrder.orderId,
+      bookingId: demoOrder.bookingId,
+      roomNumber: demoOrder.roomNumber,
+      totalAmount: demoOrder.totalAmount,
+      itemCount: demoOrder.items.length,
+      createdAt: demoOrder.createdAt.toISOString(),
+    });
+
     return response;
   }
 

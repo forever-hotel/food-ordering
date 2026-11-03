@@ -23,6 +23,8 @@ import {
 } from '../../integrations/internal-services/wkms/interfaces/wkms-provider.interface.js';
 import { RealtimeEventType } from '../../realtime/enums/realtime-event-type.enum.js';
 import { RealtimeService } from '../../realtime/realtime.service.js';
+import { FOSS_ROUTING_KEYS } from '../../messaging/messaging.constants.js';
+import { RabbitMqPublisherService } from '../../messaging/rabbitmq-publisher.service.js';
 import type { GuestContext } from '../guest-sessions/interfaces/guest-context.interface.js';
 import { CreateServiceRequestDto } from './dto/create-service-request.dto.js';
 import { GetServiceRequestsQueryDto } from './dto/get-service-requests-query.dto.js';
@@ -54,6 +56,8 @@ export class ServiceRequestsService {
     private readonly configService: ConfigService,
     @Optional()
     private readonly realtimeService?: RealtimeService,
+    @Optional()
+    private readonly rabbitMqPublisher?: RabbitMqPublisherService,
   ) {}
 
   /**
@@ -196,6 +200,19 @@ export class ServiceRequestsService {
       RealtimeEventType.SERVICE_REQUEST_STATUS_UPDATED,
       response,
     );
+
+    void this.rabbitMqPublisher?.publishEvent(
+      FOSS_ROUTING_KEYS.SERVICE_REQUEST_CREATED,
+      {
+        requestId: entity.requestId,
+        bookingId: entity.bookingId,
+        roomNumber: entity.roomNumber,
+        category: entity.category,
+        priority: entity.priority,
+        createdAt: entity.createdAt.toISOString(),
+      },
+    );
+
     return response;
   }
 

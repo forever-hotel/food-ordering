@@ -25,6 +25,8 @@ import {
 } from '../../integrations/internal-services/mad/interfaces/mad-complaint-provider.interface.js';
 import { RealtimeEventType } from '../../realtime/enums/realtime-event-type.enum.js';
 import { RealtimeService } from '../../realtime/realtime.service.js';
+import { FOSS_ROUTING_KEYS } from '../../messaging/messaging.constants.js';
+import { RabbitMqPublisherService } from '../../messaging/rabbitmq-publisher.service.js';
 import { FossDemoOrderRepository } from '../food-orders/repositories/foss-demo-order.repository.js';
 import type { GuestContext } from '../guest-sessions/interfaces/guest-context.interface.js';
 import { FossServiceRequestRepository } from '../service-requests/repositories/foss-service-request.repository.js';
@@ -59,6 +61,8 @@ export class ComplaintsService {
     @Optional()
     @Inject(KMS_PROVIDER)
     private readonly kmsProvider?: KmsProvider,
+    @Optional()
+    private readonly rabbitMqPublisher?: RabbitMqPublisherService,
   ) {}
 
   /**
@@ -316,6 +320,19 @@ export class ComplaintsService {
       guest.roomNumber,
       RealtimeEventType.COMPLAINT_STATUS_UPDATED,
       response,
+    );
+
+    void this.rabbitMqPublisher?.publishEvent(
+      FOSS_ROUTING_KEYS.COMPLAINT_SUBMITTED,
+      {
+        complaintId: complaint.complaintId,
+        bookingId: complaint.bookingId,
+        roomNumber: complaint.roomNumber,
+        category: complaint.category,
+        severity: complaint.severity,
+        subject: complaint.subject,
+        createdAt: complaint.createdAt.toISOString(),
+      },
     );
 
     return response;

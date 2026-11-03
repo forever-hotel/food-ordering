@@ -1,5 +1,6 @@
 import { forwardRef, Module } from '@nestjs/common';
 import { KmsInternalModule } from '../../integrations/internal-services/kms/kms-internal.module.js';
+import { MessagingModule } from '../../messaging/messaging.module.js';
 import { RealtimeModule } from '../../realtime/realtime.module.js';
 import { GuestSessionsModule } from '../guest-sessions/guest-sessions.module.js';
 import { MenuModule } from '../menu/menu.module.js';
@@ -13,6 +14,7 @@ import { FossDemoOrderRepository } from './repositories/foss-demo-order.reposito
     forwardRef(() => GuestSessionsModule),
     MenuModule,
     RealtimeModule,
+    MessagingModule,
   ],
   controllers: [FoodOrdersController],
   providers: [FossDemoOrderRepository, FoodOrdersService],

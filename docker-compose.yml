@@ -17,6 +17,12 @@ services:
       - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
       - MOCK_EXTERNAL_SERVICES=${MOCK_EXTERNAL_SERVICES:-true}
       - DEMO_MODE=${DEMO_MODE:-true}
+      - RABBITMQ_URL=${RABBITMQ_URL:-amqp://rabbitmq:5672}
+      - RABBITMQ_ENABLED=${RABBITMQ_ENABLED:-true}
+      - REDIS_ENABLED=${REDIS_ENABLED:-false}
+    depends_on:
+      rabbitmq:
+        condition: service_started
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:4300/health/live"]
       interval: 10s
