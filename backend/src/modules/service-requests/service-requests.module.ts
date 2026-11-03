@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { InternalServiceGuard } from '../../common/auth/internal-service.guard.js';
 import { WkmsInternalModule } from '../../integrations/internal-services/wkms/wkms-internal.module.js';
@@ -15,8 +15,8 @@ import { ServiceRequestsService } from './service-requests.service.js';
     TypeOrmModule.forFeature([FossServiceRequest]),
     WkmsInternalModule,
     GuestSessionsModule,
-    RealtimeModule,
-    MessagingModule,
+    forwardRef(() => RealtimeModule),
+    forwardRef(() => MessagingModule),
   ],
   controllers: [ServiceRequestsController],
   providers: [

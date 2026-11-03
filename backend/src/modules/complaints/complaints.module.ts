@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { InternalServiceGuard } from '../../common/auth/internal-service.guard.js';
 import { KmsInternalModule } from '../../integrations/internal-services/kms/kms-internal.module.js';
@@ -21,8 +21,8 @@ import { FossComplaintRepository } from './repositories/foss-complaint.repositor
     MadInternalModule,
     FoodOrdersModule,
     ServiceRequestsModule,
-    RealtimeModule,
-    MessagingModule,
+    forwardRef(() => RealtimeModule),
+    forwardRef(() => MessagingModule),
   ],
   controllers: [ComplaintsController],
   providers: [FossComplaintRepository, ComplaintsService, InternalServiceGuard],

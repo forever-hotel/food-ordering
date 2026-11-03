@@ -97,7 +97,10 @@ export class FossRealtimeClient {
   }
 
   public connect(): void {
-    if (this.status === 'CONNECTED' || this.status === 'CONNECTING') {
+    if (this.status === 'CONNECTED') {
+      return;
+    }
+    if (this.status === 'CONNECTING' && this.abortController) {
       return;
     }
 
@@ -231,7 +234,7 @@ export class FossRealtimeClient {
 
       this.setStatus('CONNECTING');
       this.reconnectTimer = setTimeout(() => {
-        this.connect();
+        void this.startFetchStream();
       }, backoff);
     } else {
       // Reconnection exhausted -> Switch to continuous polling fallback

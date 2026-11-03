@@ -7,6 +7,7 @@ import { RealtimeEventType } from '../realtime/enums/realtime-event-type.enum.js
 import { RealtimeService } from '../realtime/realtime.service.js';
 import { RabbitMqConnectionService } from './rabbitmq-connection.service.js';
 import { RabbitMqConsumerService } from './rabbitmq-consumer.service.js';
+import { RabbitMqTopologyService } from './rabbitmq-topology.service.js';
 import { signEnvelope } from './utils/envelope-signer.js';
 
 describe('RabbitMqConsumerService', () => {
@@ -52,12 +53,20 @@ describe('RabbitMqConsumerService', () => {
       }),
     };
 
+    const mockTopologyService = {
+      assertTopology: jest.fn().mockResolvedValue(undefined as any),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         RabbitMqConsumerService,
         {
           provide: RabbitMqConnectionService,
           useValue: mockConnectionService,
+        },
+        {
+          provide: RabbitMqTopologyService,
+          useValue: mockTopologyService,
         },
         {
           provide: ConfigService,

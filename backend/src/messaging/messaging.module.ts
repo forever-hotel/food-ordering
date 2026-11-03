@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { GuestSessionsModule } from '../modules/guest-sessions/guest-sessions.module.js';
 import { RealtimeModule } from '../realtime/realtime.module.js';
@@ -8,7 +8,11 @@ import { RabbitMqPublisherService } from './rabbitmq-publisher.service.js';
 import { RabbitMqTopologyService } from './rabbitmq-topology.service.js';
 
 @Module({
-  imports: [ConfigModule, RealtimeModule, GuestSessionsModule],
+  imports: [
+    ConfigModule,
+    forwardRef(() => RealtimeModule),
+    forwardRef(() => GuestSessionsModule),
+  ],
   providers: [
     RabbitMqConnectionService,
     RabbitMqTopologyService,

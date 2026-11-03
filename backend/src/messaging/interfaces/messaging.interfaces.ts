@@ -3,15 +3,9 @@
  * Conforms to SDS §5 and upstream service contracts.
  */
 
-export interface SignedEventEnvelope<T = Record<string, unknown>> {
-  eventId: string;
-  eventType: string;
-  version: string;
-  source: string;
-  timestamp: string;
-  signature: string;
-  payload: T;
-}
+import { SignedEventEnvelope } from '../../integrations/contracts/signed-event-envelope.dto.js';
+
+export { SignedEventEnvelope };
 
 export interface RabbitMQConfig {
   enabled: boolean;

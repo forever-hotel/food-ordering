@@ -1,5 +1,5 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
-import { SignedEventEnvelope } from '../interfaces/messaging.interfaces.js';
+import { SignedEventEnvelope } from '../../integrations/contracts/signed-event-envelope.dto.js';
+import { SignedEventEnvelopeUtil } from '../../integrations/contracts/signed-event-envelope.util.js';
 
 /**
  * Builds the canonical message payload string for HMAC-SHA256 signing/verification:
@@ -11,7 +11,11 @@ export function buildEnvelopeSigningPayload<T>(
     'eventId' | 'eventType' | 'version' | 'source' | 'timestamp' | 'payload'
   >,
 ): string {
-  return `${envelope.eventId}:${envelope.eventType}:${envelope.version}:${envelope.source}:${envelope.timestamp}:${JSON.stringify(envelope.payload)}`;
+  const serialized =
+    typeof envelope.payload === 'string'
+      ? envelope.payload
+      : JSON.stringify(envelope.payload);
+  return `${envelope.eventId}:${envelope.eventType}:${envelope.version}:${envelope.source}:${envelope.timestamp}:${serialized}`;
 }
 
 /**
@@ -24,8 +28,7 @@ export function signEnvelope<T>(
   >,
   secretKey: string,
 ): string {
-  const payloadStr = buildEnvelopeSigningPayload(envelope);
-  return createHmac('sha256', secretKey).update(payloadStr).digest('hex');
+  return SignedEventEnvelopeUtil.computeSignature(envelope as any, secretKey);
 }
 
 /**
@@ -35,19 +38,5 @@ export function verifyEnvelopeSignature<T>(
   envelope: SignedEventEnvelope<T>,
   secretKey: string,
 ): boolean {
-  if (!envelope.signature || !secretKey) {
-    return false;
-  }
-  try {
-    const expectedSig = signEnvelope(envelope, secretKey);
-    const expectedBuf = Buffer.from(expectedSig, 'utf8');
-    const actualBuf = Buffer.from(envelope.signature, 'utf8');
-
-    if (expectedBuf.length !== actualBuf.length) {
-      return false;
-    }
-    return timingSafeEqual(expectedBuf, actualBuf);
-  } catch {
-    return false;
-  }
+  return SignedEventEnvelopeUtil.verifySignature(envelope, secretKey);
 }

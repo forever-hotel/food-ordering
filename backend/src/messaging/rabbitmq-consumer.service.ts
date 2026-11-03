@@ -1,4 +1,6 @@
 import {
+  forwardRef,
+  Inject,
   Injectable,
   Logger,
   OnModuleDestroy,
@@ -18,6 +20,7 @@ import {
   RABBITMQ_MAX_RETRIES,
 } from './messaging.constants.js';
 import { RabbitMqConnectionService } from './rabbitmq-connection.service.js';
+import { RabbitMqTopologyService } from './rabbitmq-topology.service.js';
 import { verifyEnvelopeSignature } from './utils/envelope-signer.js';
 
 @Injectable()
@@ -26,12 +29,16 @@ export class RabbitMqConsumerService implements OnModuleInit, OnModuleDestroy {
 
   private consumerTag: string | null = null;
   private readonly processedEventIds = new Set<string>();
+  private readonly retryCounts = new Map<string, number>();
   private readonly customHandlers = new Map<string, ConsumerHandler[]>();
 
   constructor(
     private readonly connectionService: RabbitMqConnectionService,
+    private readonly topologyService: RabbitMqTopologyService,
     private readonly configService: ConfigService,
+    @Inject(forwardRef(() => RealtimeService))
     private readonly realtimeService: RealtimeService,
+    @Inject(forwardRef(() => GuestSessionsService))
     private readonly guestSessionsService: GuestSessionsService,
   ) {}
 
@@ -65,6 +72,7 @@ export class RabbitMqConsumerService implements OnModuleInit, OnModuleDestroy {
     }
 
     try {
+      await this.topologyService.assertTopology();
       await channel.prefetch(10);
       const { consumerTag } = await channel.consume(
         RABBITMQ_INCOMING_QUEUE,
@@ -143,12 +151,19 @@ export class RabbitMqConsumerService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    // 4. Bounded Retry Inspection
-    const currentRetries =
+    // 4. Bounded Retry Inspection & Dispatch
+    const eventRetryKey =
+      envelope.eventId || `${routingKey}:${msg.fields.deliveryTag}`;
+    const headerRetries =
       (msg.properties.headers?.['x-retry-count'] as number) || 0;
+    const internalRetries = this.retryCounts.get(eventRetryKey) || 0;
+    const currentRetries = Math.max(headerRetries, internalRetries);
 
     try {
       await this.dispatchEnvelope(envelope, routingKey);
+
+      // Clean up retry tracker upon successful processing
+      this.retryCounts.delete(eventRetryKey);
 
       // Track processed event for deduplication (capped at 5000)
       if (envelope.eventId) {
@@ -163,19 +178,23 @@ export class RabbitMqConsumerService implements OnModuleInit, OnModuleDestroy {
 
       channel.ack(msg);
     } catch (processErr) {
+      const nextAttempt = currentRetries + 1;
+      this.retryCounts.set(eventRetryKey, nextAttempt);
+
       this.logger.error(
-        `Error processing event [${envelope.eventId}] on [${routingKey}]:`,
+        `Error processing event [${envelope.eventId}] on [${routingKey}] (attempt ${nextAttempt}/${RABBITMQ_MAX_RETRIES}):`,
         processErr,
       );
 
-      if (currentRetries >= RABBITMQ_MAX_RETRIES) {
+      if (nextAttempt >= RABBITMQ_MAX_RETRIES) {
         this.logger.warn(
           `Max retries (${RABBITMQ_MAX_RETRIES}) reached for event [${envelope.eventId}]. Dead-lettering message.`,
         );
+        this.retryCounts.delete(eventRetryKey);
         channel.nack(msg, false, false);
       } else {
         this.logger.warn(
-          `Retrying event [${envelope.eventId}] (attempt ${currentRetries + 1}/${RABBITMQ_MAX_RETRIES}).`,
+          `Retrying event [${envelope.eventId}] (requeue attempt ${nextAttempt}/${RABBITMQ_MAX_RETRIES}).`,
         );
         channel.nack(msg, false, true);
       }
