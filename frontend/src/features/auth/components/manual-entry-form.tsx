@@ -62,43 +62,45 @@ export function ManualEntryForm({ loading, onSubmit, demoTokens = {} }: ManualEn
           value={code}
           onChange={(e) => setCode(e.target.value)}
           disabled={loading}
-          className="flex-1 !bg-slate-100 !border-slate-200 !text-slate-800 placeholder:!text-slate-400 !rounded-lg text-sm !h-10"
+          className="flex-1 !bg-slate-100 !border-slate-200/90 !text-slate-800 placeholder:!text-slate-400 !rounded-xl text-xs !h-11"
         />
         <Button
           type="primary"
           htmlType="submit"
           loading={loading}
-          className="!bg-[#1D3557] hover:!bg-[#162a45] !rounded-lg !h-10 px-5 font-semibold text-sm"
+          className="!bg-[#1D3557] hover:!bg-[#162A45] !rounded-xl !h-11 px-5 font-bold text-xs shadow-xs"
         >
           Go
         </Button>
       </form>
 
-      {/* Demo shortcuts helper */}
-      <div className="text-center mt-3">
-        <button
-          type="button"
-          onClick={() => setShowDemoChips(!showDemoChips)}
-          className="text-xs text-slate-500 hover:text-slate-700 underline focus:outline-none"
-        >
-          {showDemoChips ? 'Hide demo codes' : 'Quick demo access codes'}
-        </button>
+      {/* Demo shortcuts helper (rendered ONLY in isolated frontend mock mode when demo tokens are present) */}
+      {Object.keys(demoTokens).length > 0 && (
+        <div className="text-center mt-3">
+          <button
+            type="button"
+            onClick={() => setShowDemoChips(!showDemoChips)}
+            className="text-xs text-slate-500 hover:text-slate-700 underline focus:outline-none"
+          >
+            {showDemoChips ? 'Hide demo codes' : 'Quick demo access codes'}
+          </button>
 
-        {showDemoChips && (
-          <div className="mt-2 flex flex-wrap gap-1.5 justify-center">
-            {Object.keys(demoTokens).map((key) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => handleSelectDemo(key)}
-                className="text-[11px] bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-1 rounded border border-slate-200 transition-colors"
-              >
-                {key}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
+          {showDemoChips && (
+            <div className="mt-2 flex flex-wrap gap-1.5 justify-center">
+              {Object.keys(demoTokens).map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => handleSelectDemo(key)}
+                  className="text-[11px] bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-1 rounded border border-slate-200 transition-colors"
+                >
+                  {key}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

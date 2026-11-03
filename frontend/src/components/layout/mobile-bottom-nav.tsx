@@ -98,7 +98,7 @@ const TABS: TabItem[] = [
 ];
 
 export function MobileBottomNav() {
-  const { activeTab, setActiveTab } = useNavigation();
+  const { activeTab, setActiveTab, setSelectedOrderId } = useNavigation();
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
   const handleKeyDown = useCallback(
@@ -122,10 +122,11 @@ export function MobileBottomNav() {
       }
 
       const nextTab = TABS[nextIndex];
+      setSelectedOrderId(null);
       setActiveTab(nextTab.id);
       tabRefs.current[nextTab.id]?.focus();
     },
-    [setActiveTab],
+    [setActiveTab, setSelectedOrderId],
   );
 
   return (
@@ -151,7 +152,10 @@ export function MobileBottomNav() {
               aria-controls={`tabpanel-${tab.id}`}
               aria-label={tab.ariaLabel}
               tabIndex={isActive ? 0 : -1}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => {
+                setSelectedOrderId(null);
+                setActiveTab(tab.id);
+              }}
               onKeyDown={(e) => handleKeyDown(e, index)}
               className={`touch-target flex flex-col items-center justify-center gap-1 rounded-xl px-3 py-1.5 transition-all focus-visible:outline-2 focus-visible:outline-[#1D3557] focus-visible:outline-offset-1 select-none ${
                 isActive

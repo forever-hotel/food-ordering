@@ -3,6 +3,8 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { CartItem, GuestMenuItem } from '../../types/menu.ts';
 import { useAuth } from '../auth/auth-context.tsx';
+import { calculateSubtotal } from '../utils/money.ts';
+import { MIN_ORDER_ITEM_QUANTITY, MAX_ORDER_ITEM_QUANTITY } from '../constants/order-policy.ts';
 
 interface AddItemResult {
   success: boolean;
@@ -125,10 +127,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const totalCount = useMemo(() => items.reduce((sum, item) => sum + item.quantity, 0), [items]);
 
-  const totalAmount = useMemo(
-    () => items.reduce((sum, item) => sum + item.item.price * item.quantity, 0),
-    [items],
-  );
+  const totalAmount = useMemo(() => calculateSubtotal(items), [items]);
 
   const getItemQuantity = useCallback(
     (itemId: string): number => {
@@ -140,7 +139,15 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const addItem = useCallback(
     (item: GuestMenuItem, quantity = 1, specialNotes?: string): AddItemResult => {
-      // 1. Stock availability validation
+      // 1. Quantity range validation (1-20 per backend food-order policy)
+      if (quantity < MIN_ORDER_ITEM_QUANTITY || quantity > MAX_ORDER_ITEM_QUANTITY) {
+        return {
+          success: false,
+          reason: `Quantity for ${item.name} must be between ${MIN_ORDER_ITEM_QUANTITY} and ${MAX_ORDER_ITEM_QUANTITY}.`,
+        };
+      }
+
+      // 2. Stock availability validation
       if (!item.available) {
         return {
           success: false,
@@ -148,7 +155,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         };
       }
 
-      // 2. Ordering window cutoff validation
+      // 3. Ordering window cutoff validation
       if (!item.isOrderable || item.isCutoff) {
         return {
           success: false,
@@ -156,7 +163,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         };
       }
 
-      const portionCap = item.portionCap || 3;
+      const portionCap = item.portionCap ?? MAX_ORDER_ITEM_QUANTITY;
       const currentQty = getItemQuantity(item.id);
 
       if (currentQty + quantity > portionCap) {
@@ -191,7 +198,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const updateQuantity = useCallback(
     (itemId: string, quantity: number): boolean => {
-      if (quantity <= 0) {
+      if (quantity < MIN_ORDER_ITEM_QUANTITY) {
         removeItem(itemId);
         return true;
       }
@@ -199,7 +206,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       const existing = items.find((i) => i.id === itemId);
       if (!existing) return false;
 
-      const portionCap = existing.item.portionCap || 3;
+      const portionCap = existing.item.portionCap ?? MAX_ORDER_ITEM_QUANTITY;
       if (quantity > portionCap) {
         return false;
       }

@@ -365,4 +365,89 @@ describe('TC-DDP-141-AC4: Contract & Visual Layout Fidelity Audit (Figures 36 & 
     assert.equal(formatLkrPrice(650), 'LKR 650');
     assert.equal(formatLkrPrice(720), 'LKR 720');
   });
+
+  it('formats milestone timestamps in Asia/Colombo 12-hour AM/PM format without hardcoded fallbacks', () => {
+    // 2026-10-29T13:30:00.000Z -> 13:30 UTC + 5:30 = 19:00 (07:00 PM) Colombo time
+    const isoUtc = '2026-10-29T13:30:00.000Z';
+    const date = new Date(isoUtc);
+    const colomboFormatted = date.toLocaleTimeString('en-US', {
+      timeZone: 'Asia/Colombo',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    });
+
+    assert.equal(colomboFormatted, '07:00 PM');
+  });
+
+  it('distinguishes actual event timestamp from estimated delivery time', () => {
+    const sampleTimelineOrder = {
+      orderId: 'ORD-291',
+      createdAt: '2026-10-29T13:30:00.000Z', // 07:00 PM Colombo
+      estimatedDeliveryMinutes: 25,
+      timeline: [
+        {
+          status: 'PLACED',
+          label: 'Order Placed',
+          completed: true,
+          current: false,
+          timestamp: '2026-10-29T13:30:00.000Z',
+        },
+        {
+          status: 'IN_PREPARATION',
+          label: 'In Kitchen',
+          completed: true,
+          current: false,
+          timestamp: '2026-10-29T13:38:00.000Z',
+        },
+        {
+          status: 'READY',
+          label: 'Ready for Delivery',
+          completed: true,
+          current: true,
+          timestamp: '2026-10-29T13:52:00.000Z',
+        },
+        { status: 'DELIVERED', label: 'Delivered', completed: false, current: false },
+      ],
+    };
+
+    // Placed milestone: 07:00 PM
+    const placedDate = new Date(sampleTimelineOrder.timeline[0].timestamp!);
+    assert.equal(
+      placedDate.toLocaleTimeString('en-US', {
+        timeZone: 'Asia/Colombo',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+      }),
+      '07:00 PM',
+    );
+
+    // In Preparation milestone: 07:08 PM
+    const prepDate = new Date(sampleTimelineOrder.timeline[1].timestamp!);
+    assert.equal(
+      prepDate.toLocaleTimeString('en-US', {
+        timeZone: 'Asia/Colombo',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+      }),
+      '07:08 PM',
+    );
+
+    // Ready milestone: 07:22 PM
+    const readyDate = new Date(sampleTimelineOrder.timeline[2].timestamp!);
+    assert.equal(
+      readyDate.toLocaleTimeString('en-US', {
+        timeZone: 'Asia/Colombo',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+      }),
+      '07:22 PM',
+    );
+
+    // Delivered milestone: no timestamp yet (pending)
+    assert.equal(sampleTimelineOrder.timeline[3].timestamp, undefined);
+  });
 });

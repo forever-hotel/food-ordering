@@ -365,8 +365,12 @@ export class ComplaintsService {
     complaintId: string,
     dto: AdvanceComplaintStatusDto,
   ): Promise<ComplaintResponseDto> {
+    const isDevOrTest =
+      !process.env.NODE_ENV ||
+      process.env.NODE_ENV === 'development' ||
+      process.env.NODE_ENV === 'test';
     const isDemo = this.configService.get<string>('DEMO_MODE') === 'true';
-    if (!isDemo) {
+    if (!isDemo || !isDevOrTest || process.env.NODE_ENV === 'production') {
       throw new ForbiddenException(
         'Demo status advancement is only permitted when DEMO_MODE is enabled.',
       );

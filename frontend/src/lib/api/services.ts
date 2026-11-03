@@ -1,22 +1,26 @@
-import API_URL from './config.ts';
-import { ApiError } from './guest-sessions.ts';
 import type {
   CreateServiceRequestPayload,
   ServiceRequestResponse,
   ServiceRequestStatus,
   ServiceTypeOption,
 } from '../../types/services.ts';
+import { getServicesProvider } from '../data-mode/provider-factory.ts';
 
 /**
  * 6 Approved Service Request categories matching Figure 38
  */
 export const SERVICE_TYPE_OPTIONS: ServiceTypeOption[] = [
-  { key: 'cleaning', backendType: 'ROOM_CLEANING', label: 'Room Cleaning', icon: '🧹' },
-  { key: 'towels', backendType: 'EXTRA_TOWELS', label: 'Extra Towels', icon: '🛁' },
-  { key: 'maintenance', backendType: 'MAINTENANCE', label: 'Maintenance', icon: '🔧' },
-  { key: 'laundry', backendType: 'LUGGAGE_ASSISTANCE', label: 'Laundry', icon: '👕' },
-  { key: 'water', backendType: 'TOILETRIES', label: 'Water Bottles', icon: '💧' },
-  { key: 'other', backendType: 'OTHER', label: 'Other', icon: '✦' },
+  { key: 'cleaning', backendType: 'ROOM_CLEANING', label: 'Room Cleaning', iconKey: 'cleaning' },
+  { key: 'towels', backendType: 'EXTRA_TOWELS', label: 'Extra Towels', iconKey: 'towels' },
+  { key: 'maintenance', backendType: 'MAINTENANCE', label: 'Maintenance', iconKey: 'maintenance' },
+  { key: 'laundry', backendType: 'LAUNDRY_PICKUP', label: 'Laundry', iconKey: 'laundry' },
+  {
+    key: 'toiletries',
+    backendType: 'TOILETRIES',
+    label: 'Toiletries',
+    iconKey: 'toiletries',
+  },
+  { key: 'other', backendType: 'OTHER', label: 'Other', iconKey: 'other' },
 ];
 
 /**
@@ -131,81 +135,9 @@ export const FALLBACK_SERVICE_REQUESTS: ServiceRequestResponse[] = [
 export async function createServiceRequest(
   sessionToken: string,
   payload: CreateServiceRequestPayload,
-  idempotencyKey: string,
+  idempotencyKey?: string,
 ): Promise<ServiceRequestResponse> {
-  const effectiveKey = idempotencyKey || payload.idempotencyKey || generateServiceIdempotencyKey();
-
-  const requestBody = {
-    requestType: payload.requestType,
-    description: payload.description?.trim() || undefined,
-    priority: payload.priority || 'NORMAL',
-    idempotencyKey: effectiveKey,
-  };
-
-  try {
-    const response = await fetch(`${API_URL}/service-requests`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${sessionToken}`,
-        'idempotency-key': effectiveKey,
-      },
-      body: JSON.stringify(requestBody),
-    });
-
-    const body = await response.json().catch(() => null);
-
-    if (!response.ok) {
-      const errorMsg =
-        body?.message || body?.error || 'Failed to submit service request. Please try again.';
-      throw new ApiError(errorMsg, response.status, body);
-    }
-
-    return body as ServiceRequestResponse;
-  } catch (err: unknown) {
-    if (err instanceof ApiError) {
-      throw err;
-    }
-
-    // Local demo / standalone fallback
-    if (
-      process.env.NODE_ENV !== 'production' &&
-      typeof window !== 'undefined' &&
-      window.location.hostname === 'localhost'
-    ) {
-      const now = new Date();
-      return {
-        requestId: `REQ-${Math.floor(100 + Math.random() * 900)}`,
-        roomNumber: '103',
-        bookingId: 'booking-101',
-        requestType: payload.requestType,
-        description: payload.description || null,
-        status: 'SUBMITTED',
-        priority: payload.priority || 'NORMAL',
-        assignedStaff: null,
-        estimatedCompletionMinutes: 20,
-        idempotencyKey: effectiveKey,
-        createdAt: now.toISOString(),
-        updatedAt: now.toISOString(),
-        timeline: [
-          {
-            status: 'SUBMITTED',
-            label: 'Request Submitted',
-            completed: true,
-            current: true,
-            timestamp: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          },
-          { status: 'ASSIGNED', label: 'Worker Assigned', completed: false, current: false },
-          { status: 'IN_PROGRESS', label: 'In Progress', completed: false, current: false },
-          { status: 'COMPLETED', label: 'Completed', completed: false, current: false },
-        ],
-      };
-    }
-
-    const msg =
-      err instanceof Error ? err.message : 'Network error. Please retry submitting your request.';
-    throw new ApiError(msg, 503);
-  }
+  return getServicesProvider().createServiceRequest(sessionToken, payload, idempotencyKey);
 }
 
 /**
@@ -214,47 +146,7 @@ export async function createServiceRequest(
 export async function fetchGuestServiceRequests(
   sessionToken: string,
 ): Promise<ServiceRequestResponse[]> {
-  try {
-    const response = await fetch(`${API_URL}/service-requests`, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${sessionToken}`,
-      },
-    });
-
-    const body = await response.json().catch(() => null);
-
-    if (!response.ok) {
-      if (
-        process.env.NODE_ENV !== 'production' &&
-        typeof window !== 'undefined' &&
-        window.location.hostname === 'localhost'
-      ) {
-        return FALLBACK_SERVICE_REQUESTS;
-      }
-      const errorMsg = body?.message || 'Unable to retrieve service requests.';
-      throw new ApiError(errorMsg, response.status, body);
-    }
-
-    const list = Array.isArray(body) ? (body as ServiceRequestResponse[]) : [];
-    if (list.length === 0) {
-      return FALLBACK_SERVICE_REQUESTS;
-    }
-    return list;
-  } catch (err: unknown) {
-    if (err instanceof ApiError) {
-      throw err;
-    }
-    if (
-      process.env.NODE_ENV !== 'production' &&
-      typeof window !== 'undefined' &&
-      window.location.hostname === 'localhost'
-    ) {
-      return FALLBACK_SERVICE_REQUESTS;
-    }
-    const msg = err instanceof Error ? err.message : 'Unable to retrieve service requests.';
-    throw new ApiError(msg, 503);
-  }
+  return getServicesProvider().fetchGuestServiceRequests(sessionToken);
 }
 
 /**
@@ -264,34 +156,8 @@ export async function fetchGuestServiceRequestById(
   sessionToken: string,
   requestId: string,
 ): Promise<ServiceRequestResponse> {
-  try {
-    const response = await fetch(`${API_URL}/service-requests/${encodeURIComponent(requestId)}`, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${sessionToken}`,
-      },
-    });
-
-    const body = await response.json().catch(() => null);
-
-    if (!response.ok) {
-      const matched = FALLBACK_SERVICE_REQUESTS.find((r) => r.requestId === requestId);
-      if (matched) return matched;
-      const errorMsg = body?.message || `Unable to fetch service request [${requestId}].`;
-      throw new ApiError(errorMsg, response.status, body);
-    }
-
-    return body as ServiceRequestResponse;
-  } catch (err: unknown) {
-    if (err instanceof ApiError) {
-      throw err;
-    }
-    const matched = FALLBACK_SERVICE_REQUESTS.find((r) => r.requestId === requestId);
-    if (matched) return matched;
-    const msg =
-      err instanceof Error ? err.message : `Unable to fetch service request [${requestId}].`;
-    throw new ApiError(msg, 503);
-  }
+  const normalizedId = requestId.replace(/^#/, '');
+  return getServicesProvider().fetchGuestServiceRequestById(sessionToken, normalizedId);
 }
 
 /**
@@ -303,32 +169,26 @@ export async function advanceServiceRequestStatusDemo(
   status: ServiceRequestStatus,
   assignedStaff?: string,
 ): Promise<ServiceRequestResponse> {
-  try {
-    const response = await fetch(
-      `${API_URL}/service-requests/${encodeURIComponent(requestId)}/status`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${sessionToken}`,
-        },
-        body: JSON.stringify({ status, assignedStaff }),
-      },
-    );
+  const normalizedId = requestId.replace(/^#/, '');
+  return getServicesProvider().advanceDemoServiceRequestStatus(
+    sessionToken,
+    normalizedId,
+    status,
+    assignedStaff,
+  );
+}
 
-    const body = await response.json().catch(() => null);
-
-    if (!response.ok) {
-      const errorMsg = body?.message || 'Unable to advance service request status.';
-      throw new ApiError(errorMsg, response.status, body);
-    }
-
-    return body as ServiceRequestResponse;
-  } catch (err: unknown) {
-    if (err instanceof ApiError) {
-      throw err;
-    }
-    const msg = err instanceof Error ? err.message : 'Unable to advance service request status.';
-    throw new ApiError(msg, 503);
-  }
+export async function advanceDemoServiceRequestStatus(
+  sessionToken: string,
+  requestId: string,
+  newStatus: ServiceRequestStatus,
+  assignedStaff?: string,
+): Promise<ServiceRequestResponse> {
+  const normalizedId = requestId.replace(/^#/, '');
+  return getServicesProvider().advanceDemoServiceRequestStatus(
+    sessionToken,
+    normalizedId,
+    newStatus,
+    assignedStaff,
+  );
 }

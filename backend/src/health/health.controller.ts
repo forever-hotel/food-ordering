@@ -1,8 +1,17 @@
-import { Controller, Get, HttpCode, HttpStatus, Res } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 
+import { InternalServiceGuard } from '../common/auth/internal-service.guard.js';
 import {
+  DatabaseIsolationDto,
   LivenessResponseDto,
   ReadinessResponseDto,
 } from './dto/health-response.dto.js';
@@ -67,5 +76,21 @@ export class HealthController {
       res.status(HttpStatus.SERVICE_UNAVAILABLE);
     }
     return result;
+  }
+
+  @Get('internal/database-isolation')
+  @UseGuards(InternalServiceGuard)
+  @ApiOperation({
+    summary: 'Internal database isolation diagnostics',
+    description:
+      'Internal diagnostic endpoint for automated integration test safety gates. Requires internal service authentication.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Database isolation classification',
+    type: DatabaseIsolationDto,
+  })
+  async getDatabaseIsolation(): Promise<DatabaseIsolationDto> {
+    return await this.healthService.getDatabaseIsolationInfo();
   }
 }

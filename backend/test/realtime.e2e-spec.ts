@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
+import * as http from 'node:http';
 import {
   INestApplication,
   UnauthorizedException,
@@ -15,9 +16,88 @@ import { RealtimeEventType } from '../src/realtime/enums/realtime-event-type.enu
 import { RealtimeController } from '../src/realtime/realtime.controller.js';
 import { RealtimeService } from '../src/realtime/realtime.service.js';
 
+interface SseClient {
+  status: number;
+  headers: http.IncomingHttpHeaders;
+  events: any[];
+  waitForEvent: (timeoutMs?: number) => Promise<any>;
+  close: () => void;
+}
+
+const activeSseClients: SseClient[] = [];
+
+function subscribeSse(
+  streamUrl: string,
+  headers?: Record<string, string>,
+): Promise<SseClient> {
+  return new Promise<SseClient>((resolve, reject) => {
+    const events: any[] = [];
+    const waiters: Array<(event: any) => void> = [];
+    let buffer = '';
+
+    const req = http.get(streamUrl, { headers }, (res) => {
+      res.setEncoding('utf8');
+      res.on('data', (chunk: string) => {
+        buffer += chunk;
+        const blocks = buffer.split('\n\n');
+        buffer = blocks.pop() || '';
+        for (const block of blocks) {
+          const dataLine = block.split('\n').find((l) => l.startsWith('data:'));
+          if (dataLine) {
+            try {
+              const parsed = JSON.parse(dataLine.replace(/^data:\s*/, ''));
+              if (waiters.length > 0) {
+                const waiter = waiters.shift();
+                waiter?.(parsed);
+              } else {
+                events.push(parsed);
+              }
+            } catch {
+              // Ignore non-json lines
+            }
+          }
+        }
+      });
+
+      const client: SseClient = {
+        status: res.statusCode || 0,
+        headers: res.headers,
+        events,
+        waitForEvent: (timeoutMs = 4000) => {
+          if (events.length > 0) {
+            return Promise.resolve(events.shift());
+          }
+          return new Promise((resWaiter, rejWaiter) => {
+            const timer = setTimeout(() => {
+              rejWaiter(new Error('Timed out waiting for SSE event'));
+            }, timeoutMs);
+            waiters.push((evt) => {
+              clearTimeout(timer);
+              resWaiter(evt);
+            });
+          });
+        },
+        close: () => {
+          req.destroy();
+          res.destroy();
+          res.socket?.destroy();
+          const idx = activeSseClients.indexOf(client);
+          if (idx !== -1) activeSseClients.splice(idx, 1);
+        },
+      };
+
+      activeSseClients.push(client);
+      resolve(client);
+    });
+
+    req.on('error', reject);
+  });
+}
+
 describe('Authenticated Real-Time Event Delivery & Fallback (e2e)', () => {
   let app: INestApplication;
   let realtimeService: RealtimeService;
+  let baseUrl: string;
 
   let activeTokenRoom101: string;
   let activeTokenRoom102: string;
@@ -99,9 +179,21 @@ describe('Authenticated Real-Time Event Delivery & Fallback (e2e)', () => {
     );
 
     await app.init();
+    await app.listen(0);
+    const serverAddress = app.getHttpServer().address();
+    baseUrl =
+      typeof serverAddress === 'object' && serverAddress
+        ? `http://127.0.0.1:${serverAddress.port}`
+        : 'http://127.0.0.1:4300';
   });
 
   afterAll(async () => {
+    for (const client of activeSseClients.slice()) {
+      try {
+        client.close();
+      } catch {}
+    }
+    activeSseClients.length = 0;
     if (app) {
       await app.close();
     }
@@ -269,6 +361,176 @@ describe('Authenticated Real-Time Event Delivery & Fallback (e2e)', () => {
       );
 
       expect(response.status).toBe(401);
+    });
+  });
+
+  describe('TC-DDP-135-AC5: Real SSE Streaming Verification (#101)', () => {
+    it('establishes authenticated SSE stream via query param and header and verifies content-type', async () => {
+      const streamQuery = await subscribeSse(
+        `${baseUrl}/realtime/events/stream?token=${activeTokenRoom101}`,
+      );
+      expect(streamQuery.status).toBe(200);
+      expect(streamQuery.headers['content-type']).toContain(
+        'text/event-stream',
+      );
+      streamQuery.close();
+
+      const streamHeader = await subscribeSse(
+        `${baseUrl}/realtime/events/stream`,
+        { Authorization: `Bearer ${activeTokenRoom101}` },
+      );
+      expect(streamHeader.status).toBe(200);
+      expect(streamHeader.headers['content-type']).toContain(
+        'text/event-stream',
+      );
+      streamHeader.close();
+    });
+
+    it('delivers food order status events in real-time over active SSE stream', async () => {
+      const stream101 = await subscribeSse(
+        `${baseUrl}/realtime/events/stream?token=${activeTokenRoom101}`,
+      );
+
+      const eventPromise = stream101.waitForEvent();
+
+      realtimeService.emitToStay(
+        'booking-101',
+        '101',
+        RealtimeEventType.FOOD_ORDER_STATUS_UPDATED,
+        {
+          orderId: 'ord-sse-delivery-001',
+          status: 'READY',
+          estimatedDeliveryMinutes: 5,
+        },
+      );
+
+      const received = await eventPromise;
+      expect(received).toBeDefined();
+      expect(received.eventType).toBe(
+        RealtimeEventType.FOOD_ORDER_STATUS_UPDATED,
+      );
+      expect(received.roomNumber).toBe('101');
+      expect(received.bookingId).toBe('booking-101');
+      expect(received.data.status).toBe('READY');
+      expect(received.data.orderId).toBe('ord-sse-delivery-001');
+
+      stream101.close();
+    });
+
+    it('enforces strict room isolation with ZERO cross-room event leakage over SSE', async () => {
+      const stream101 = await subscribeSse(
+        `${baseUrl}/realtime/events/stream?token=${activeTokenRoom101}`,
+      );
+      const stream102 = await subscribeSse(
+        `${baseUrl}/realtime/events/stream?token=${activeTokenRoom102}`,
+      );
+
+      const p102 = stream102.waitForEvent();
+
+      // Emit event destined strictly for Room 102
+      realtimeService.emitToStay(
+        'booking-102',
+        '102',
+        RealtimeEventType.FOOD_ORDER_STATUS_UPDATED,
+        {
+          orderId: 'ord-room-102-private',
+          status: 'IN_PREPARATION',
+        },
+      );
+
+      const received102 = await p102;
+      expect(received102.roomNumber).toBe('102');
+      expect(received102.data.orderId).toBe('ord-room-102-private');
+
+      // Room 101 must NOT have received any event
+      expect(stream101.events).toHaveLength(0);
+
+      stream101.close();
+      stream102.close();
+    });
+
+    it('guarantees event ordering and duplicate suppression over live SSE stream', async () => {
+      const stream101 = await subscribeSse(
+        `${baseUrl}/realtime/events/stream?token=${activeTokenRoom101}`,
+      );
+
+      const p1 = stream101.waitForEvent();
+      const customDedupId = 'custom-sse-dedup-uuid-999';
+
+      realtimeService.emitToStay(
+        'booking-101',
+        '101',
+        RealtimeEventType.SERVICE_REQUEST_STATUS_UPDATED,
+        { requestId: 'sr-dedup-1', status: 'IN_PROGRESS' },
+        customDedupId,
+      );
+
+      // Re-emit with identical eventId (duplicate suppression)
+      realtimeService.emitToStay(
+        'booking-101',
+        '101',
+        RealtimeEventType.SERVICE_REQUEST_STATUS_UPDATED,
+        { requestId: 'sr-dedup-1', status: 'IN_PROGRESS' },
+        customDedupId,
+      );
+
+      const firstEvent = await p1;
+      expect(firstEvent.eventId).toBe(customDedupId);
+      expect(firstEvent.eventType).toBe(
+        RealtimeEventType.SERVICE_REQUEST_STATUS_UPDATED,
+      );
+
+      // Verify no duplicate second event was pushed to stream
+      expect(stream101.events).toHaveLength(0);
+
+      stream101.close();
+    });
+
+    it('supports client disconnection, reconnection, and polling fallback recovery', async () => {
+      // 1. Client connects to SSE
+      const streamFirst = await subscribeSse(
+        `${baseUrl}/realtime/events/stream?token=${activeTokenRoom101}`,
+      );
+      expect(streamFirst.status).toBe(200);
+
+      // 2. Client abruptly disconnects
+      streamFirst.close();
+
+      // 3. Event occurs while client is offline / disconnected
+      const missedEvent = realtimeService.emitToStay(
+        'booking-101',
+        '101',
+        RealtimeEventType.FOOD_ORDER_STATUS_UPDATED,
+        { orderId: 'ord-missed-while-offline', status: 'DELIVERED' },
+      );
+
+      // 4. Polling fallback retrieves the missed event via REST fallback
+      const pollFallback = await request(app.getHttpServer())
+        .get(`/realtime/events/poll?sinceVersion=${missedEvent.version - 1}`)
+        .set('Authorization', `Bearer ${activeTokenRoom101}`);
+
+      expect(pollFallback.status).toBe(200);
+      expect(pollFallback.body.events).toHaveLength(1);
+      expect(pollFallback.body.events[0].data.orderId).toBe(
+        'ord-missed-while-offline',
+      );
+
+      // 5. Client reconnects to SSE and receives subsequent live events
+      const streamReconnected = await subscribeSse(
+        `${baseUrl}/realtime/events/stream?token=${activeTokenRoom101}`,
+      );
+      const reconnectPromise = streamReconnected.waitForEvent();
+
+      realtimeService.emitToStay(
+        'booking-101',
+        '101',
+        RealtimeEventType.FOOD_ORDER_STATUS_UPDATED,
+        { orderId: 'ord-after-reconnect', status: 'PLACED' },
+      );
+
+      const receivedAfterReconnect = await reconnectPromise;
+      expect(receivedAfterReconnect.data.orderId).toBe('ord-after-reconnect');
+      streamReconnected.close();
     });
   });
 });

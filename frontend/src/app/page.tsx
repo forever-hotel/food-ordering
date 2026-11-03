@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useSyncExternalStore } from 'react';
 import { Spin } from 'antd';
 
 import { useAuth } from '@/lib/auth/auth-context';
@@ -12,10 +12,15 @@ import { ServicesTab } from '@/features/services/components/services-tab';
 import { ComplaintsTab } from '@/features/complaints/components/complaints-tab';
 
 export default function HomePage() {
+  const isMounted = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
   const { status } = useAuth();
   const { activeTab } = useNavigation();
 
-  if (status === 'loading') {
+  if (!isMounted || status === 'loading') {
     return (
       <div
         className="flex flex-col items-center justify-center py-20"

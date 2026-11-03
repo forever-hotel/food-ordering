@@ -193,4 +193,36 @@ describe('RealtimeService', () => {
       expect(poll.events).toHaveLength(0);
     });
   });
+
+  describe('resetScopedChannels()', () => {
+    it('resets only channels for targeted demo stays, leaving unrelated stays unaffected', () => {
+      // 1. Emit events to demo stay and non-demo stay
+      service.emitToStay(
+        'demo-booking',
+        '101',
+        RealtimeEventType.FOOD_ORDER_STATUS_UPDATED,
+        { a: 1 },
+      );
+      service.emitToStay(
+        'other-booking',
+        '202',
+        RealtimeEventType.FOOD_ORDER_STATUS_UPDATED,
+        { b: 2 },
+      );
+
+      // 2. Perform scoped reset for demo stay only
+      const cleared = service.resetScopedChannels([
+        { bookingId: 'demo-booking', roomNumber: '101' },
+      ]);
+      expect(cleared).toBe(1);
+
+      // 3. Demo stay buffer is cleared
+      const demoPoll = service.getEventsSince('demo-booking', '101');
+      expect(demoPoll.events).toHaveLength(0);
+
+      // 4. Other stay buffer is intact!
+      const otherPoll = service.getEventsSince('other-booking', '202');
+      expect(otherPoll.events).toHaveLength(1);
+    });
+  });
 });

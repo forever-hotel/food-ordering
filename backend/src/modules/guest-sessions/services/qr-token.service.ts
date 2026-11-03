@@ -25,6 +25,7 @@ export class QrTokenService {
   private readonly logger = new Logger(QrTokenService.name);
   private readonly signingSecret: string;
   private readonly seenNonces = new Map<string, number>();
+  private readonly demoNonces = new Set<string>();
 
   private readonly clock: () => number;
 
@@ -33,9 +34,26 @@ export class QrTokenService {
     @Optional() @Inject('QR_CLOCK') clock?: () => number,
   ) {
     this.clock = clock ?? (() => Date.now());
-    this.signingSecret =
-      this.configService.get<string>('QR_SIGNING_SECRET') ||
-      DEFAULT_DEV_SIGNING_SECRET;
+    const configuredSecret =
+      this.configService.get<string>('QR_SIGNING_SECRET');
+    const isProduction =
+      process.env.NODE_ENV === 'production' ||
+      this.configService.get<string>('NODE_ENV') === 'production';
+
+    if (isProduction) {
+      if (
+        !configuredSecret ||
+        configuredSecret === DEFAULT_DEV_SIGNING_SECRET ||
+        configuredSecret.length < 32
+      ) {
+        throw new Error(
+          'SECURITY VIOLATION: Production requires a dedicated, high-entropy QR_SIGNING_SECRET (at least 32 characters). Default development fallback signing secret is strictly forbidden in production.',
+        );
+      }
+      this.signingSecret = configuredSecret;
+    } else {
+      this.signingSecret = configuredSecret || DEFAULT_DEV_SIGNING_SECRET;
+    }
   }
 
   /**
@@ -45,18 +63,23 @@ export class QrTokenService {
     bookingId: string,
     roomNumber: string,
     ttlMs: number = 24 * 60 * 60 * 1000,
+    isDemo: boolean = false,
   ): string {
     if (!bookingId || !roomNumber) {
       throw new BadRequestException('bookingId and roomNumber are required.');
     }
 
     const now = this.clock();
+    const nonce = crypto.randomUUID();
+    if (isDemo) {
+      this.demoNonces.add(nonce);
+    }
     const payload: QrTokenPayload = {
       bookingId: bookingId.trim(),
       roomNumber: roomNumber.trim(),
       issuedAt: now,
       expiresAt: now + ttlMs,
-      nonce: crypto.randomUUID(),
+      nonce,
     };
 
     const encodedPayload = Buffer.from(JSON.stringify(payload)).toString(
@@ -72,6 +95,16 @@ export class QrTokenService {
    * Enforces cryptographic integrity, expiration, and replay protection.
    */
   verifyToken(qrToken: string): QrTokenPayload {
+    const isProduction =
+      process.env.NODE_ENV === 'production' ||
+      this.configService.get<string>('NODE_ENV') === 'production';
+
+    if (isProduction) {
+      throw new UnauthorizedException(
+        'Legacy signed QR tokens are strictly disabled in production environments.',
+      );
+    }
+
     if (!qrToken || typeof qrToken !== 'string') {
       throw new BadRequestException('QR token is required.');
     }
@@ -149,27 +182,120 @@ export class QrTokenService {
    */
   getDemoTokens(): Record<string, string> {
     return {
+      'Room 101 (John Doe)': this.createToken(
+        'b1010000-0000-4000-8000-000000000101',
+        '101',
+        undefined,
+        true,
+      ),
+      'Room 102 (Jane Smith)': this.createToken(
+        'b1020000-0000-4000-8000-000000000102',
+        '102',
+        undefined,
+        true,
+      ),
+      'Room 103 (Robert Frost)': this.createToken(
+        'b1030000-0000-4000-8000-000000000103',
+        '103',
+        undefined,
+        true,
+      ),
+      'Room 204 (Alice Wong)': this.createToken(
+        'b2040000-0000-4000-8000-000000000204',
+        '204',
+        undefined,
+        true,
+      ),
+      'Room 999 (Expired Session)': this.createToken(
+        'b9990000-0000-4000-8000-000000000999',
+        '999',
+        -24 * 60 * 60 * 1000,
+        true,
+      ),
+      '101': this.createToken(
+        'b1010000-0000-4000-8000-000000000101',
+        '101',
+        undefined,
+        true,
+      ),
+      '102': this.createToken(
+        'b1020000-0000-4000-8000-000000000102',
+        '102',
+        undefined,
+        true,
+      ),
+      '103': this.createToken(
+        'b1030000-0000-4000-8000-000000000103',
+        '103',
+        undefined,
+        true,
+      ),
+      '204': this.createToken(
+        'b2040000-0000-4000-8000-000000000204',
+        '204',
+        undefined,
+        true,
+      ),
+      '999': this.createToken(
+        'b9990000-0000-4000-8000-000000000999',
+        '999',
+        -24 * 60 * 60 * 1000,
+        true,
+      ),
       '101-checked-in': this.createToken(
         'b1010000-0000-4000-8000-000000000101',
         '101',
+        undefined,
+        true,
       ),
       '102-reserved': this.createToken(
-        'b1020000-0000-4000-8000-000000000102',
-        '102',
+        'b1060000-0000-4000-8000-000000000106',
+        '106',
+        undefined,
+        true,
       ),
       '103-checked-out': this.createToken(
-        'b1030000-0000-4000-8000-000000000103',
-        '103',
+        'b1070000-0000-4000-8000-000000000107',
+        '107',
+        undefined,
+        true,
       ),
       '104-cancelled': this.createToken(
         'b1040000-0000-4000-8000-000000000104',
         '104',
+        undefined,
+        true,
       ),
       '105-expired-window': this.createToken(
         'b1050000-0000-4000-8000-000000000105',
         '105',
+        undefined,
+        true,
       ),
     };
+  }
+
+  /**
+   * Resets only nonces redeemed from demonstration tokens, preserving replay protection
+   * for non-demo tokens in shared environments.
+   */
+  public resetDemoNonces(): number {
+    let count = 0;
+    for (const nonce of this.demoNonces) {
+      if (this.seenNonces.delete(nonce)) {
+        count++;
+      }
+    }
+    this.demoNonces.clear();
+    return count;
+  }
+
+  /**
+   * Cleans up all in-memory redeemed nonces (used during full test reset).
+   */
+  public reset(): void {
+    this.seenNonces.clear();
+    this.demoNonces.clear();
   }
 
   private generateSignature(data: string): string {

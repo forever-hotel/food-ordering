@@ -1,10 +1,11 @@
-export enum RealtimeEventType {
-  FOOD_ORDER_STATUS_UPDATED = 'FOOD_ORDER_STATUS_UPDATED',
-  SERVICE_REQUEST_STATUS_UPDATED = 'SERVICE_REQUEST_STATUS_UPDATED',
-  COMPLAINT_STATUS_UPDATED = 'COMPLAINT_STATUS_UPDATED',
-  SESSION_REVOKED = 'SESSION_REVOKED',
-  HEARTBEAT = 'HEARTBEAT',
-}
+export const RealtimeEventType = {
+  FOOD_ORDER_STATUS_UPDATED: 'FOOD_ORDER_STATUS_UPDATED',
+  SERVICE_REQUEST_STATUS_UPDATED: 'SERVICE_REQUEST_STATUS_UPDATED',
+  COMPLAINT_STATUS_UPDATED: 'COMPLAINT_STATUS_UPDATED',
+  SESSION_REVOKED: 'SESSION_REVOKED',
+  HEARTBEAT: 'HEARTBEAT',
+} as const;
+export type RealtimeEventType = (typeof RealtimeEventType)[keyof typeof RealtimeEventType];
 
 export interface FossRealtimeEvent<T = unknown> {
   eventId: string;
@@ -39,6 +40,27 @@ export interface RealtimeClientConfig {
   onStatusChange?: (status: ConnectionStatus) => void;
 }
 
+/**
+ * Global registry of active realtime clients across tabs and components.
+ * Enables immediate teardown when guests log out or switch stays.
+ */
+const activeRealtimeClients = new Set<FossRealtimeClient>();
+
+/**
+ * Forcibly disconnects and cleans up all active SSE streams.
+ * Prevents cross-room event contamination during room transitions.
+ */
+export function disconnectAllRealtimeClients(): void {
+  for (const client of activeRealtimeClients) {
+    try {
+      client.disconnect();
+    } catch {
+      // Safe teardown isolation
+    }
+  }
+  activeRealtimeClients.clear();
+}
+
 export class FossRealtimeClient {
   private status: ConnectionStatus = 'DISCONNECTED';
   private reconnectAttempts = 0;
@@ -52,8 +74,10 @@ export class FossRealtimeClient {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private lastVersion = 0;
   private readonly seenEventIds = new Set<string>();
+  private readonly config: RealtimeClientConfig;
 
-  constructor(private readonly config: RealtimeClientConfig) {
+  constructor(config: RealtimeClientConfig) {
+    this.config = config;
     this.maxReconnectAttempts = config.maxReconnectAttempts ?? 5;
     this.initialBackoffMs = config.initialBackoffMs ?? 500;
     this.maxBackoffMs = config.maxBackoffMs ?? 5000;
@@ -64,23 +88,31 @@ export class FossRealtimeClient {
     return this.status;
   }
 
+  public getSubscriptionContext(): { bookingId?: string; roomNumber?: string } {
+    return {
+      bookingId: this.config.bookingId,
+      roomNumber: this.config.roomNumber,
+    };
+  }
+
   public connect(): void {
     if (this.status === 'CONNECTED' || this.status === 'CONNECTING') {
       return;
     }
 
+    activeRealtimeClients.add(this);
     this.setStatus('CONNECTING');
 
-    // If EventSource is available in the environment (e.g. browser), attempt SSE
+    // Attempt real SSE stream if EventSource is available; otherwise HTTP polling fallback
     if (typeof EventSource !== 'undefined') {
       this.initEventSource();
     } else {
-      // Fallback directly to HTTP polling
       this.startPollingFallback();
     }
   }
 
   public disconnect(): void {
+    activeRealtimeClients.delete(this);
     this.setStatus('DISCONNECTED');
     this.reconnectAttempts = 0;
 

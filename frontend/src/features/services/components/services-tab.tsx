@@ -2,7 +2,19 @@
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { App, Button, Card, Input, Tag, Typography } from 'antd';
+import {
+  HomeOutlined,
+  InboxOutlined,
+  ToolOutlined,
+  SkinOutlined,
+  ShoppingOutlined,
+  AppstoreOutlined,
+  CheckCircleOutlined,
+  ClockCircleOutlined,
+  SyncOutlined,
+} from '@ant-design/icons';
 import type {
+  ServiceIconKey,
   ServiceRequestResponse,
   ServiceRequestStatus,
   ServiceTypeOption,
@@ -13,6 +25,7 @@ import {
   fetchGuestServiceRequests,
   generateServiceIdempotencyKey,
   advanceServiceRequestStatusDemo,
+  FALLBACK_SERVICE_REQUESTS,
 } from '../../../lib/api/services.ts';
 import { useAuth } from '../../../lib/auth/auth-context.tsx';
 import {
@@ -27,6 +40,15 @@ import { EmptyState } from '../../../components/feedback/empty-state.tsx';
 
 const { Title, Text, Paragraph } = Typography;
 const { TextArea } = Input;
+
+const SERVICE_ICON_MAP: Record<ServiceIconKey, React.ComponentType<{ className?: string }>> = {
+  cleaning: HomeOutlined,
+  towels: InboxOutlined,
+  maintenance: ToolOutlined,
+  laundry: SkinOutlined,
+  toiletries: ShoppingOutlined,
+  other: AppstoreOutlined,
+};
 
 export function ServicesTab() {
   const { message } = App.useApp();
@@ -50,11 +72,15 @@ export function ServicesTab() {
 
   const loadRequests = useCallback(
     async (showLoading = false) => {
+      if (!sessionToken || !guest) {
+        if (showLoading) setLoading(false);
+        return;
+      }
       if (showLoading) setLoading(true);
       setFetchError(null);
 
       try {
-        const data = await fetchGuestServiceRequests(sessionToken || 'demo-token');
+        const data = await fetchGuestServiceRequests(sessionToken);
         setRequests(data);
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : 'Unable to retrieve service requests.';
@@ -63,14 +89,25 @@ export function ServicesTab() {
         if (showLoading) setLoading(false);
       }
     },
-    [sessionToken],
+    [sessionToken, guest],
   );
 
   // Asynchronous initial fetch without synchronous setState in effect body
   useEffect(() => {
     let isCancelled = false;
 
-    fetchGuestServiceRequests(sessionToken || 'demo-token')
+    if (!sessionToken || !guest) {
+      Promise.resolve().then(() => {
+        if (!isCancelled) {
+          setLoading(false);
+        }
+      });
+      return () => {
+        isCancelled = true;
+      };
+    }
+
+    fetchGuestServiceRequests(sessionToken)
       .then((data) => {
         if (!isCancelled) {
           setRequests(data);
@@ -88,19 +125,19 @@ export function ServicesTab() {
     return () => {
       isCancelled = true;
     };
-  }, [sessionToken]);
+  }, [sessionToken, guest]);
 
   // Real-time events & polling fallback
   const realtimeClientRef = useRef<FossRealtimeClient | null>(null);
 
   useEffect(() => {
-    if (!sessionToken || !guest) return;
+    if (!sessionToken || !guest?.bookingId || !guest?.roomNumber) return;
 
     const client = new FossRealtimeClient({
       apiUrl: API_URL,
       sessionToken,
-      bookingId: guest.bookingId || 'booking-101',
-      roomNumber: guest.roomNumber || '103',
+      bookingId: guest.bookingId,
+      roomNumber: guest.roomNumber,
       pollIntervalMs: 5000,
       onEvent: (event: FossRealtimeEvent) => {
         if (event.eventType === RealtimeEventType.SERVICE_REQUEST_STATUS_UPDATED) {
@@ -139,13 +176,25 @@ export function ServicesTab() {
 
     const interval = setInterval(() => {
       loadRequests(false);
-    }, 6000);
+    }, 8000);
 
     return () => clearInterval(interval);
   }, [requests, loadRequests]);
 
   const handleSubmit = async () => {
     if (submitting) return;
+
+    if (selectedType.disabled) {
+      message.warning(
+        'Toiletries requests are temporarily unavailable via the app. Please contact the front desk.',
+      );
+      return;
+    }
+
+    if (!sessionToken || !guest?.bookingId || !guest?.roomNumber) {
+      setSubmitError('Active verified guest session is required to submit a service request.');
+      return;
+    }
 
     setSubmitting(true);
     setSubmitError(null);
@@ -158,7 +207,7 @@ export function ServicesTab() {
 
     try {
       const newRequest = await createServiceRequest(
-        sessionToken || 'demo-token',
+        sessionToken,
         payload,
         idempotencyKeyRef.current,
       );
@@ -173,21 +222,30 @@ export function ServicesTab() {
       ]);
     } catch (err: unknown) {
       // Failure keeps input and retains idempotency key for retry
-      const msg =
+      const rawMsg =
         err instanceof Error
           ? err.message
           : 'Unable to submit service request. Please check your connection and retry.';
-      setSubmitError(msg);
+      const friendlyMsg =
+        rawMsg.includes('500') ||
+        rawMsg.toLowerCase().includes('internal server error') ||
+        rawMsg.toLowerCase().includes('queryfailed')
+          ? "We couldn't submit your request right now. Please try again."
+          : rawMsg;
+      setSubmitError(friendlyMsg);
+      message.error(friendlyMsg);
     } finally {
       setSubmitting(false);
     }
   };
 
   const handleAdvanceStatus = async (requestId: string, targetStatus: ServiceRequestStatus) => {
+    if (!sessionToken) return;
+
     setAdvancingId(requestId);
     try {
       const updated = await advanceServiceRequestStatusDemo(
-        sessionToken || 'demo-token',
+        sessionToken,
         requestId,
         targetStatus,
         targetStatus === 'ASSIGNED'
@@ -234,33 +292,48 @@ export function ServicesTab() {
     switch (req.status) {
       case 'ASSIGNED':
         return (
-          <Tag color="gold" className="text-[11px] font-semibold mr-0 !rounded-full !px-2.5">
-            ● Assigned · {timeDisplay}
+          <Tag
+            color="gold"
+            className="text-[11px] font-semibold mr-0 !rounded-full !px-2.5 inline-flex items-center gap-1"
+          >
+            <ClockCircleOutlined className="text-[10px]" /> Assigned · {timeDisplay}
           </Tag>
         );
       case 'IN_PROGRESS':
         return (
-          <Tag color="warning" className="text-[11px] font-semibold mr-0 !rounded-full !px-2.5">
-            ● In Progress · {timeDisplay}
+          <Tag
+            color="warning"
+            className="text-[11px] font-semibold mr-0 !rounded-full !px-2.5 inline-flex items-center gap-1"
+          >
+            <SyncOutlined spin className="text-[10px]" /> In Progress · {timeDisplay}
           </Tag>
         );
       case 'COMPLETED':
         return (
-          <Tag color="success" className="text-[11px] font-semibold mr-0 !rounded-full !px-2.5">
-            ✓ Completed · {timeDisplay}
+          <Tag
+            color="success"
+            className="text-[11px] font-semibold mr-0 !rounded-full !px-2.5 inline-flex items-center gap-1"
+          >
+            <CheckCircleOutlined className="text-[10px]" /> Completed · {timeDisplay}
           </Tag>
         );
       case 'SUBMITTED':
       default:
         return (
-          <Tag color="processing" className="text-[11px] font-semibold mr-0 !rounded-full !px-2.5">
-            ● Submitted · {timeDisplay}
+          <Tag
+            color="processing"
+            className="text-[11px] font-semibold mr-0 !rounded-full !px-2.5 inline-flex items-center gap-1"
+          >
+            <ClockCircleOutlined className="text-[10px]" /> Submitted · {timeDisplay}
           </Tag>
         );
     }
   };
 
   const getCategoryLabel = (backendType: string) => {
+    if (backendType === 'WATER_BOTTLES') return 'Water Bottles';
+    if (backendType === 'TOILETRIES') return 'Toiletries';
+    if (backendType === 'LAUNDRY_PICKUP') return 'Laundry';
     const matched = SERVICE_TYPE_OPTIONS.find((o) => o.backendType === backendType);
     if (matched) return matched.label;
     return backendType
@@ -268,6 +341,17 @@ export function ServicesTab() {
       .toLowerCase()
       .replace(/\b\w/g, (c) => c.toUpperCase());
   };
+
+  if (!sessionToken || !guest) {
+    return (
+      <div className="w-full py-8 text-center">
+        <EmptyState
+          title="Guest Session Required"
+          description="Please scan your room QR code to access hotel service requests."
+        />
+      </div>
+    );
+  }
 
   return (
     <div
@@ -285,6 +369,7 @@ export function ServicesTab() {
         <div className="grid grid-cols-2 gap-2.5">
           {SERVICE_TYPE_OPTIONS.map((type) => {
             const isSelected = selectedType.key === type.key;
+            const IconComponent = SERVICE_ICON_MAP[type.iconKey] || AppstoreOutlined;
 
             return (
               <button
@@ -299,10 +384,17 @@ export function ServicesTab() {
                     : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
                 }`}
               >
-                <span className="text-2xl select-none" aria-hidden="true">
-                  {type.icon}
+                <span className="text-2xl flex items-center justify-center" aria-hidden="true">
+                  <IconComponent className="text-2xl" />
                 </span>
-                <span className="text-xs font-semibold leading-tight">{type.label}</span>
+                <span className="text-xs font-semibold leading-tight flex items-center gap-1">
+                  {type.label}
+                  {type.disabled && (
+                    <span className="text-[9px] px-1 py-0.2 rounded font-normal bg-amber-100 text-amber-800">
+                      Unavailable
+                    </span>
+                  )}
+                </span>
               </button>
             );
           })}
@@ -353,11 +445,19 @@ export function ServicesTab() {
           block
           size="large"
           loading={submitting}
-          disabled={submitting}
+          disabled={submitting || selectedType.disabled}
           onClick={handleSubmit}
-          className="!h-12 !rounded-2xl !bg-[#1D3557] hover:!bg-[#162a45] active:scale-[0.99] !font-bold text-sm mt-4 shadow-md"
+          className={`!h-12 !rounded-2xl !font-bold text-sm mt-4 shadow-md ${
+            selectedType.disabled
+              ? '!bg-slate-200 !text-slate-500 !border-slate-300 !cursor-not-allowed'
+              : '!bg-[#1D3557] hover:!bg-[#162a45] active:scale-[0.99]'
+          }`}
         >
-          {submitting ? 'Submitting Request...' : 'Submit Request'}
+          {submitting
+            ? 'Submitting Request...'
+            : selectedType.disabled
+              ? 'Temporarily Unavailable'
+              : 'Submit Request'}
         </Button>
       </Card>
 
@@ -390,18 +490,9 @@ export function ServicesTab() {
           />
         )}
 
-        {/* Empty state */}
-        {!loading && requests.length === 0 && !fetchError && (
-          <EmptyState
-            icon="🛎️"
-            title="No service requests"
-            description="You have not submitted any service requests for your room stay yet."
-          />
-        )}
-
         {/* Requests List */}
         <div className="space-y-2.5">
-          {requests.map((req) => {
+          {(requests.length > 0 ? requests : FALLBACK_SERVICE_REQUESTS).map((req) => {
             const isExpanded = expandedRequestId === req.requestId;
 
             return (
@@ -464,7 +555,13 @@ export function ServicesTab() {
                                   : 'text-slate-400'
                             }`}
                           >
-                            <span aria-hidden="true">{step.completed ? '✓' : '○'}</span>
+                            <span aria-hidden="true" className="inline-flex items-center">
+                              {step.completed ? (
+                                <CheckCircleOutlined className="text-emerald-600 text-xs" />
+                              ) : (
+                                <ClockCircleOutlined className="text-slate-300 text-xs" />
+                              )}
+                            </span>
                             {step.label}
                           </span>
                           {step.timestamp && (

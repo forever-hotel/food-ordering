@@ -20,6 +20,41 @@ export class LivenessResponseDto {
   timestamp!: string;
 }
 
+export class DatabaseIsolationDto {
+  @ApiProperty({
+    description:
+      'Whether the active database is confirmed as an approved isolated disposable test database',
+    example: false,
+  })
+  isDisposableTestDb!: boolean;
+
+  @ApiProperty({
+    description:
+      'Whether the active database targets a shared cloud environment (e.g. Neon dev/prod)',
+    example: false,
+  })
+  isCloudShared!: boolean;
+
+  @ApiProperty({
+    description: 'Explicit isolation environment classification',
+    example: 'dedicated_neon_test',
+  })
+  classification!:
+    | 'dedicated_neon_test'
+    | 'disposable_local_test'
+    | 'neon_parent_dev'
+    | 'shared_cloud_dev'
+    | 'production'
+    | 'unknown';
+
+  @ApiProperty({
+    description:
+      'Whether the active database branch matches the server-configured approved test branch allowlist',
+    example: true,
+  })
+  isApprovedTestBranch!: boolean;
+}
+
 export class DatabaseHealthDto {
   @ApiProperty({
     description: 'Database connection status',

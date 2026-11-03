@@ -1,3 +1,5 @@
+export { MIN_ORDER_ITEM_QUANTITY, MAX_ORDER_ITEM_QUANTITY } from '../lib/constants/order-policy.ts';
+
 export type MealPeriod = 'BREAKFAST' | 'LUNCH' | 'DINNER' | 'TEA_TIME' | 'ALL_DAY';
 
 export interface MealWindowStatus {
@@ -8,12 +10,6 @@ export interface MealWindowStatus {
   isActive: boolean;
   isCutoffReached: boolean;
   secondsRemaining: number;
-}
-
-export interface MenuItemNutrition {
-  calories: number;
-  proteinGrams: number;
-  fatGrams: number;
 }
 
 export interface GuestMenuItem {
@@ -32,7 +28,6 @@ export interface GuestMenuItem {
   dietaryFlags: string[];
   allergens: string[];
   portionCap?: number;
-  nutrition?: MenuItemNutrition;
 }
 
 export interface GuestMenuResponse {

@@ -6,21 +6,20 @@ import {
   IsString,
   MaxLength,
 } from 'class-validator';
-import {
-  TaskPriority,
-  TaskType,
-} from '../../../integrations/internal-services/wkms/dto/wkms-task.dto.js';
+import { TaskPriority } from '../../../integrations/internal-services/wkms/dto/wkms-task.dto.js';
+import { ActiveFossServiceCategory } from '../enums/foss-service-category.enum.js';
 
 export class CreateServiceRequestDto {
   @ApiProperty({
-    enum: TaskType,
-    example: TaskType.EXTRA_TOWELS,
-    description: 'Category of service request',
+    enum: ActiveFossServiceCategory,
+    example: ActiveFossServiceCategory.TOILETRIES,
+    description:
+      'Category of service request matching approved active FOSS service options',
   })
   @IsNotEmpty({ message: 'requestType is required' })
-  @IsEnum(TaskType, {
+  @IsEnum(ActiveFossServiceCategory, {
     message:
-      'requestType must be one of the approved categories: EXTRA_TOWELS, ROOM_CLEANING, TOILETRIES, MAINTENANCE, LUGGAGE_ASSISTANCE, LAUNDRY_PICKUP, OTHER',
+      'requestType must be one of the approved active categories: ROOM_CLEANING, EXTRA_TOWELS, TOILETRIES, MAINTENANCE, LAUNDRY_PICKUP, OTHER',
   })
   requestType!: string;
 

@@ -3,22 +3,40 @@
 import React, { useState } from 'react';
 import { Card, Tag, Typography } from 'antd';
 import type { GuestMenuItem } from '../../../types/menu.ts';
-import { formatLkrPrice } from '../../../lib/api/menu.ts';
+import { formatLkrPrice, isValidImageUrl } from '../../../lib/api/menu.ts';
+import type { ItemAvailabilityInfo } from '../../../lib/utils/meal-windows.ts';
 
 const { Title, Paragraph, Text } = Typography;
 
 interface MenuItemCardProps {
   item: GuestMenuItem;
+  availability?: ItemAvailabilityInfo;
   onSelect: (item: GuestMenuItem) => void;
   onQuickAdd: (item: GuestMenuItem) => void;
 }
 
-export function MenuItemCard({ item, onSelect, onQuickAdd }: MenuItemCardProps) {
+function formatDietaryTag(tag: string): string {
+  const cleaned = tag.replace(/_/g, '-').toLowerCase();
+  if (cleaned === 'gluten-free') return 'Gluten-free';
+  if (cleaned === 'high-protein') return 'High protein';
+  if (cleaned === 'dairy-free') return 'Dairy-free';
+  if (cleaned === 'vegetarian') return 'Vegetarian';
+  if (cleaned === 'vegan') return 'Vegan';
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+}
+
+export function MenuItemCard({ item, availability, onSelect, onQuickAdd }: MenuItemCardProps) {
   const [imgError, setImgError] = useState(false);
 
-  const isSoldOut = !item.available;
-  const isCutoff = item.isCutoff || !item.isOrderable;
-  const isActionable = item.available && item.isOrderable && !item.isCutoff;
+  const isSoldOut = !item.available || availability?.state === 'sold_out';
+  const isActionable = availability
+    ? availability.state === 'available'
+    : item.available && item.isOrderable && !item.isCutoff;
+  const isCutoff = !isActionable && !isSoldOut;
+
+  const badgeText =
+    availability?.badgeLabel ?? (isSoldOut ? 'Sold Out' : isCutoff ? 'Closed' : null);
+  const badgeColor = availability?.state === 'sold_out' || isSoldOut ? 'error' : 'default';
 
   const handleQuickAdd = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -26,12 +44,15 @@ export function MenuItemCard({ item, onSelect, onQuickAdd }: MenuItemCardProps) 
     onQuickAdd(item);
   };
 
+  const hasValidImage = isValidImageUrl(item.imageUrl) && !imgError;
+
   return (
     <Card
       role="button"
       tabIndex={0}
+      data-testid="menu-item-card"
       aria-label={`${item.name}, ${formatLkrPrice(item.price)}. ${
-        isSoldOut ? 'Sold out.' : isCutoff ? 'Outside ordering hours.' : 'Available to order.'
+        badgeText ? `${badgeText}.` : 'Available to order.'
       } Click for details.`}
       onClick={() => onSelect(item)}
       onKeyDown={(e) => {
@@ -40,28 +61,34 @@ export function MenuItemCard({ item, onSelect, onQuickAdd }: MenuItemCardProps) 
           onSelect(item);
         }
       }}
-      className={`!rounded-2xl !border-slate-100 !bg-white !shadow-xs overflow-hidden transition-all cursor-pointer select-none focus-visible:outline-2 focus-visible:outline-[#1D3557] ${
+      className={`!rounded-2xl !border-slate-100/90 !bg-white !shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden transition-all cursor-pointer select-none focus-visible:outline-2 focus-visible:outline-[#1D3557] ${
         isSoldOut || isCutoff
-          ? 'opacity-65 hover:border-slate-100'
-          : 'hover:border-slate-300 active:scale-[0.99]'
+          ? 'opacity-60 hover:border-slate-100'
+          : 'hover:border-slate-200 active:scale-[0.99]'
       }`}
-      styles={{ body: { padding: '14px' } }}
+      styles={{ body: { padding: '12px 14px' } }}
     >
-      <div className="flex gap-3">
-        {/* Food Thumbnail Graphic with Accessible Image Fallback */}
-        <div className="w-20 h-20 rounded-xl bg-slate-100 border border-slate-200/80 flex-shrink-0 overflow-hidden relative flex items-center justify-center">
-          {item.imageUrl && !imgError ? (
-            // eslint-disable-next-line @next/next/no-img-element
+      <div className="flex gap-3.5 items-center">
+        {/* Food Thumbnail (KMS image_url or neutral placeholder) */}
+        <div className="w-18 h-18 rounded-2xl bg-slate-100 border border-slate-200/80 flex-shrink-0 overflow-hidden relative shadow-2xs flex items-center justify-center">
+          {hasValidImage ? (
+            /* eslint-disable-next-line @next/next/no-img-element */
             <img
-              src={item.imageUrl}
+              src={item.imageUrl!}
               alt={item.name}
               onError={() => setImgError(true)}
-              className="w-full h-full object-cover rounded-xl"
+              className="w-full h-full object-cover"
             />
           ) : (
-            <span className="text-2xl select-none" aria-hidden="true">
-              🍲
-            </span>
+            <div
+              className="w-full h-full flex items-center justify-center bg-slate-100 text-slate-400 select-none"
+              role="img"
+              aria-label={`${item.name} placeholder`}
+            >
+              <span className="text-2xl" aria-hidden="true">
+                🍲
+              </span>
+            </div>
           )}
         </div>
 
@@ -74,13 +101,9 @@ export function MenuItemCard({ item, onSelect, onQuickAdd }: MenuItemCardProps) 
               {item.name}
             </Title>
 
-            {isSoldOut ? (
-              <Tag color="default" className="text-[10px] font-semibold mr-0">
-                Unavailable
-              </Tag>
-            ) : isCutoff ? (
-              <Tag color="default" className="text-[10px] font-semibold mr-0 text-slate-500">
-                Outside Hours
+            {badgeText ? (
+              <Tag color={badgeColor} className="text-[10px] font-semibold mr-0 !rounded-full">
+                {badgeText}
               </Tag>
             ) : null}
           </div>
@@ -95,19 +118,19 @@ export function MenuItemCard({ item, onSelect, onQuickAdd }: MenuItemCardProps) 
           )}
 
           {/* Dietary Flags & Allergen Badges (Figure 32) */}
-          <div className="flex flex-wrap gap-1 mb-2">
+          <div className="flex flex-wrap gap-1 mb-1.5">
             {item.dietaryFlags.map((flag) => (
               <span
                 key={flag}
-                className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-medium"
+                className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-medium"
               >
-                {flag}
+                {formatDietaryTag(flag)}
               </span>
             ))}
             {item.allergens.map((allergen) => (
               <span
                 key={allergen}
-                className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-medium flex items-center gap-0.5"
+                className="text-[10px] bg-amber-50 text-amber-800 border border-amber-200/80 px-2 py-0.5 rounded-full font-medium flex items-center gap-0.5"
               >
                 ⚠️ {allergen}
               </span>
@@ -131,7 +154,7 @@ export function MenuItemCard({ item, onSelect, onQuickAdd }: MenuItemCardProps) 
               </button>
             ) : (
               <span className="text-xs text-slate-400 font-medium">
-                {isSoldOut ? 'Sold Out' : 'Outside Hours'}
+                {badgeText || 'Unavailable'}
               </span>
             )}
           </div>

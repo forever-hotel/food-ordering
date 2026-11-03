@@ -897,4 +897,59 @@ describe('ComplaintsService', () => {
       expect(complaintRepo.save).not.toHaveBeenCalled();
     });
   });
+
+  describe('advanceComplaintStatus() [DEMO_MODE]', () => {
+    it('advances complaint status when DEMO_MODE is true in test/dev', async () => {
+      const cmp = {
+        complaintId: 'cmp-demo-001',
+        bookingId: mockGuest.bookingId,
+        roomNumber: mockGuest.roomNumber,
+        status: ComplaintStatus.SUBMITTED,
+        category: ComplaintCategory.ROOM,
+        severity: ComplaintSeverity.LOW,
+        subject: 'AC remote not working',
+        description: 'Batteries seem depleted',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      (complaintRepo.findById as any).mockResolvedValueOnce(cmp);
+      (complaintRepo.save as any).mockResolvedValueOnce(cmp);
+
+      const result = await service.advanceComplaintStatus(
+        mockGuest,
+        'cmp-demo-001',
+        {
+          status: ComplaintStatus.UNDER_INVESTIGATION,
+          resolutionNotes: 'Dispatched housekeeping with new batteries',
+        },
+      );
+
+      expect(result.status).toBe(ComplaintStatus.UNDER_INVESTIGATION);
+      expect(complaintRepo.save).toHaveBeenCalled();
+    });
+
+    it('rejects status advancement when DEMO_MODE is false with 403 Forbidden', async () => {
+      (configService.get as any).mockReturnValueOnce('false');
+
+      await expect(
+        service.advanceComplaintStatus(mockGuest, 'cmp-demo-001', {
+          status: ComplaintStatus.RESOLVED,
+        }),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('strictly rejects status advancement when NODE_ENV is production', async () => {
+      process.env.NODE_ENV = 'production';
+      try {
+        await expect(
+          service.advanceComplaintStatus(mockGuest, 'cmp-demo-001', {
+            status: ComplaintStatus.RESOLVED,
+          }),
+        ).rejects.toThrow(ForbiddenException);
+      } finally {
+        process.env.NODE_ENV = 'test';
+      }
+    });
+  });
 });

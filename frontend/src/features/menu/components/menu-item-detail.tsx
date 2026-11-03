@@ -3,31 +3,77 @@
 import React, { useState } from 'react';
 import { App, Button, Card, Input, Tag, Typography } from 'antd';
 import type { GuestMenuItem } from '../../../types/menu.ts';
-import { formatLkrPrice } from '../../../lib/api/menu.ts';
+import { formatLkrPrice, isValidImageUrl } from '../../../lib/api/menu.ts';
+import { calculateLineTotal } from '../../../lib/utils/money.ts';
+import {
+  MIN_ORDER_ITEM_QUANTITY,
+  MAX_ORDER_ITEM_QUANTITY,
+} from '../../../lib/constants/order-policy.ts';
 import { useCart } from '../../../lib/cart/cart-context.tsx';
+import type { ItemAvailabilityInfo } from '../../../lib/utils/meal-windows.ts';
 
 const { Title, Paragraph, Text } = Typography;
 const { TextArea } = Input;
 
 interface MenuItemDetailProps {
   item: GuestMenuItem;
+  availability?: ItemAvailabilityInfo;
   onBack: () => void;
 }
 
-export function MenuItemDetail({ item, onBack }: MenuItemDetailProps) {
+function formatDietaryTag(tag: string): string {
+  const cleaned = tag.replace(/_/g, '-').toLowerCase();
+  if (cleaned === 'gluten-free') return 'Gluten-free';
+  if (cleaned === 'high-protein') return 'High protein';
+  if (cleaned === 'dairy-free') return 'Dairy-free';
+  if (cleaned === 'vegetarian') return 'Vegetarian';
+  if (cleaned === 'vegan') return 'Vegan';
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+}
+
+export function MenuItemDetail({ item, availability, onBack }: MenuItemDetailProps) {
   const { message } = App.useApp();
   const { addItem, getItemQuantity } = useCart();
   const [quantity, setQuantity] = useState(1);
   const [specialNotes, setSpecialNotes] = useState('');
   const [imgError, setImgError] = useState(false);
 
-  const portionCap = item.portionCap || 3;
+  const portionCap = item.portionCap ?? MAX_ORDER_ITEM_QUANTITY;
   const currentCartQty = getItemQuantity(item.id);
   const remainingAllowance = Math.max(0, portionCap - currentCartQty);
 
-  const isSoldOut = !item.available;
-  const isCutoff = item.isCutoff || !item.isOrderable;
-  const canOrder = item.available && item.isOrderable && !item.isCutoff && remainingAllowance > 0;
+  const isSoldOut = !item.available || availability?.state === 'sold_out';
+  const isActionable = availability
+    ? availability.state === 'available'
+    : item.available && item.isOrderable && !item.isCutoff;
+  const canOrder = isActionable && remainingAllowance > 0;
+
+  // Resolve visible button label guaranteeing meaningful text for every state
+  const getCtaLabel = (): string => {
+    if (!isActionable) {
+      if (isSoldOut || availability?.state === 'sold_out') {
+        return 'Sold Out';
+      }
+      if (availability?.state === 'not_yet_open') {
+        return 'Ordering Not Yet Open';
+      }
+      if (availability?.state === 'closed' || item.isCutoff) {
+        return 'Ordering Closed';
+      }
+      if (availability?.buttonLabel) {
+        return availability.buttonLabel;
+      }
+      return 'Currently Unavailable';
+    }
+
+    if (remainingAllowance <= 0) {
+      return 'Maximum Quantity Reached';
+    }
+
+    return 'Add to Cart';
+  };
+
+  const ctaLabel = getCtaLabel();
 
   const handleIncrement = () => {
     if (quantity < portionCap && quantity < remainingAllowance) {
@@ -36,7 +82,7 @@ export function MenuItemDetail({ item, onBack }: MenuItemDetailProps) {
   };
 
   const handleDecrement = () => {
-    if (quantity > 1) {
+    if (quantity > MIN_ORDER_ITEM_QUANTITY) {
       setQuantity((q) => q - 1);
     }
   };
@@ -53,7 +99,8 @@ export function MenuItemDetail({ item, onBack }: MenuItemDetailProps) {
     }
   };
 
-  const calculatedTotal = item.price * quantity;
+  const calculatedTotal = calculateLineTotal(item.price, quantity);
+  const hasValidImage = isValidImageUrl(item.imageUrl) && !imgError;
 
   return (
     <div
@@ -61,22 +108,28 @@ export function MenuItemDetail({ item, onBack }: MenuItemDetailProps) {
       aria-label={`${item.name} details`}
       className="w-full max-w-md mx-auto space-y-4 pb-28 animate-fade-in"
     >
-      {/* Hero Food Photography (Figure 33) */}
-      <div className="relative w-full h-56 rounded-3xl overflow-hidden bg-slate-900 border border-slate-200 shadow-sm">
-        {item.imageUrl && !imgError ? (
-          // eslint-disable-next-line @next/next/no-img-element
+      {/* Hero Food Photography (Figure 33: KMS image_url or neutral placeholder) */}
+      <div className="relative w-full h-64 rounded-3xl overflow-hidden bg-slate-900 border border-slate-200 shadow-sm flex items-center justify-center">
+        {hasValidImage ? (
+          /* eslint-disable-next-line @next/next/no-img-element */
           <img
-            src={item.imageUrl}
+            src={item.imageUrl!}
             alt={item.name}
             onError={() => setImgError(true)}
             className="w-full h-full object-cover"
           />
         ) : (
-          <div className="w-full h-full flex flex-col items-center justify-center bg-slate-800 text-white gap-2">
+          <div
+            className="w-full h-full flex flex-col items-center justify-center bg-slate-800 text-slate-300 gap-2 select-none"
+            role="img"
+            aria-label={`${item.name} placeholder`}
+          >
             <span className="text-5xl" aria-hidden="true">
               🍲
             </span>
-            <span className="text-xs text-slate-300 font-medium">Forever Hotel Kitchen</span>
+            <span className="text-xs text-slate-400 font-medium tracking-wide">
+              Forever Hotel Kitchen
+            </span>
           </div>
         )}
 
@@ -91,13 +144,19 @@ export function MenuItemDetail({ item, onBack }: MenuItemDetailProps) {
           <span>{item.category}</span>
         </button>
 
-        {isSoldOut && (
+        {isSoldOut ? (
           <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-[2px] flex items-center justify-center">
             <span className="bg-red-600 text-white font-bold px-4 py-1.5 rounded-full text-xs uppercase tracking-wider shadow-lg">
               Sold Out
             </span>
           </div>
-        )}
+        ) : !isActionable && availability?.badgeLabel ? (
+          <div className="absolute top-4 right-4 z-10">
+            <span className="bg-slate-900/80 backdrop-blur-md text-white font-bold px-3 py-1.5 rounded-full text-xs shadow-md">
+              {availability.badgeLabel}
+            </span>
+          </div>
+        ) : null}
       </div>
 
       {/* Main Content Card */}
@@ -140,7 +199,7 @@ export function MenuItemDetail({ item, onBack }: MenuItemDetailProps) {
                 key={flag}
                 className="text-xs bg-slate-100 text-slate-700 px-2.5 py-1 rounded-lg font-medium"
               >
-                {flag}
+                {formatDietaryTag(flag)}
               </span>
             ))}
             {item.allergens.map((allergen) => (
@@ -160,41 +219,6 @@ export function MenuItemDetail({ item, onBack }: MenuItemDetailProps) {
           </div>
         </div>
 
-        {/* NUTRITION PER SERVING (Figure 33) */}
-        {item.nutrition && (
-          <div className="mb-5">
-            <Text className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">
-              NUTRITION PER SERVING
-            </Text>
-            <div className="grid grid-cols-3 gap-2">
-              <div className="bg-slate-50 border border-slate-100 rounded-2xl p-2.5 text-center">
-                <span className="block text-base font-bold text-[#1D3557] leading-none mb-1">
-                  {item.nutrition.calories}
-                </span>
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                  CALORIES
-                </span>
-              </div>
-              <div className="bg-slate-50 border border-slate-100 rounded-2xl p-2.5 text-center">
-                <span className="block text-base font-bold text-[#1D3557] leading-none mb-1">
-                  {item.nutrition.proteinGrams}g
-                </span>
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                  PROTEIN
-                </span>
-              </div>
-              <div className="bg-slate-50 border border-slate-100 rounded-2xl p-2.5 text-center">
-                <span className="block text-base font-bold text-[#1D3557] leading-none mb-1">
-                  {item.nutrition.fatGrams}g
-                </span>
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                  FAT
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Portion Cap & Quantity Counter (Figure 33) */}
         <div className="mb-4">
           <div className="flex items-center justify-between mb-2">
@@ -210,10 +234,10 @@ export function MenuItemDetail({ item, onBack }: MenuItemDetailProps) {
             <button
               type="button"
               aria-label="Decrease quantity"
-              disabled={quantity <= 1 || !canOrder}
+              disabled={quantity <= MIN_ORDER_ITEM_QUANTITY || !canOrder}
               onClick={handleDecrement}
               className={`touch-target w-10 h-10 rounded-xl flex items-center justify-center font-bold text-lg transition-all ${
-                quantity > 1 && canOrder
+                quantity > MIN_ORDER_ITEM_QUANTITY && canOrder
                   ? 'bg-white text-slate-800 shadow-xs hover:bg-slate-100 active:scale-95'
                   : 'text-slate-300 cursor-not-allowed'
               }`}
@@ -271,16 +295,15 @@ export function MenuItemDetail({ item, onBack }: MenuItemDetailProps) {
           block
           size="large"
           disabled={!canOrder}
+          aria-disabled={!canOrder}
           onClick={handleAddToCart}
-          className="!h-12 !rounded-2xl !bg-[#1D3557] hover:!bg-[#162a45] !font-bold text-sm shadow-md"
+          className={`!h-12 !rounded-2xl !font-bold text-sm shadow-md transition-all ${
+            canOrder
+              ? '!bg-[#1D3557] hover:!bg-[#162a45] !text-white'
+              : '!bg-slate-200 !text-slate-500 !border-slate-300 !cursor-not-allowed'
+          }`}
         >
-          {isSoldOut
-            ? 'Item Sold Out'
-            : isCutoff
-              ? 'Outside Ordering Hours'
-              : remainingAllowance <= 0
-                ? 'Max Portion in Cart'
-                : 'Add to Cart'}
+          {ctaLabel}
         </Button>
       </div>
     </div>

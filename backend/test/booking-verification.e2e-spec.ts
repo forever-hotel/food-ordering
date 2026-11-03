@@ -48,7 +48,7 @@ describe('Booking/Room Verification Integration (e2e)', () => {
           bookingId: 'b1010000-0000-4000-8000-000000000101',
           roomNumber: '101',
           status: 'CHECKED_IN',
-          guestName: 'Demo Guest 101',
+          guestName: 'John Doe',
         }),
       );
       expect(response.body.stayStart).toBeDefined();
@@ -62,8 +62,8 @@ describe('Booking/Room Verification Integration (e2e)', () => {
       const response = await request(app.getHttpServer())
         .post('/integrations/booking/verify')
         .send({
-          bookingId: 'b1020000-0000-4000-8000-000000000102',
-          roomNumber: '102',
+          bookingId: 'b1060000-0000-4000-8000-000000000106',
+          roomNumber: '106',
         })
         .expect(403);
 
@@ -74,8 +74,8 @@ describe('Booking/Room Verification Integration (e2e)', () => {
       const response = await request(app.getHttpServer())
         .post('/integrations/booking/verify')
         .send({
-          bookingId: 'b1030000-0000-4000-8000-000000000103',
-          roomNumber: '103',
+          bookingId: 'b1070000-0000-4000-8000-000000000107',
+          roomNumber: '107',
         })
         .expect(403);
 

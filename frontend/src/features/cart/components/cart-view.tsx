@@ -4,12 +4,18 @@ import React, { useRef, useState } from 'react';
 import { Button, Card, Input, Typography } from 'antd';
 import type { CartItem } from '../../../types/menu.ts';
 import type { CreateFoodOrderPayload, FoodOrderResponse } from '../../../types/orders.ts';
-import { formatLkrPrice } from '../../../lib/api/menu.ts';
+import { formatLkrPrice, isValidImageUrl } from '../../../lib/api/menu.ts';
+import { calculateLineTotal } from '../../../lib/utils/money.ts';
+import {
+  MIN_ORDER_ITEM_QUANTITY,
+  MAX_ORDER_ITEM_QUANTITY,
+} from '../../../lib/constants/order-policy.ts';
 import { generateIdempotencyKey, placeFoodOrder } from '../../../lib/api/orders.ts';
 import { useAuth } from '../../../lib/auth/auth-context.tsx';
 import { useNavigation } from '../../../lib/navigation/navigation-context.tsx';
 import { useCart } from '../../../lib/cart/cart-context.tsx';
 import { AlertNotice } from '../../../components/feedback/alert-notice.tsx';
+import { EmptyState } from '../../../components/feedback/empty-state.tsx';
 import { OrderConfirmation } from '../../orders/components/order-confirmation.tsx';
 
 const { Title, Paragraph, Text } = Typography;
@@ -20,19 +26,34 @@ interface CartViewProps {
   onPlaceOrder?: (order: FoodOrderResponse) => void;
 }
 
+function CartItemThumbnail({ item }: { item: CartItem['item'] }) {
+  const [imgError, setImgError] = useState(false);
+  const hasValidImage = isValidImageUrl(item.imageUrl) && !imgError;
+
+  return (
+    <div className="w-14 h-14 rounded-2xl bg-slate-100 border border-slate-200/80 flex-shrink-0 flex items-center justify-center select-none overflow-hidden">
+      {hasValidImage ? (
+        /* eslint-disable-next-line @next/next/no-img-element */
+        <img
+          src={item.imageUrl!}
+          alt={item.name}
+          onError={() => setImgError(true)}
+          className="w-full h-full object-cover"
+        />
+      ) : (
+        <span className="text-2xl" role="img" aria-label={`${item.name} placeholder`}>
+          🍲
+        </span>
+      )}
+    </div>
+  );
+}
+
 export function CartView({ onBack, onPlaceOrder }: CartViewProps) {
-  const { sessionToken } = useAuth();
-  const { setActiveTab } = useNavigation();
-  const {
-    items,
-    allergyNote,
-    setAllergyNote,
-    updateQuantity,
-    removeItem,
-    clearCart,
-    totalCount,
-    totalAmount,
-  } = useCart();
+  const { sessionToken, guest } = useAuth();
+  const { setActiveTab, setSelectedOrderId, setPageHeader } = useNavigation();
+  const { items, allergyNote, setAllergyNote, updateQuantity, removeItem, clearCart, totalAmount } =
+    useCart();
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -42,7 +63,7 @@ export function CartView({ onBack, onPlaceOrder }: CartViewProps) {
   const idempotencyKeyRef = useRef<string>(generateIdempotencyKey());
 
   const handleIncrement = (cartItem: CartItem) => {
-    const portionCap = cartItem.item.portionCap || 3;
+    const portionCap = cartItem.item.portionCap ?? MAX_ORDER_ITEM_QUANTITY;
     if (cartItem.quantity < portionCap) {
       updateQuantity(cartItem.id, cartItem.quantity + 1);
     }
@@ -62,6 +83,17 @@ export function CartView({ onBack, onPlaceOrder }: CartViewProps) {
     setSubmitting(true);
     setError(null);
 
+    // Validate item quantities adhere to 1-20 policy
+    for (const item of items) {
+      if (item.quantity < MIN_ORDER_ITEM_QUANTITY || item.quantity > MAX_ORDER_ITEM_QUANTITY) {
+        setError(
+          `Quantity for ${item.item.name} must be between ${MIN_ORDER_ITEM_QUANTITY} and ${MAX_ORDER_ITEM_QUANTITY}.`,
+        );
+        setSubmitting(false);
+        return;
+      }
+    }
+
     const payload: CreateFoodOrderPayload = {
       items: items.map((cartItem) => ({
         menuItemId: cartItem.item.id,
@@ -72,16 +104,23 @@ export function CartView({ onBack, onPlaceOrder }: CartViewProps) {
       idempotencyKey: idempotencyKeyRef.current,
     };
 
+    if (!sessionToken || !guest?.bookingId || !guest?.roomNumber) {
+      setError('Active verified guest session is required to place an order.');
+      setSubmitting(false);
+      return;
+    }
+
     try {
-      const order = await placeFoodOrder(
-        sessionToken || 'demo-token',
-        payload,
-        idempotencyKeyRef.current,
-      );
+      const order = await placeFoodOrder(sessionToken, payload, idempotencyKeyRef.current);
 
       // Confirmed success: clear cart from session and present Figure 35 Confirmation
       clearCart();
       setConfirmedOrder(order);
+      setPageHeader({
+        title: 'Order Confirmed',
+        hideHeader: true,
+        hideBottomNav: true,
+      });
       if (onPlaceOrder) {
         onPlaceOrder(order);
       }
@@ -103,11 +142,31 @@ export function CartView({ onBack, onPlaceOrder }: CartViewProps) {
       <OrderConfirmation
         order={confirmedOrder}
         onTrackStatus={() => {
-          setActiveTab('orders');
+          setSelectedOrderId(confirmedOrder.orderId);
+          setActiveTab('orders', { keepSelectedOrder: true });
           onBack();
         }}
         onBackToMenu={onBack}
       />
+    );
+  }
+
+  // Dedicated Empty Cart State (Figure 34 / Task 1)
+  if (items.length === 0) {
+    return (
+      <div
+        role="region"
+        aria-label="Your Cart is Empty"
+        className="w-full max-w-md mx-auto py-8 animate-fade-in"
+      >
+        <EmptyState
+          icon="🛒"
+          title="Your Cart is Empty"
+          description="You haven't added any dishes yet. Explore our dining menu to select delicious meals for your stay."
+          actionText="Browse Menu"
+          onAction={onBack}
+        />
+      </div>
     );
   }
 
@@ -117,25 +176,6 @@ export function CartView({ onBack, onPlaceOrder }: CartViewProps) {
       aria-label="Your Cart and Allergy Notes"
       className="w-full max-w-md mx-auto space-y-4 pb-36 animate-fade-in"
     >
-      {/* Header back button (Figure 34: "← Your Cart / 2 items") */}
-      <div className="flex items-center justify-between pb-1">
-        <button
-          type="button"
-          aria-label="Back to Menu"
-          onClick={onBack}
-          className="touch-target inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 active:scale-95 transition-all focus-visible:outline-2 focus-visible:outline-[#1D3557] rounded-lg px-2 py-1"
-        >
-          <span aria-hidden="true" className="text-base font-bold">
-            ←
-          </span>
-          <span>Back to Menu</span>
-        </button>
-
-        <span className="text-xs font-semibold text-slate-400">
-          {totalCount} {totalCount === 1 ? 'item' : 'items'} in cart
-        </span>
-      </div>
-
       {/* Submission Error Banner with Idempotent Retry */}
       {error && (
         <AlertNotice
@@ -152,79 +192,70 @@ export function CartView({ onBack, onPlaceOrder }: CartViewProps) {
         className="!rounded-3xl !border-slate-100 !bg-white !shadow-xs divide-y divide-slate-100 overflow-hidden"
         styles={{ body: { padding: '8px 16px' } }}
       >
-        {items.length === 0 ? (
-          <div className="py-8 text-center text-slate-400 text-xs">
-            Your cart is empty. Please select food items from the menu.
-          </div>
-        ) : (
-          items.map((cartItem) => {
-            const portionCap = cartItem.item.portionCap || 3;
+        {items.map((cartItem) => {
+          const portionCap = cartItem.item.portionCap ?? MAX_ORDER_ITEM_QUANTITY;
+          const lineTotal = calculateLineTotal(cartItem.item.price, cartItem.quantity);
 
-            return (
-              <div key={cartItem.id} className="py-3.5 flex items-center justify-between gap-3">
-                {/* Food Avatar / Thumbnail */}
-                <div className="w-14 h-14 rounded-2xl bg-slate-100 border border-slate-200/80 flex-shrink-0 flex items-center justify-center text-2xl select-none overflow-hidden">
-                  {cartItem.item.imageUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={cartItem.item.imageUrl}
-                      alt={cartItem.item.name}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <span>🍲</span>
-                  )}
-                </div>
+          return (
+            <div key={cartItem.id} className="py-3.5 flex items-center justify-between gap-3">
+              {/* Food Avatar / Thumbnail */}
+              <CartItemThumbnail item={cartItem.item} />
 
-                {/* Name & Unit Price */}
-                <div className="flex-1 min-w-0">
-                  <Title level={4} className="!text-sm !font-bold !text-[#1E293B] !mb-0.5 truncate">
-                    {cartItem.item.name}
-                  </Title>
-                  <Text className="text-xs font-semibold text-slate-500 block">
-                    {formatLkrPrice(cartItem.item.price)}
+              {/* Name & Calculated Line Total */}
+              <div className="flex-1 min-w-0">
+                <Title level={4} className="!text-sm !font-bold !text-[#1E293B] !mb-0.5 truncate">
+                  {cartItem.item.name}
+                </Title>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <Text className="text-xs font-semibold text-slate-700">
+                    {formatLkrPrice(lineTotal)}
                   </Text>
-                  {cartItem.specialNotes && (
-                    <span className="text-[11px] text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded font-medium mt-1 inline-block truncate max-w-[180px]">
-                      Note: {cartItem.specialNotes}
+                  {cartItem.quantity > 1 && (
+                    <span className="text-[11px] text-slate-400 font-medium">
+                      ({formatLkrPrice(cartItem.item.price)} each)
                     </span>
                   )}
                 </div>
-
-                {/* +/- Stepper Controls (Figure 34) */}
-                <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-2xl p-1 flex-shrink-0">
-                  <button
-                    type="button"
-                    aria-label={`Decrease quantity of ${cartItem.item.name}`}
-                    disabled={submitting}
-                    onClick={() => handleDecrement(cartItem)}
-                    className="touch-target w-8 h-8 rounded-xl bg-white text-slate-800 shadow-xs hover:bg-slate-100 active:scale-95 flex items-center justify-center font-bold text-base transition-all disabled:opacity-50"
-                  >
-                    −
-                  </button>
-
-                  <span className="w-5 text-center text-sm font-bold text-slate-800 tabular-nums">
-                    {cartItem.quantity}
+                {cartItem.specialNotes && (
+                  <span className="text-[11px] text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded font-medium mt-1 inline-block truncate max-w-[180px]">
+                    Note: {cartItem.specialNotes}
                   </span>
-
-                  <button
-                    type="button"
-                    aria-label={`Increase quantity of ${cartItem.item.name}`}
-                    disabled={cartItem.quantity >= portionCap || submitting}
-                    onClick={() => handleIncrement(cartItem)}
-                    className={`touch-target w-8 h-8 rounded-xl flex items-center justify-center font-bold text-base transition-all ${
-                      cartItem.quantity < portionCap && !submitting
-                        ? 'bg-white text-slate-800 shadow-xs hover:bg-slate-100 active:scale-95'
-                        : 'text-slate-300 cursor-not-allowed'
-                    }`}
-                  >
-                    +
-                  </button>
-                </div>
+                )}
               </div>
-            );
-          })
-        )}
+
+              {/* +/- Stepper Controls (Figure 34) */}
+              <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-2xl p-1 flex-shrink-0">
+                <button
+                  type="button"
+                  aria-label={`Decrease quantity of ${cartItem.item.name}`}
+                  disabled={submitting}
+                  onClick={() => handleDecrement(cartItem)}
+                  className="touch-target w-8 h-8 rounded-xl bg-white text-slate-800 shadow-xs hover:bg-slate-100 active:scale-95 flex items-center justify-center font-bold text-base transition-all disabled:opacity-50"
+                >
+                  −
+                </button>
+
+                <span className="w-5 text-center text-sm font-bold text-slate-800 tabular-nums">
+                  {cartItem.quantity}
+                </span>
+
+                <button
+                  type="button"
+                  aria-label={`Increase quantity of ${cartItem.item.name}`}
+                  disabled={cartItem.quantity >= portionCap || submitting}
+                  onClick={() => handleIncrement(cartItem)}
+                  className={`touch-target w-8 h-8 rounded-xl flex items-center justify-center font-bold text-base transition-all ${
+                    cartItem.quantity < portionCap && !submitting
+                      ? 'bg-white text-slate-800 shadow-xs hover:bg-slate-100 active:scale-95'
+                      : 'text-slate-300 cursor-not-allowed'
+                  }`}
+                >
+                  +
+                </button>
+              </div>
+            </div>
+          );
+        })}
 
         {/* Subtotal row within cart card */}
         {items.length > 0 && (
@@ -275,7 +306,7 @@ export function CartView({ onBack, onPlaceOrder }: CartViewProps) {
         </div>
       </Card>
 
-      {/* Subtotal & Service Charge Calculation Card (Figure 34) */}
+      {/* Subtotal & Total Summary Card (Figure 34) */}
       <Card
         className="!rounded-3xl !border-slate-100 !bg-white !shadow-xs"
         styles={{ body: { padding: '16px 18px' } }}
@@ -284,11 +315,6 @@ export function CartView({ onBack, onPlaceOrder }: CartViewProps) {
           <div className="flex items-center justify-between text-slate-500">
             <span>Subtotal</span>
             <span className="font-semibold text-slate-700">{formatLkrPrice(totalAmount)}</span>
-          </div>
-
-          <div className="flex items-center justify-between text-slate-500">
-            <span>Service charge</span>
-            <span className="font-semibold text-emerald-600">Included</span>
           </div>
 
           <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-sm font-bold text-[#1D3557]">

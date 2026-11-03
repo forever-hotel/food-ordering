@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import { Alert, App, Badge, Button } from 'antd';
-import type { GuestMenuItem, GuestMenuResponse } from '../../../types/menu.ts';
+import React, { useEffect, useMemo, useState } from 'react';
+import { App, Button } from 'antd';
+import type { GuestMenuItem, GuestMenuResponse, MealPeriod } from '../../../types/menu.ts';
 import { fetchGuestMenu, formatLkrPrice } from '../../../lib/api/menu.ts';
 import { useAuth } from '../../../lib/auth/auth-context.tsx';
 import { useNavigation } from '../../../lib/navigation/navigation-context.tsx';
@@ -14,7 +14,14 @@ import { MenuItemCard } from './menu-item-card.tsx';
 import { MenuItemDetail } from './menu-item-detail.tsx';
 import { CartView } from '../../cart/components/cart-view.tsx';
 
-type CategoryKey = 'Breakfast' | 'Lunch' | 'Dinner' | 'Tea';
+import {
+  CATEGORY_PERIOD_MAP,
+  type CategoryKey,
+  evaluateMealWindowStatus,
+  getColomboTime,
+  getItemAvailability,
+  type OrderableEvaluationOptions,
+} from '../../../lib/utils/meal-windows.ts';
 
 const CATEGORIES: { key: CategoryKey; label: string }[] = [
   { key: 'Breakfast', label: 'Breakfast' },
@@ -23,22 +30,52 @@ const CATEGORIES: { key: CategoryKey; label: string }[] = [
   { key: 'Tea', label: 'Tea' },
 ];
 
-export function MenuTab() {
+export interface MenuTabProps {
+  isDemoMode?: boolean;
+}
+
+export function MenuTab({ isDemoMode }: MenuTabProps = {}) {
   const { message } = App.useApp();
   const { sessionToken, guest } = useAuth();
   const { setPageHeader, resetHeaderForTab } = useNavigation();
   const { totalCount, totalAmount, addItem, isCartOpen, setIsCartOpen } = useCart();
 
+  const evaluationOptions = useMemo<OrderableEvaluationOptions>(
+    () => ({ isDemoMode }),
+    [isDemoMode],
+  );
+
   const [catalog, setCatalog] = useState<GuestMenuResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<CategoryKey>('Lunch');
+  const [selectedCourse, setSelectedCourse] = useState<string>('All');
   const [selectedItem, setSelectedItem] = useState<GuestMenuItem | null>(null);
+  const [currentTime, setCurrentTime] = useState<Date>(() => new Date());
+
+  // Periodically refresh current time to update countdowns and trigger window cutoffs smoothly
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 10000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     let isCancelled = false;
 
-    fetchGuestMenu(sessionToken || 'demo-token')
+    if (!sessionToken || !guest) {
+      Promise.resolve().then(() => {
+        if (!isCancelled) {
+          setLoading(false);
+        }
+      });
+      return () => {
+        isCancelled = true;
+      };
+    }
+
+    fetchGuestMenu(sessionToken)
       .then((data) => {
         if (!isCancelled) {
           setCatalog(data);
@@ -59,12 +96,31 @@ export function MenuTab() {
     return () => {
       isCancelled = true;
     };
-  }, [sessionToken]);
+  }, [sessionToken, guest]);
+
+  // Periodic background revalidation (every 30s) to keep availability and stock fresh
+  useEffect(() => {
+    if (!sessionToken || !guest) return;
+
+    const interval = setInterval(() => {
+      fetchGuestMenu(sessionToken)
+        .then((data) => {
+          setCatalog(data);
+        })
+        .catch(() => {
+          // Silent background revalidation error; keep existing catalog
+        });
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, [sessionToken, guest]);
 
   const handleRetry = () => {
+    if (!sessionToken || !guest) return;
+
     setLoading(true);
     setError(null);
-    fetchGuestMenu(sessionToken || 'demo-token')
+    fetchGuestMenu(sessionToken)
       .then((data) => {
         setCatalog(data);
         setLoading(false);
@@ -81,8 +137,10 @@ export function MenuTab() {
     setSelectedItem(item);
     setPageHeader({
       title: item.name,
-      subtitle: `${item.category} · Room ${guest?.roomNumber || '103'}`,
-      showBackButton: true,
+      subtitle: `${item.category}${guest?.roomNumber ? ` · Room ${guest.roomNumber}` : ''}`,
+      showBackButton: false,
+      hideHeader: true,
+      hideBottomNav: true,
       onBack: () => {
         setSelectedItem(null);
         resetHeaderForTab('menu', guest?.roomNumber, guest?.guestName);
@@ -101,15 +159,27 @@ export function MenuTab() {
     setSelectedItem(null);
     setPageHeader({
       title: 'Your Cart',
-      subtitle: `${totalCount} ${totalCount === 1 ? 'item' : 'items'} · Room ${
-        guest?.roomNumber || '103'
-      }`,
+      subtitle: `${totalCount} ${totalCount === 1 ? 'item' : 'items'}`,
       showBackButton: true,
+      hideHeader: false,
+      hideBottomNav: true,
       onBack: handleBackToMenu,
     });
   };
 
   const handleQuickAdd = (item: GuestMenuItem) => {
+    const colomboTime = getColomboTime(currentTime);
+    const availability = getItemAvailability(
+      item,
+      catalog?.mealWindows,
+      colomboTime.totalSecondsOfDay,
+      evaluationOptions,
+    );
+    if (!availability.isOrderable) {
+      message.error(availability.quickAddErrorMessage || 'This item cannot be ordered.');
+      return;
+    }
+
     const result = addItem(item, 1);
     if (result.success) {
       message.success(`Added ${item.name} to order.`);
@@ -117,6 +187,17 @@ export function MenuTab() {
       message.error(result.reason || 'Cannot add item.');
     }
   };
+
+  if (!sessionToken || !guest) {
+    return (
+      <div className="w-full py-8 text-center">
+        <EmptyState
+          title="Guest Session Required"
+          description="Please scan your room QR code to view the hotel dining menu."
+        />
+      </div>
+    );
+  }
 
   // If viewing cart screen (Figure 34 & Figure 35 Confirmation)
   if (isCartOpen) {
@@ -126,69 +207,117 @@ export function MenuTab() {
         onPlaceOrder={(order) => {
           setPageHeader({
             title: 'Order Confirmed',
-            subtitle: `Order #${order.orderId} · Room ${order.roomNumber || guest?.roomNumber || '103'}`,
+            subtitle: `Order #${order.orderId}`,
             showBackButton: false,
+            hideHeader: true,
+            hideBottomNav: true,
           });
         }}
       />
     );
   }
 
+  const colomboTime = getColomboTime(currentTime);
+  const currentColomboSeconds = colomboTime.totalSecondsOfDay;
+
   // If viewing item detail screen (Figure 33)
   if (selectedItem) {
-    return <MenuItemDetail item={selectedItem} onBack={handleBackToMenu} />;
+    const availability = getItemAvailability(
+      selectedItem,
+      catalog?.mealWindows,
+      currentColomboSeconds,
+      evaluationOptions,
+    );
+    const effectiveSelectedItem: GuestMenuItem = {
+      ...selectedItem,
+      isOrderable: availability.isOrderable,
+      isCutoff: availability.state === 'closed',
+    };
+    return (
+      <MenuItemDetail
+        item={effectiveSelectedItem}
+        availability={availability}
+        onBack={handleBackToMenu}
+      />
+    );
   }
 
-  // Dynamic meal window banner calculation for selected category (Figure 32)
-  const categoryPeriodMap: Record<string, string> = {
-    Breakfast: 'BREAKFAST',
-    Lunch: 'LUNCH',
-    Dinner: 'DINNER',
-    Tea: 'ALL_DAY',
-  };
+  // Authoritative meal period mapping (Tea -> TEA_TIME; ALL_DAY is separate)
+  const targetPeriod: MealPeriod = CATEGORY_PERIOD_MAP[selectedCategory];
 
-  const targetPeriod = categoryPeriodMap[selectedCategory] || 'ALL_DAY';
-  const categoryWindow =
-    catalog?.mealWindows.find(
-      (w) => w.period === targetPeriod || w.name.toLowerCase() === selectedCategory.toLowerCase(),
-    ) ||
-    catalog?.mealWindows.find((w) => w.isActive) ||
-    catalog?.mealWindows[0];
+  // Exact matching only: do not substitute unrelated active windows or arbitrary fallbacks
+  const categoryWindow = catalog?.mealWindows.find((w) => w.period === targetPeriod);
 
-  const cutoffTimeDisplay = categoryWindow ? categoryWindow.cutoffTime.slice(0, 5) : '14:30';
-  const remainingMinutes = categoryWindow ? Math.floor(categoryWindow.secondsRemaining / 60) : 0;
-  const hoursLeft = Math.floor(remainingMinutes / 60);
-  const minsLeft = remainingMinutes % 60;
-  const timeLeftDisplay =
-    remainingMinutes > 0
-      ? `${hoursLeft > 0 ? `${hoursLeft}h ` : ''}${minsLeft}m left`
-      : 'service ended';
+  // Authoritative meal window evaluation in Asia/Colombo
+  const windowEvaluation = evaluateMealWindowStatus(
+    categoryWindow,
+    currentColomboSeconds,
+    selectedCategory,
+  );
 
-  const isCategoryActive = categoryWindow?.isActive ?? false;
-  const isCutoffReached = categoryWindow?.isCutoffReached ?? false;
-
+  // Canonical data model alignment:
+  // Subsystem KMS items provide food course categories (Starters, Mains, Desserts, Beverages)
+  // along with mealPeriods (BREAKFAST, LUNCH, DINNER, ALL_DAY).
+  // Legacy or demo items may directly categorize by meal period (e.g. category: 'Lunch').
   const displayedItems = (catalog?.items || []).filter((item) => {
-    if (selectedCategory === 'Tea') {
-      return (
-        item.category.toLowerCase().includes('tea') ||
-        item.category.toLowerCase().includes('beverage')
-      );
+    const matchesMealPeriod =
+      item.mealPeriods && item.mealPeriods.length > 0
+        ? item.mealPeriods.some((p) => p === targetPeriod || p === 'ALL_DAY')
+        : false;
+
+    const matchesCategoryDirectly =
+      item.category.toLowerCase() === selectedCategory.toLowerCase() ||
+      (selectedCategory === 'Tea' &&
+        (item.category.toLowerCase().includes('tea') ||
+          item.category.toLowerCase().includes('beverage') ||
+          item.category.toLowerCase().includes('snack')));
+
+    if (!matchesMealPeriod && !matchesCategoryDirectly) {
+      return false;
     }
-    return item.category.toLowerCase() === selectedCategory.toLowerCase();
+
+    if (selectedCourse && selectedCourse !== 'All') {
+      return item.category.toLowerCase() === selectedCourse.toLowerCase();
+    }
+
+    return true;
   });
+
+  const availableCourses: string[] = [];
+  if (catalog?.items) {
+    const courseSet = new Set<string>();
+    for (const item of catalog.items) {
+      const inPeriod =
+        item.mealPeriods?.some((p) => p === targetPeriod || p === 'ALL_DAY') ||
+        item.category.toLowerCase() === selectedCategory.toLowerCase() ||
+        (selectedCategory === 'Tea' &&
+          (item.category.toLowerCase().includes('tea') ||
+            item.category.toLowerCase().includes('beverage') ||
+            item.category.toLowerCase().includes('snack')));
+
+      if (
+        inPeriod &&
+        item.category &&
+        item.category.toLowerCase() !== selectedCategory.toLowerCase()
+      ) {
+        courseSet.add(item.category);
+      }
+    }
+    availableCourses.push(...Array.from(courseSet));
+  }
 
   return (
     <div
       role="tabpanel"
       id="tabpanel-menu"
       aria-labelledby="nav-tab-menu"
-      className="w-full space-y-3.5 pb-24"
+      className="w-full space-y-3 pb-24"
     >
-      {/* Category Pills Header (Figure 32) */}
+      {/* Category Tabs Header (Figure 32: Breakfast | Lunch | Dinner | Tea) */}
       <div
         role="tablist"
         aria-label="Meal periods"
-        className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar select-none"
+        className="flex items-center justify-between border-b border-slate-200 bg-white -mx-4 px-3 py-0.5 select-none shadow-xs"
       >
         {CATEGORIES.map((cat) => {
           const isSelected = selectedCategory === cat.key;
@@ -198,11 +327,14 @@ export function MenuTab() {
               type="button"
               role="tab"
               aria-selected={isSelected}
-              onClick={() => setSelectedCategory(cat.key)}
-              className={`touch-target px-4 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all focus-visible:outline-2 focus-visible:outline-[#1D3557] ${
+              onClick={() => {
+                setSelectedCategory(cat.key);
+                setSelectedCourse('All');
+              }}
+              className={`flex-1 py-2 text-center text-xs font-bold transition-all relative ${
                 isSelected
-                  ? 'bg-[#1D3557] text-white shadow-xs'
-                  : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 active:scale-95'
+                  ? 'text-[#1D3557] after:absolute after:bottom-0 after:left-4 after:right-4 after:h-[2.5px] after:bg-[#1D3557] after:rounded-full'
+                  : 'text-slate-400 hover:text-slate-700'
               }`}
             >
               {cat.label}
@@ -211,38 +343,35 @@ export function MenuTab() {
         })}
       </div>
 
-      {/* Meal Period Banner (Figure 32: "Lunch orders close at 14:30 — 2h 16m left") */}
-      <Alert
-        type={isCutoffReached ? 'info' : 'warning'}
-        showIcon
-        title={
-          <span className="text-xs font-medium">
-            {isCutoffReached ? (
-              <span className="text-slate-700">
-                {selectedCategory} service has ended for today (served until{' '}
-                <strong className="font-bold">{cutoffTimeDisplay}</strong>). Please check our active
-                dining options above.
-              </span>
-            ) : isCategoryActive ? (
-              <span className="text-amber-950">
-                {selectedCategory} orders close at{' '}
-                <strong className="font-bold">{cutoffTimeDisplay}</strong> — {timeLeftDisplay}
-              </span>
-            ) : (
-              <span className="text-slate-700">
-                {selectedCategory} service opens at{' '}
-                <strong className="font-bold">
-                  {categoryWindow?.startTime.slice(0, 5) || '18:30'}
-                </strong>{' '}
-                (orders close at {cutoffTimeDisplay})
-              </span>
-            )}
-          </span>
-        }
-        className={`!rounded-xl shadow-xs ${
-          isCutoffReached ? '!border-slate-200 !bg-slate-50' : '!border-amber-200 !bg-amber-50'
+      {/* Meal Period Banner (Figure 32: Open, Upcoming, Closed, or Unavailable) */}
+      <div
+        role="status"
+        aria-live="polite"
+        className={`w-full rounded-xl px-3.5 py-2.5 flex items-center gap-2.5 shadow-xs transition-colors ${
+          windowEvaluation.state === 'open'
+            ? 'bg-[#FFFBEB] border-l-4 border-[#F59E0B] text-amber-950'
+            : windowEvaluation.state === 'upcoming'
+              ? 'bg-[#F0F7FF] border-l-4 border-[#3B82F6] text-[#1E3A8A]'
+              : windowEvaluation.state === 'closed'
+                ? 'bg-[#F8FAFC] border-l-4 border-[#94A3B8] text-slate-700'
+                : selectedCategory === 'Tea'
+                  ? 'bg-[#F0FDF4] border-l-4 border-[#22C55E] text-emerald-950'
+                  : 'bg-[#FFFDF5] border-l-4 border-[#CBD5E1] text-slate-600'
         }`}
-      />
+      >
+        <span className="text-base select-none flex-shrink-0" aria-hidden="true">
+          {windowEvaluation.state === 'open'
+            ? '⏱'
+            : windowEvaluation.state === 'upcoming'
+              ? '🕒'
+              : windowEvaluation.state === 'closed'
+                ? '🔒'
+                : selectedCategory === 'Tea'
+                  ? '🍵'
+                  : 'ℹ️'}
+        </span>
+        <span className="text-xs font-medium leading-relaxed">{windowEvaluation.message}</span>
+      </div>
 
       {/* Error state with retry */}
       {error && (
@@ -261,14 +390,28 @@ export function MenuTab() {
       {/* Items List */}
       {!loading && displayedItems.length > 0 && (
         <div className="space-y-3" role="feed" aria-label={`${selectedCategory} menu items`}>
-          {displayedItems.map((item) => (
-            <MenuItemCard
-              key={item.id}
-              item={item}
-              onSelect={handleSelectItem}
-              onQuickAdd={handleQuickAdd}
-            />
-          ))}
+          {displayedItems.map((item) => {
+            const availability = getItemAvailability(
+              item,
+              catalog?.mealWindows,
+              currentColomboSeconds,
+              evaluationOptions,
+            );
+            const effectiveItem: GuestMenuItem = {
+              ...item,
+              isOrderable: availability.isOrderable,
+              isCutoff: availability.state === 'closed',
+            };
+            return (
+              <MenuItemCard
+                key={item.id}
+                item={effectiveItem}
+                availability={availability}
+                onSelect={handleSelectItem}
+                onQuickAdd={handleQuickAdd}
+              />
+            );
+          })}
         </div>
       )}
 
@@ -293,14 +436,11 @@ export function MenuTab() {
               size="large"
               aria-label={`View Cart with ${totalCount} items, total ${formatLkrPrice(totalAmount)}`}
               onClick={handleOpenCart}
-              className="!h-12 !rounded-2xl !bg-[#1D3557] hover:!bg-[#162A45] active:scale-[0.99] !font-bold text-sm shadow-lg flex items-center justify-between px-5 transition-transform"
+              className="!h-11 !rounded-full !bg-[#1D3557] hover:!bg-[#162A45] active:scale-[0.99] !font-bold text-xs shadow-xl flex items-center justify-center gap-2 text-white"
             >
-              <div className="flex items-center gap-2">
-                <Badge count={totalCount} style={{ backgroundColor: '#F5A623' }} />
-                <span>View Cart</span>
-              </div>
               <span>
-                {totalCount} {totalCount === 1 ? 'item' : 'items'} · {formatLkrPrice(totalAmount)}
+                View Cart · {totalCount} {totalCount === 1 ? 'item' : 'items'} ·{' '}
+                {formatLkrPrice(totalAmount)}
               </span>
             </Button>
           </div>

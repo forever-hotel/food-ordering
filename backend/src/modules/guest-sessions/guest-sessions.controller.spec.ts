@@ -1,5 +1,5 @@
 import { jest } from '@jest/globals';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 
 import { GuestSessionResponseDto } from './dto/guest-session-response.dto.js';
 import { IssueQrDto, IssueQrResponseDto } from './dto/issue-qr.dto.js';
@@ -27,6 +27,7 @@ describe('GuestSessionsController', () => {
   };
   let mockQrTokenService: {
     getDemoTokens: jest.MockedFunction<() => Record<string, string>>;
+    reset: jest.MockedFunction<() => void>;
   };
   let mockQrActivationService: {
     issueActivationCredential: jest.MockedFunction<
@@ -53,6 +54,8 @@ describe('GuestSessionsController', () => {
       getDemoTokens: jest.fn<() => Record<string, string>>().mockReturnValue({
         '101-checked-in': 'demo-qr-token-101',
       }),
+      reset: jest.fn<() => void>(),
+      resetDemoNonces: jest.fn<() => number>().mockReturnValue(5),
     };
 
     mockQrActivationService = {
@@ -61,6 +64,9 @@ describe('GuestSessionsController', () => {
         jest.fn<() => Promise<GuestSessionResponseDto>>(),
       revokeBookingActivations: jest.fn<() => Promise<number>>(),
     };
+
+    process.env.NODE_ENV = 'test';
+    process.env.DEMO_MODE = 'true';
 
     controller = new GuestSessionsController(
       mockGuestSessionsService as unknown as GuestSessionsService,
@@ -200,6 +206,48 @@ describe('GuestSessionsController', () => {
         controller.authenticateWithQr({ qrToken: '' } as VerifyQrDto),
       ).rejects.toThrow(BadRequestException);
     });
+
+    it('production safety: unconditionally rejects signed development tokens with 401 in production', async () => {
+      process.env.NODE_ENV = 'production';
+      try {
+        await expect(
+          controller.authenticateWithQr({
+            qrToken: 'header.payload.signature',
+          }),
+        ).rejects.toThrow(UnauthorizedException);
+      } finally {
+        process.env.NODE_ENV = 'test';
+      }
+    });
+
+    it('production safety: rejects signed tokens even if ALLOW_LEGACY_QR_TOKENS=true override is set (no backdoor)', async () => {
+      process.env.NODE_ENV = 'production';
+      process.env.ALLOW_LEGACY_QR_TOKENS = 'true';
+      try {
+        await expect(
+          controller.authenticateWithQr({
+            qrToken: 'header.payload.signature',
+          }),
+        ).rejects.toThrow(UnauthorizedException);
+      } finally {
+        process.env.NODE_ENV = 'test';
+        delete process.env.ALLOW_LEGACY_QR_TOKENS;
+      }
+    });
+
+    it('production safety: fails securely with ServiceUnavailableException when qrActivationService is missing', async () => {
+      const controllerWithoutActivation = new GuestSessionsController(
+        mockGuestSessionsService as unknown as GuestSessionsService,
+        mockQrTokenService as unknown as QrTokenService,
+        undefined,
+      );
+
+      await expect(
+        controllerWithoutActivation.authenticateWithQr({
+          qrToken: 'opaque-activation-token-no-dot',
+        }),
+      ).rejects.toThrow('QR activation service is unconfigured.');
+    });
   });
 
   describe('getMe', () => {
@@ -272,12 +320,65 @@ describe('GuestSessionsController', () => {
     });
   });
 
-  describe('getDemoTokens', () => {
-    it('returns demo tokens record from service in dev', () => {
-      const result = controller.getDemoTokens();
-      expect(result).toEqual({
-        tokens: { '101-checked-in': 'demo-qr-token-101' },
+  describe('Retired Demo Utility Endpoints (#101)', () => {
+    it('confirms getDemoTokens endpoint is retired and not defined on controller', () => {
+      expect((controller as any).getDemoTokens).toBeUndefined();
+    });
+
+    it('confirms resetDemoState endpoint is retired and not defined on controller', () => {
+      expect((controller as any).resetDemoState).toBeUndefined();
+    });
+
+    it('confirms guest QR activation does not require or depend on DEV_DEMO_KEY', async () => {
+      delete process.env.DEV_DEMO_KEY;
+
+      const mockResponse: GuestSessionResponseDto = {
+        sessionId: 'sess-123',
+        sessionToken: 'jwt-guest-token',
+        bookingId: 'b1010000-0000-4000-8000-000000000101',
+        roomNumber: '101',
+        guestName: 'John Doe',
+        active: true,
+        expiresAt: '2026-11-04T12:00:00.000Z',
+      };
+
+      mockGuestSessionsService.authenticateWithQr.mockResolvedValue(
+        mockResponse,
+      );
+
+      const result = await controller.authenticateWithQr({
+        qrToken: 'header.payload.signature',
       });
+
+      expect(result).toEqual(mockResponse);
+      expect(mockGuestSessionsService.authenticateWithQr).toHaveBeenCalledWith(
+        'header.payload.signature',
+      );
+    });
+
+    it('confirms x-developer-key and x-demo-admin-key headers are not required for guest authentication', async () => {
+      delete process.env.DEV_DEMO_KEY;
+
+      const mockResponse: GuestSessionResponseDto = {
+        sessionId: 'sess-123',
+        sessionToken: 'jwt-guest-token',
+        bookingId: 'b1010000-0000-4000-8000-000000000101',
+        roomNumber: '101',
+        guestName: 'John Doe',
+        active: true,
+        expiresAt: '2026-11-04T12:00:00.000Z',
+      };
+
+      mockGuestSessionsService.authenticateWithQr.mockResolvedValue(
+        mockResponse,
+      );
+
+      const result = await controller.authenticateWithQr({
+        qrToken: 'valid.signed.token',
+      });
+
+      expect(result.sessionToken).toBe('jwt-guest-token');
+      expect(result.roomNumber).toBe('101');
     });
   });
 

@@ -13,8 +13,10 @@ import { ConfigService } from '@nestjs/config';
 import { UpstreamServiceUnavailableException } from '../../integrations/contracts/upstream-integration.exception.js';
 import {
   TaskPriority,
+  TaskType,
   WkmsCreateTaskDto,
 } from '../../integrations/internal-services/wkms/dto/wkms-task.dto.js';
+import { ActiveFossServiceCategory } from './enums/foss-service-category.enum.js';
 import {
   WKMS_PROVIDER,
   WkmsProvider,
@@ -67,19 +69,15 @@ export class ServiceRequestsService {
       dto.idempotencyKey ||
       `idemp-sr-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
 
-    // Validate that category is supported in the shared Neon schema (reject in production / real integration)
-    const isMock =
-      this.configService.get<string>('MOCK_EXTERNAL_SERVICES') === 'true';
-    const isDemo = this.configService.get<string>('DEMO_MODE') === 'true';
-    if (!isMock && !isDemo) {
-      if (
-        dto.requestType === 'TOILETRIES' ||
-        dto.requestType === 'LUGGAGE_ASSISTANCE'
-      ) {
-        throw new BadRequestException(
-          `Service request category [${dto.requestType}] is pending cross-subsystem enum approval in shared database schema.`,
-        );
-      }
+    // Validate that category is an approved active FOSS category (reject before dispatching to WKMS to prevent partial-failure and database enum errors)
+    if (
+      !Object.values(ActiveFossServiceCategory).includes(
+        dto.requestType as ActiveFossServiceCategory,
+      )
+    ) {
+      throw new BadRequestException(
+        `Invalid or unsupported service request category [${dto.requestType}]. Must be one of: ${Object.values(ActiveFossServiceCategory).join(', ')}`,
+      );
     }
 
     // Check for existing request with this idempotency key
@@ -101,13 +99,18 @@ export class ServiceRequestsService {
     }
 
     const priority = dto.priority || TaskPriority.NORMAL;
+    const wkmsTaskType = this.translateCategoryToWkmsTaskType(dto.requestType);
+    const wkmsDescription = this.formatWkmsTaskDescription(
+      dto.requestType,
+      dto.description,
+    );
 
     // Dispatch to WKMS
     const wkmsTaskDto: WkmsCreateTaskDto = {
       roomNumber: guest.roomNumber,
       bookingId: guest.bookingId,
-      taskType: dto.requestType,
-      description: dto.description,
+      taskType: wkmsTaskType,
+      description: wkmsDescription,
       priority,
       idempotencyKey,
     };
@@ -115,7 +118,7 @@ export class ServiceRequestsService {
     let wkmsResult;
     try {
       this.logger.log(
-        `Dispatching service request to WKMS for room [${guest.roomNumber}] type [${dto.requestType}]`,
+        `Dispatching service request to WKMS for room [${guest.roomNumber}] type [${wkmsTaskType}] (FOSS category: [${dto.requestType}])`,
       );
       wkmsResult = await this.wkmsProvider.createTask(wkmsTaskDto);
     } catch (err: unknown) {
@@ -247,10 +250,14 @@ export class ServiceRequestsService {
     newStatus: ServiceRequestStatus,
     assignedStaff?: string,
   ): Promise<ServiceRequestResponseDto> {
+    const isDevOrTest =
+      !process.env.NODE_ENV ||
+      process.env.NODE_ENV === 'development' ||
+      process.env.NODE_ENV === 'test';
     const isDemo = this.configService.get<string>('DEMO_MODE') === 'true';
-    if (!isDemo) {
+    if (!isDemo || !isDevOrTest || process.env.NODE_ENV === 'production') {
       throw new ForbiddenException(
-        'Demo status advancement is only permitted when DEMO_MODE is enabled.',
+        'Demo status advancement is only permitted in development/test environments when DEMO_MODE is enabled.',
       );
     }
 
@@ -501,5 +508,49 @@ export class ServiceRequestsService {
             ? updatedAtIso
             : undefined,
     }));
+  }
+
+  /**
+   * Translates an active FOSS service category to an upstream WKMS TaskType.
+   * Only the six approved active categories are dispatched:
+   * ROOM_CLEANING -> ROOM_CLEANING
+   * EXTRA_TOWELS -> EXTRA_TOWELS
+   * TOILETRIES -> TOILETRIES
+   * MAINTENANCE -> MAINTENANCE
+   * LAUNDRY_PICKUP -> LAUNDRY_PICKUP
+   * OTHER -> OTHER
+   *
+   * Rejects WATER_BOTTLES and unknown categories explicitly without silent fallback.
+   */
+  public translateCategoryToWkmsTaskType(category: string): TaskType {
+    switch (category) {
+      case ActiveFossServiceCategory.ROOM_CLEANING:
+        return TaskType.ROOM_CLEANING;
+      case ActiveFossServiceCategory.EXTRA_TOWELS:
+        return TaskType.EXTRA_TOWELS;
+      case ActiveFossServiceCategory.TOILETRIES:
+        return TaskType.TOILETRIES;
+      case ActiveFossServiceCategory.MAINTENANCE:
+        return TaskType.MAINTENANCE;
+      case ActiveFossServiceCategory.LAUNDRY_PICKUP:
+        return TaskType.LAUNDRY_PICKUP;
+      case ActiveFossServiceCategory.OTHER:
+        return TaskType.OTHER;
+      default:
+        throw new BadRequestException(
+          `Cannot dispatch unsupported or legacy service category [${category}] to WKMS.`,
+        );
+    }
+  }
+
+  /**
+   * Prepares the task description for WKMS workers.
+   * Passes through guest instructions directly without alteration.
+   */
+  public formatWkmsTaskDescription(
+    _category: string,
+    guestInstructions?: string,
+  ): string | undefined {
+    return guestInstructions?.trim() || undefined;
   }
 }

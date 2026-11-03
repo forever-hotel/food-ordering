@@ -118,13 +118,10 @@ export class GuestSessionsController {
       return this.qrActivationService.redeemActivationCredential(token);
     }
 
-    // Signed tokens (used in local development demo fixtures)
-    if (
-      process.env.NODE_ENV === 'production' &&
-      process.env.ALLOW_LEGACY_QR_TOKENS !== 'true'
-    ) {
+    // Signed tokens (strictly prohibited in production environments; overrides forbidden)
+    if (process.env.NODE_ENV === 'production') {
       throw new UnauthorizedException(
-        'Legacy signed QR tokens are disabled in production. Please use an authoritative FDS-issued activation slip.',
+        'Legacy signed QR tokens are strictly disabled in production. Authoritative single-use FDS-issued QR activation credentials are required.',
       );
     }
 
@@ -191,25 +188,6 @@ export class GuestSessionsController {
     @Req() req: AuthenticatedRequest,
   ): Promise<{ success: boolean; message: string }> {
     return this.guestSessionsService.logout(req.sessionToken);
-  }
-
-  /**
-   * Helper endpoint providing pre-signed QR tokens for demo rooms.
-   * Disabled in production environments.
-   */
-  @Get('demo-tokens')
-  getDemoTokens(): { tokens: Record<string, string> } {
-    if (
-      process.env.NODE_ENV === 'production' &&
-      process.env.ALLOW_DEMO_TOKENS !== 'true'
-    ) {
-      throw new UnauthorizedException(
-        'Demo tokens are disabled in production.',
-      );
-    }
-    return {
-      tokens: this.qrTokenService.getDemoTokens(),
-    };
   }
 
   /**

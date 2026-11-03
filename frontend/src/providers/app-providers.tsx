@@ -7,6 +7,7 @@ import { appTheme } from '@/config/theme';
 import { AuthProvider } from '@/lib/auth/auth-context';
 import { NavigationProvider } from '@/lib/navigation/navigation-context';
 import { CartProvider } from '@/lib/cart/cart-context';
+import { DemoModeToolbar } from '@/components/demo/demo-mode-toolbar';
 
 export function AppProviders({ children }: PropsWithChildren) {
   return (
@@ -14,7 +15,10 @@ export function AppProviders({ children }: PropsWithChildren) {
       <App>
         <AuthProvider>
           <NavigationProvider>
-            <CartProvider>{children}</CartProvider>
+            <CartProvider>
+              {children}
+              <DemoModeToolbar />
+            </CartProvider>
           </NavigationProvider>
         </AuthProvider>
       </App>

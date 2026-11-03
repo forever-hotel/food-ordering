@@ -17,6 +17,10 @@ import { CreateServiceRequestDto } from './dto/create-service-request.dto.js';
 import { GetServiceRequestsQueryDto } from './dto/get-service-requests-query.dto.js';
 import { WkmsTaskStatusUpdatedEventDto } from './dto/wkms-status-event.dto.js';
 import { FossServiceRequest } from './entities/foss-service-request.entity.js';
+import {
+  ActiveFossServiceCategory,
+  FossServiceCategory,
+} from './enums/foss-service-category.enum.js';
 import { ServiceRequestStatus } from './enums/service-request-status.enum.js';
 import { FossServiceRequestRepository } from './repositories/foss-service-request.repository.js';
 import { ServiceRequestsService } from './service-requests.service.js';
@@ -139,21 +143,79 @@ describe('ServiceRequestsService', () => {
       ).rejects.toThrow(UpstreamServiceUnavailableException);
     });
 
-    it('rejects unsupported categories pending cross-subsystem enum approval safely', async () => {
-      mockConfigService.get.mockReturnValue('false');
-      await expect(
-        service.createServiceRequest(sampleGuest, {
-          requestType: 'TOILETRIES',
-          description: 'Need shampoo',
-        }),
-      ).rejects.toThrow(BadRequestException);
-
+    it('rejects unsupported categories such as LUGGAGE_ASSISTANCE safely', async () => {
       await expect(
         service.createServiceRequest(sampleGuest, {
           requestType: 'LUGGAGE_ASSISTANCE',
           description: 'Help with bags',
         }),
       ).rejects.toThrow(BadRequestException);
+
+      await expect(
+        service.createServiceRequest(sampleGuest, {
+          requestType: 'BABY_COT',
+          description: 'Crib requested',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('correctly maps TOILETRIES to WKMS TOILETRIES task with preserved description', async () => {
+      mockRequestRepository.findByIdempotencyKey.mockResolvedValue(null);
+      const createTaskSpy = jest.spyOn(mockWkms, 'createTask');
+
+      const response = await service.createServiceRequest(sampleGuest, {
+        requestType: ActiveFossServiceCategory.TOILETRIES,
+        description: 'Extra shampoo and dental kit',
+        idempotencyKey: 'idemp-toiletries-001',
+      });
+
+      expect(response.requestType).toBe(ActiveFossServiceCategory.TOILETRIES);
+      expect(response.description).toBe('Extra shampoo and dental kit');
+      expect(createTaskSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          taskType: TaskType.TOILETRIES,
+          description: 'Extra shampoo and dental kit',
+        }),
+      );
+      expect(mockRequestRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          category: ActiveFossServiceCategory.TOILETRIES,
+          description: 'Extra shampoo and dental kit',
+        }),
+      );
+    });
+
+    it('rejects legacy WATER_BOTTLES submission with BadRequestException', async () => {
+      await expect(
+        service.createServiceRequest(sampleGuest, {
+          requestType: FossServiceCategory.WATER_BOTTLES,
+          idempotencyKey: 'idemp-water-reject-001',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('correctly maps LAUNDRY_PICKUP to WKMS LAUNDRY_PICKUP task', async () => {
+      mockRequestRepository.findByIdempotencyKey.mockResolvedValue(null);
+      const createTaskSpy = jest.spyOn(mockWkms, 'createTask');
+
+      const response = await service.createServiceRequest(sampleGuest, {
+        requestType: FossServiceCategory.LAUNDRY_PICKUP,
+        description: 'Dry cleaning 2 shirts',
+        idempotencyKey: 'idemp-laundry-001',
+      });
+
+      expect(response.requestType).toBe(FossServiceCategory.LAUNDRY_PICKUP);
+      expect(createTaskSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          taskType: TaskType.LAUNDRY_PICKUP,
+          description: 'Dry cleaning 2 shirts',
+        }),
+      );
+      expect(mockRequestRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          category: FossServiceCategory.LAUNDRY_PICKUP,
+        }),
+      );
     });
 
     it('handles concurrent duplicate key race condition gracefully', async () => {
@@ -563,6 +625,132 @@ describe('ServiceRequestsService', () => {
       expect(result.processed).toBe(false);
       expect(result.message).toContain('Out-of-order status regression');
       expect(result.request?.status).toBe(ServiceRequestStatus.COMPLETED);
+    });
+  });
+
+  describe('advanceServiceRequestStatus() [DEMO_MODE]', () => {
+    it('advances service request status when DEMO_MODE is true in test/dev', async () => {
+      const req = new FossServiceRequest();
+      req.requestId = 'req-demo-001';
+      req.bookingId = sampleGuest.bookingId;
+      req.roomNumber = sampleGuest.roomNumber;
+      req.status = ServiceRequestStatus.SUBMITTED;
+      req.createdAt = new Date();
+      req.updatedAt = new Date();
+
+      mockRequestRepository.findById.mockResolvedValue(req);
+      mockRequestRepository.save.mockResolvedValue(req);
+
+      const result = await service.advanceServiceRequestStatus(
+        sampleGuest,
+        'req-demo-001',
+        ServiceRequestStatus.ASSIGNED,
+        'Staff #1',
+      );
+
+      expect(result.status).toBe(ServiceRequestStatus.ASSIGNED);
+      expect(result.assignedStaff).toBe('Staff #1');
+      expect(mockRequestRepository.save).toHaveBeenCalled();
+    });
+
+    it('rejects status advancement when DEMO_MODE is false with 403 Forbidden', async () => {
+      mockConfigService.get.mockReturnValueOnce('false');
+
+      await expect(
+        service.advanceServiceRequestStatus(
+          sampleGuest,
+          'req-demo-001',
+          ServiceRequestStatus.IN_PROGRESS,
+        ),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('strictly rejects status advancement when NODE_ENV is production', async () => {
+      process.env.NODE_ENV = 'production';
+      try {
+        await expect(
+          service.advanceServiceRequestStatus(
+            sampleGuest,
+            'req-demo-001',
+            ServiceRequestStatus.IN_PROGRESS,
+          ),
+        ).rejects.toThrow(ForbiddenException);
+      } finally {
+        process.env.NODE_ENV = 'test';
+      }
+    });
+  });
+
+  describe('FOSS-to-WKMS Category & Description Translation', () => {
+    it('translates all 6 approved active FOSS categories to corresponding WKMS task types', () => {
+      expect(
+        service.translateCategoryToWkmsTaskType(
+          ActiveFossServiceCategory.ROOM_CLEANING,
+        ),
+      ).toBe(TaskType.ROOM_CLEANING);
+      expect(
+        service.translateCategoryToWkmsTaskType(
+          ActiveFossServiceCategory.EXTRA_TOWELS,
+        ),
+      ).toBe(TaskType.EXTRA_TOWELS);
+      expect(
+        service.translateCategoryToWkmsTaskType(
+          ActiveFossServiceCategory.TOILETRIES,
+        ),
+      ).toBe(TaskType.TOILETRIES);
+      expect(
+        service.translateCategoryToWkmsTaskType(
+          ActiveFossServiceCategory.MAINTENANCE,
+        ),
+      ).toBe(TaskType.MAINTENANCE);
+      expect(
+        service.translateCategoryToWkmsTaskType(
+          ActiveFossServiceCategory.LAUNDRY_PICKUP,
+        ),
+      ).toBe(TaskType.LAUNDRY_PICKUP);
+      expect(
+        service.translateCategoryToWkmsTaskType(
+          ActiveFossServiceCategory.OTHER,
+        ),
+      ).toBe(TaskType.OTHER);
+    });
+
+    it('rejects legacy WATER_BOTTLES and unknown categories with BadRequestException', () => {
+      expect(() =>
+        service.translateCategoryToWkmsTaskType(
+          FossServiceCategory.WATER_BOTTLES,
+        ),
+      ).toThrow(BadRequestException);
+      expect(() => service.translateCategoryToWkmsTaskType('UNKNOWN')).toThrow(
+        BadRequestException,
+      );
+      expect(() =>
+        service.translateCategoryToWkmsTaskType('LUGGAGE_ASSISTANCE'),
+      ).toThrow(BadRequestException);
+    });
+
+    it('formats task description correctly by preserving guest notes', () => {
+      expect(
+        service.formatWkmsTaskDescription(ActiveFossServiceCategory.TOILETRIES),
+      ).toBeUndefined();
+      expect(
+        service.formatWkmsTaskDescription(
+          ActiveFossServiceCategory.TOILETRIES,
+          '   ',
+        ),
+      ).toBeUndefined();
+      expect(
+        service.formatWkmsTaskDescription(
+          ActiveFossServiceCategory.TOILETRIES,
+          'Shampoo and toothbrush',
+        ),
+      ).toBe('Shampoo and toothbrush');
+      expect(
+        service.formatWkmsTaskDescription(
+          ActiveFossServiceCategory.EXTRA_TOWELS,
+          '2 bath towels',
+        ),
+      ).toBe('2 bath towels');
     });
   });
 });

@@ -22,6 +22,30 @@ import { LoadingSkeleton } from '../../../components/feedback/loading-skeleton.t
 
 const { Title, Text, Paragraph } = Typography;
 
+/**
+ * Formats ISO timestamp in Asia/Colombo in 12-hour AM/PM format (e.g. 07:00 PM).
+ * Returns null if timestamp is missing or invalid.
+ */
+function formatColomboTime(isoString?: string | null): string | null {
+  if (!isoString) return null;
+  const d = new Date(isoString);
+  if (isNaN(d.getTime())) return null;
+  try {
+    return d.toLocaleTimeString('en-US', {
+      timeZone: 'Asia/Colombo',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    });
+  } catch {
+    return d.toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    });
+  }
+}
+
 interface OrderStatusTrackerProps {
   orderId: string;
   onBack: () => void;
@@ -46,13 +70,22 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
       ? `#${orderId}`
       : `#ORD-${orderId.replace(/^[^\d]*/, '').slice(-3) || '291'}`;
 
+  const onBackRef = useRef(onBack);
+  useEffect(() => {
+    onBackRef.current = onBack;
+  }, [onBack]);
+
+  const handleBack = useCallback(() => {
+    onBackRef.current();
+  }, []);
+
   // Update header to match Figure 36 ("← Order Tracker / Order #ORD-291")
   useEffect(() => {
     setPageHeader({
       title: 'Order Tracker',
       subtitle: `Order ${formattedOrderId}`,
       showBackButton: true,
-      onBack,
+      onBack: handleBack,
     });
 
     return () => {
@@ -60,7 +93,7 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
     };
   }, [
     formattedOrderId,
-    onBack,
+    handleBack,
     setPageHeader,
     resetHeaderForTab,
     guest?.roomNumber,
@@ -69,11 +102,15 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
 
   const loadOrder = useCallback(
     async (showLoading = false) => {
+      if (!sessionToken) {
+        if (showLoading) setLoading(false);
+        return;
+      }
       if (showLoading) setLoading(true);
       setError(null);
 
       try {
-        const data = await fetchGuestOrderById(sessionToken || 'demo-token', orderId);
+        const data = await fetchGuestOrderById(sessionToken, orderId);
         setOrder(data);
 
         // Calculate countdown seconds
@@ -98,7 +135,18 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
   useEffect(() => {
     let isCancelled = false;
 
-    fetchGuestOrderById(sessionToken || 'demo-token', orderId)
+    if (!sessionToken) {
+      Promise.resolve().then(() => {
+        if (!isCancelled) {
+          setLoading(false);
+        }
+      });
+      return () => {
+        isCancelled = true;
+      };
+    }
+
+    fetchGuestOrderById(sessionToken, orderId)
       .then((data) => {
         if (!isCancelled) {
           setOrder(data);
@@ -130,13 +178,13 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
   const realtimeClientRef = useRef<FossRealtimeClient | null>(null);
 
   useEffect(() => {
-    if (!sessionToken || !guest) return;
+    if (!sessionToken || !guest?.bookingId || !guest?.roomNumber) return;
 
     const client = new FossRealtimeClient({
       apiUrl: API_URL,
       sessionToken,
-      bookingId: guest.bookingId || 'booking-101',
-      roomNumber: guest.roomNumber || '103',
+      bookingId: guest.bookingId,
+      roomNumber: guest.roomNumber,
       pollIntervalMs: 5000,
       onEvent: (event: FossRealtimeEvent) => {
         if (event.eventType === RealtimeEventType.FOOD_ORDER_STATUS_UPDATED) {
@@ -200,15 +248,13 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
   const timeDisplay = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
 
   const handleCancelOrder = async () => {
+    if (!sessionToken) return;
+
     setCancelling(true);
     setCancelModalVisible(false);
 
     try {
-      const updated = await cancelFoodOrder(
-        sessionToken || 'demo-token',
-        orderId,
-        'Guest requested cancellation',
-      );
+      const updated = await cancelFoodOrder(sessionToken, orderId, 'Guest requested cancellation');
       setOrder(updated);
       message.success('Your order has been cancelled.');
     } catch (err: unknown) {
@@ -225,13 +271,11 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
   };
 
   const handleAdvanceStatus = async (targetStatus: FoodOrderStatus) => {
+    if (!sessionToken) return;
+
     setAdvancingDemo(true);
     try {
-      const updated = await advanceOrderStatusDemo(
-        sessionToken || 'demo-token',
-        orderId,
-        targetStatus,
-      );
+      const updated = await advanceOrderStatusDemo(sessionToken, orderId, targetStatus);
       setOrder(updated);
       message.info(`Demo: Order status advanced to ${targetStatus}`);
     } catch {
@@ -245,6 +289,10 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
             ...step,
             completed: step.status === targetStatus ? true : step.completed,
             current: step.status === targetStatus,
+            timestamp:
+              step.status === targetStatus && !step.timestamp
+                ? new Date().toISOString()
+                : step.timestamp,
           })),
         };
         setOrder(nextOrder);
@@ -272,7 +320,7 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
           message={error}
           onRetry={() => loadOrder(true)}
         />
-        <Button block onClick={onBack}>
+        <Button block onClick={handleBack}>
           Back to Order History
         </Button>
       </div>
@@ -299,6 +347,36 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
     }
   };
 
+  const timeline = order?.timeline || [];
+  const placedStep = timeline.find((s) => s.status === 'PLACED');
+  const prepStep = timeline.find((s) => s.status === 'IN_PREPARATION');
+  const readyStep = timeline.find((s) => s.status === 'READY');
+  const deliveredStep = timeline.find((s) => s.status === 'DELIVERED');
+
+  const placedTime = formatColomboTime(placedStep?.timestamp || order?.createdAt);
+  const prepTime = formatColomboTime(prepStep?.timestamp);
+  const readyTime = formatColomboTime(readyStep?.timestamp);
+  const deliveredTime = formatColomboTime(deliveredStep?.timestamp);
+
+  // Authoritative estimated delivery calculation for Ready for Delivery milestone
+  const getEstimatedReadyLabel = (): string => {
+    if (currentStatus === 'READY' || currentStatus === 'DELIVERED') {
+      return readyTime || 'Ready';
+    }
+    const mins = order?.estimatedDeliveryMinutes || 25;
+    if (order?.createdAt) {
+      const createdMs = new Date(order.createdAt).getTime();
+      if (!isNaN(createdMs)) {
+        const estMs = createdMs + mins * 60 * 1000;
+        const estClock = formatColomboTime(new Date(estMs).toISOString());
+        if (estClock) {
+          return `Est. ${estClock}`;
+        }
+      }
+    }
+    return `Est. ~${mins}m`;
+  };
+
   return (
     <div
       role="region"
@@ -309,7 +387,7 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
       <div className="w-full bg-[#1D3557] rounded-3xl p-5 text-white shadow-md space-y-2 relative overflow-hidden">
         <div className="flex items-center justify-between text-xs text-slate-300 font-medium">
           <span>
-            {formattedOrderId} · Room {order?.roomNumber || guest?.roomNumber || '103'} · In-Room
+            {formattedOrderId} · Room {order?.roomNumber || guest?.roomNumber || '—'} · In-Room
             Dining
           </span>
           <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-slate-800/80 border border-slate-700 text-amber-400 text-[11px] font-semibold">
@@ -354,14 +432,9 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
                 <Text strong className="text-sm text-slate-900 block font-bold">
                   Order Placed
                 </Text>
-                <span className="text-[11px] text-slate-400 font-medium">
-                  {order?.createdAt
-                    ? new Date(order.createdAt).toLocaleTimeString([], {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })
-                    : '12:20 PM'}
-                </span>
+                {placedTime && (
+                  <span className="text-[11px] text-slate-400 font-medium">{placedTime}</span>
+                )}
               </div>
               <Text className="text-xs text-slate-500 block">Order received & KOT printed</Text>
             </div>
@@ -387,7 +460,7 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
                   <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                 </svg>
               ) : currentStatus === 'IN_PREPARATION' ? (
-                <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-ping" />
+                <span className="w-3 h-3 rounded-full bg-amber-500 shadow-xs" />
               ) : (
                 <span className="w-2 h-2 rounded-full bg-transparent" />
               )}
@@ -400,11 +473,13 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
                 >
                   In Preparation
                 </Text>
-                {currentStatus === 'IN_PREPARATION' && (
+                {prepTime ? (
+                  <span className="text-[11px] text-slate-400 font-medium">{prepTime}</span>
+                ) : currentStatus === 'IN_PREPARATION' ? (
                   <span className="text-[11px] text-amber-800 font-bold bg-amber-50 px-2 py-0.5 rounded-full">
-                    Now
+                    In Progress
                   </span>
-                )}
+                ) : null}
               </div>
               <Text className="text-xs text-slate-500 block leading-snug">
                 Kitchen acknowledged allergy notes and started cooking
@@ -446,9 +521,7 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
                   Ready for Delivery
                 </Text>
                 <span className="text-[11px] text-slate-400 font-medium">
-                  {currentStatus === 'READY'
-                    ? 'Now'
-                    : `Est. ~${order?.estimatedDeliveryMinutes || 25}m`}
+                  {getEstimatedReadyLabel()}
                 </span>
               </div>
               <Text className="text-xs text-slate-500 block">Food prepared, worker assigned</Text>
@@ -482,9 +555,12 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
                 >
                   Delivered
                 </Text>
+                {deliveredTime && (
+                  <span className="text-[11px] text-slate-400 font-medium">{deliveredTime}</span>
+                )}
               </div>
               <Text className="text-xs text-slate-500 block">
-                Worker delivers to Room {order?.roomNumber || guest?.roomNumber || '103'}
+                Worker delivers to Room {order?.roomNumber || guest?.roomNumber || '—'}
               </Text>
             </div>
           </div>

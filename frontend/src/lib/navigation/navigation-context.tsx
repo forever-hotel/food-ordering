@@ -9,12 +9,16 @@ export interface PageHeaderConfig {
   subtitle?: string;
   showBackButton?: boolean;
   onBack?: (() => void) | null;
+  hideHeader?: boolean;
+  hideBottomNav?: boolean;
 }
 
 interface NavigationContextType {
   activeTab: NavTabId;
   pageHeader: PageHeaderConfig;
-  setActiveTab: (tab: NavTabId) => void;
+  selectedOrderId: string | null;
+  setSelectedOrderId: (id: string | null) => void;
+  setActiveTab: (tab: NavTabId, options?: { keepSelectedOrder?: boolean }) => void;
   setPageHeader: (config: PageHeaderConfig) => void;
   resetHeaderForTab: (tab: NavTabId, roomNumber?: string, guestName?: string) => void;
 }
@@ -30,12 +34,29 @@ const DEFAULT_TITLES: Record<NavTabId, { title: string; subtitlePrefix: string }
 
 export function NavigationProvider({ children }: { children: React.ReactNode }) {
   const [activeTab, setActiveTabState] = useState<NavTabId>('menu');
-  const [pageHeader, setPageHeader] = useState<PageHeaderConfig>({
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  const [pageHeader, setPageHeaderState] = useState<PageHeaderConfig>({
     title: DEFAULT_TITLES.menu.title,
     subtitle: DEFAULT_TITLES.menu.subtitlePrefix,
     showBackButton: false,
     onBack: null,
   });
+
+  const setPageHeader = useCallback((config: PageHeaderConfig) => {
+    setPageHeaderState((prev) => {
+      if (
+        prev.title === config.title &&
+        prev.subtitle === config.subtitle &&
+        prev.showBackButton === config.showBackButton &&
+        prev.onBack === config.onBack &&
+        prev.hideHeader === config.hideHeader &&
+        prev.hideBottomNav === config.hideBottomNav
+      ) {
+        return prev;
+      }
+      return config;
+    });
+  }, []);
 
   const resetHeaderForTab = useCallback(
     (tab: NavTabId, roomNumber?: string, guestName?: string) => {
@@ -61,15 +82,20 @@ export function NavigationProvider({ children }: { children: React.ReactNode }) 
         subtitle,
         showBackButton: false,
         onBack: null,
+        hideHeader: false,
+        hideBottomNav: false,
       });
     },
-    [],
+    [setPageHeader],
   );
 
   const setActiveTab = useCallback(
-    (tab: NavTabId) => {
+    (tab: NavTabId, options?: { keepSelectedOrder?: boolean }) => {
       setActiveTabState(tab);
       resetHeaderForTab(tab);
+      if (!options?.keepSelectedOrder) {
+        setSelectedOrderId(null);
+      }
     },
     [resetHeaderForTab],
   );
@@ -78,11 +104,13 @@ export function NavigationProvider({ children }: { children: React.ReactNode }) 
     () => ({
       activeTab,
       pageHeader,
+      selectedOrderId,
+      setSelectedOrderId,
       setActiveTab,
       setPageHeader,
       resetHeaderForTab,
     }),
-    [activeTab, pageHeader, setActiveTab, resetHeaderForTab],
+    [activeTab, pageHeader, selectedOrderId, setActiveTab, setPageHeader, resetHeaderForTab],
   );
 
   return <NavigationContext.Provider value={value}>{children}</NavigationContext.Provider>;

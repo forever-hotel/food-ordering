@@ -1,13 +1,11 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Alert, Button, Card, Divider, Typography } from 'antd';
+import { Alert, Button } from 'antd';
 
 import { useAuth } from '../../../lib/auth/auth-context';
 import { ManualEntryForm } from './manual-entry-form';
 import { QrScannerModal } from './qr-scanner-modal';
-
-const { Title, Paragraph, Text } = Typography;
 
 export function QrScanCard() {
   const { status, error, demoTokens, loginWithQr, clearError } = useAuth();
@@ -26,22 +24,19 @@ export function QrScanCard() {
   const isLoading = status === 'loading';
 
   return (
-    <div className="w-full max-w-[390px] mx-auto px-4 py-6 flex flex-col items-center">
-      {/* Brand Header */}
+    <div className="w-full max-w-[390px] mx-auto px-4 py-8 flex flex-col items-center justify-center min-h-[90vh]">
+      {/* Brand Header (Figure 31) */}
       <div className="text-center mb-6">
-        <Text className="text-xs font-bold tracking-[0.25em] text-slate-500 uppercase block">
+        <span className="text-xs font-bold tracking-[0.28em] text-slate-700 uppercase block">
           FOREVER HOTEL
-        </Text>
+        </span>
       </div>
 
-      {/* Main Card */}
-      <Card
-        className="w-full !rounded-2xl !shadow-sm !border-slate-100 !bg-white overflow-hidden text-center"
-        styles={{ body: { padding: '24px 20px' } }}
-      >
+      {/* Main Container matching Figure 31 */}
+      <div className="w-full flex flex-col items-center text-center">
         {/* Error / Expired Banner */}
         {(isExpired || isError) && error && (
-          <div className="mb-5 text-left">
+          <div className="w-full mb-5 text-left">
             <Alert
               type={isExpired ? 'warning' : 'error'}
               showIcon
@@ -49,28 +44,28 @@ export function QrScanCard() {
               onClose={clearError}
               title={isExpired ? 'Session Expired' : 'Authentication Failed'}
               description={error}
-              className="text-xs"
+              className="text-xs !rounded-xl"
             />
           </div>
         )}
 
-        {/* Stylized QR Card Graphic with Gold Corner Brackets */}
-        <div className="relative w-44 h-44 mx-auto mb-6 flex items-center justify-center p-4 bg-white rounded-xl">
-          {/* Gold / Warm Corner Brackets */}
+        {/* Stylized QR Card Graphic with Gold Corner Brackets (Figure 31) */}
+        <div className="relative w-44 h-44 mb-6 flex items-center justify-center p-4 bg-white rounded-2xl shadow-sm border border-slate-100">
+          {/* Gold Corner Brackets matching Figure 31 */}
           <div className="absolute inset-0 pointer-events-none">
             {/* Top-left */}
-            <span className="absolute top-0 left-0 w-6 h-6 border-t-[3px] border-l-[3px] border-[#D4AF37] rounded-tl-sm" />
+            <span className="absolute top-2 left-2 w-5 h-5 border-t-[3px] border-l-[3px] border-[#D4AF37] rounded-tl-sm" />
             {/* Top-right */}
-            <span className="absolute top-0 right-0 w-6 h-6 border-t-[3px] border-r-[3px] border-[#D4AF37] rounded-tr-sm" />
+            <span className="absolute top-2 right-2 w-5 h-5 border-t-[3px] border-r-[3px] border-[#D4AF37] rounded-tr-sm" />
             {/* Bottom-left */}
-            <span className="absolute bottom-0 left-0 w-6 h-6 border-b-[3px] border-l-[3px] border-[#D4AF37] rounded-bl-sm" />
+            <span className="absolute bottom-2 left-2 w-5 h-5 border-b-[3px] border-l-[3px] border-[#D4AF37] rounded-bl-sm" />
             {/* Bottom-right */}
-            <span className="absolute bottom-0 right-0 w-6 h-6 border-b-[3px] border-r-[3px] border-[#D4AF37] rounded-br-sm" />
+            <span className="absolute bottom-2 right-2 w-5 h-5 border-b-[3px] border-r-[3px] border-[#D4AF37] rounded-br-sm" />
           </div>
 
           {/* Stylized QR Code SVG graphic */}
           <svg
-            className="w-32 h-32 text-[#1D3557]"
+            className="w-28 h-28 text-[#1D3557]"
             viewBox="0 0 100 100"
             fill="currentColor"
             aria-hidden="true"
@@ -110,21 +105,21 @@ export function QrScanCard() {
           </svg>
         </div>
 
-        {/* Headings */}
-        <Title level={2} className="!text-[22px] !font-bold !text-[#1E293B] !mb-2 !mt-0">
+        {/* Headings (Figure 31) */}
+        <h2 className="text-xl font-extrabold text-[#1E293B] mb-1.5 mt-0 tracking-tight">
           Scan Room QR Code
-        </Title>
-        <Paragraph className="!text-slate-500 !text-sm !mb-6 max-w-[280px] mx-auto leading-relaxed">
+        </h2>
+        <p className="text-slate-500 text-xs mb-6 max-w-[260px] mx-auto leading-relaxed">
           Point your camera at the QR on your room desk to begin
-        </Paragraph>
+        </p>
 
-        {/* Primary Action Button: Open Camera */}
+        {/* Primary Action Button: Open Camera (Figure 31) */}
         <Button
           type="primary"
           size="large"
           loading={isLoading}
           onClick={() => setScannerOpen(true)}
-          className="w-full !h-12 !rounded-xl !bg-[#1D3557] hover:!bg-[#162a45] !font-semibold !text-base shadow-sm flex items-center justify-center gap-2 mb-4"
+          className="w-full max-w-[340px] !h-12 !rounded-2xl !bg-[#1D3557] hover:!bg-[#162A45] !font-bold !text-sm shadow-sm flex items-center justify-center gap-2 mb-3"
         >
           {/* Camera SVG icon */}
           <svg
@@ -151,20 +146,24 @@ export function QrScanCard() {
         </Button>
 
         {/* Divider with 'or' */}
-        <Divider className="!my-4 !text-xs !text-slate-400 !font-normal">or</Divider>
+        <div className="w-full max-w-[340px] flex items-center my-3">
+          <div className="flex-1 border-t border-slate-200" />
+          <span className="px-3 text-xs text-slate-400">or</span>
+          <div className="flex-1 border-t border-slate-200" />
+        </div>
 
-        {/* Secondary Manual Entry */}
+        {/* Secondary Manual Entry (Figure 31) */}
         <ManualEntryForm
           loading={isLoading}
           onSubmit={handleManualSubmit}
           demoTokens={demoTokens}
         />
-      </Card>
+      </div>
 
-      {/* Footer Text */}
-      <Paragraph className="!text-xs !text-slate-400 !mt-6 text-center leading-normal">
+      {/* Footer Text (Figure 31) */}
+      <p className="text-[11px] text-slate-400 mt-6 text-center leading-normal">
         Session expires at check-out. No app install required.
-      </Paragraph>
+      </p>
 
       {/* Camera Scanner Modal */}
       <QrScannerModal

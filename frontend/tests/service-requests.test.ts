@@ -279,17 +279,118 @@ describe('TC-DDP-142-AC3: Boundary, Concurrency & Idempotent Submission', () => 
 });
 
 describe('TC-DDP-142-AC4: Contract & Visual Layout Fidelity Audit (Figure 38)', () => {
-  it('defines 6 canonical service categories matching Figure 38 exactly', () => {
+  it('defines 6 canonical service categories with Toiletries and typed icon keys', () => {
     const categories = SERVICE_TYPE_OPTIONS.map((o) => ({
       label: o.label,
       backendType: o.backendType,
+      key: o.key,
+      iconKey: o.iconKey,
+      disabled: o.disabled,
     }));
 
     assert.equal(categories.length, 6);
     assert.deepEqual(
       categories.map((c) => c.label),
-      ['Room Cleaning', 'Extra Towels', 'Maintenance', 'Laundry', 'Water Bottles', 'Other'],
+      ['Room Cleaning', 'Extra Towels', 'Maintenance', 'Laundry', 'Toiletries', 'Other'],
     );
+    assert.deepEqual(
+      categories.map((c) => c.backendType),
+      ['ROOM_CLEANING', 'EXTRA_TOWELS', 'MAINTENANCE', 'LAUNDRY_PICKUP', 'TOILETRIES', 'OTHER'],
+    );
+    assert.deepEqual(
+      categories.map((c) => c.key),
+      ['cleaning', 'towels', 'maintenance', 'laundry', 'toiletries', 'other'],
+    );
+    assert.deepEqual(
+      categories.map((c) => c.iconKey),
+      ['cleaning', 'towels', 'maintenance', 'laundry', 'toiletries', 'other'],
+    );
+
+    const toiletries = categories.find((c) => c.label === 'Toiletries');
+    assert.equal(toiletries?.backendType, 'TOILETRIES');
+    assert.equal(toiletries?.key, 'toiletries');
+    assert.equal(Boolean(toiletries?.disabled), false);
+
+    const laundry = categories.find((c) => c.label === 'Laundry');
+    assert.equal(laundry?.backendType, 'LAUNDRY_PICKUP');
+
+    // Verify all emoji strings were eliminated
+    for (const option of SERVICE_TYPE_OPTIONS) {
+      assert.equal(
+        (option as unknown as Record<string, unknown>).icon,
+        undefined,
+        'Emoji icon property must be removed',
+      );
+      assert.match(option.iconKey, /^[a-z]+$/, 'iconKey must be a valid lowercase identifier');
+    }
+  });
+
+  it('submits all 6 operational categories including newly enabled Toiletries', async () => {
+    const originalFetch = globalThis.fetch;
+    const submittedTypes: string[] = [];
+
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      const parsedBody = JSON.parse(String(init?.body || '{}'));
+      submittedTypes.push(parsedBody.requestType);
+      return new Response(
+        JSON.stringify({
+          requestId: `REQ-${Date.now()}`,
+          roomNumber: '103',
+          bookingId: 'booking-101',
+          requestType: parsedBody.requestType,
+          status: 'SUBMITTED',
+          priority: 'NORMAL',
+          timeline: [],
+        }),
+        { status: 201, headers: { 'Content-Type': 'application/json' } },
+      );
+    }) as typeof fetch;
+
+    try {
+      const operationalOptions = SERVICE_TYPE_OPTIONS.filter((o) => !o.disabled);
+      assert.equal(operationalOptions.length, 6);
+
+      for (const option of operationalOptions) {
+        await createServiceRequest(
+          'session-101',
+          { requestType: option.backendType, description: `Request for ${option.label}` },
+          `idemp-${option.key}`,
+        );
+      }
+
+      assert.deepEqual(submittedTypes, [
+        'ROOM_CLEANING',
+        'EXTRA_TOWELS',
+        'MAINTENANCE',
+        'LAUNDRY_PICKUP',
+        'TOILETRIES',
+        'OTHER',
+      ]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('preserves historical WATER_BOTTLES label while formatting TOILETRIES and LAUNDRY_PICKUP', () => {
+    const formatLabel = (backendType: string) => {
+      if (backendType === 'WATER_BOTTLES') return 'Water Bottles';
+      if (backendType === 'TOILETRIES') return 'Toiletries';
+      if (backendType === 'LAUNDRY_PICKUP') return 'Laundry';
+      const matched = SERVICE_TYPE_OPTIONS.find((o) => o.backendType === backendType);
+      if (matched) return matched.label;
+      return backendType
+        .replace('_', ' ')
+        .toLowerCase()
+        .replace(/\b\w/g, (c) => c.toUpperCase());
+    };
+
+    assert.equal(formatLabel('WATER_BOTTLES'), 'Water Bottles');
+    assert.equal(formatLabel('TOILETRIES'), 'Toiletries');
+    assert.equal(formatLabel('LAUNDRY_PICKUP'), 'Laundry');
+    assert.equal(formatLabel('ROOM_CLEANING'), 'Room Cleaning');
+    assert.equal(formatLabel('EXTRA_TOWELS'), 'Extra Towels');
+    assert.equal(formatLabel('MAINTENANCE'), 'Maintenance');
+    assert.equal(formatLabel('OTHER'), 'Other');
   });
 
   it('reproduces Figure 38 active requests text and status tags', () => {

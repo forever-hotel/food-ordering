@@ -56,8 +56,11 @@ jobs:
       - name: Install backend dependencies
         run: npm ci --ignore-scripts --no-fund
 
-      - name: Run database migrations
-        run: npm run migration:run
+      - name: Verify disposable test database target
+        run: npm run verify:db:ci
+
+      - name: Run database migrations (CI disposable database)
+        run: npm run migration:run:ci
 
       - name: Run backend lint
         run: npm run lint

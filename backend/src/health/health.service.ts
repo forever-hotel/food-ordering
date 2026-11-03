@@ -1,7 +1,9 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
 
 import {
+  DatabaseIsolationDto,
   LivenessResponseDto,
   ReadinessResponseDto,
 } from './dto/health-response.dto.js';
@@ -10,7 +12,10 @@ import {
 export class HealthService {
   private readonly logger = new Logger(HealthService.name);
 
-  constructor(@Optional() private readonly dataSource?: DataSource) {}
+  constructor(
+    @Optional() private readonly dataSource?: DataSource,
+    @Optional() private readonly configService?: ConfigService,
+  ) {}
 
   /**
    * Evaluates process liveness.
@@ -24,7 +29,162 @@ export class HealthService {
   }
 
   /**
+   * Extracts trustworthy, non-sensitive database isolation metadata.
+   * Confirms whether target database is an explicitly approved test branch or disposable test database.
+   * Validates server-provided pg_settings against server-side configuration allowlist.
+   * Never prints credentials, passwords, branch IDs or connection strings.
+   */
+  async getDatabaseIsolationInfo(): Promise<DatabaseIsolationDto> {
+    if (!this.dataSource) {
+      return {
+        isDisposableTestDb: false,
+        isCloudShared: false,
+        classification: 'unknown',
+        isApprovedTestBranch: false,
+      };
+    }
+
+    if (process.env.NODE_ENV === 'production') {
+      return {
+        isDisposableTestDb: false,
+        isCloudShared: true,
+        classification: 'production',
+        isApprovedTestBranch: false,
+      };
+    }
+
+    // Server-side allowlist configuration (Conditions 2 & 3)
+    // All approved identities must be explicitly configured on the server; no hardcoded defaults allowed.
+    const approvedProjectId =
+      this.configService?.get<string>('APPROVED_NEON_PROJECT_ID') ||
+      process.env.APPROVED_NEON_PROJECT_ID;
+
+    const approvedTestBranchId =
+      this.configService?.get<string>('APPROVED_NEON_TEST_BRANCH_ID') ||
+      process.env.APPROVED_NEON_TEST_BRANCH_ID;
+
+    const approvedTestEndpointId =
+      this.configService?.get<string>('APPROVED_NEON_TEST_ENDPOINT_ID') ||
+      process.env.APPROVED_NEON_TEST_ENDPOINT_ID;
+
+    const parentDevBranchId =
+      this.configService?.get<string>('PARENT_DEV_BRANCH_ID') ||
+      process.env.PARENT_DEV_BRANCH_ID;
+
+    try {
+      const rows = (await this.dataSource.query(
+        `SELECT name, setting 
+         FROM pg_settings 
+         WHERE name IN ('neon.project_id', 'neon.branch_id', 'neon.endpoint_id')`,
+      )) as Array<{ name: string; setting: string }>;
+
+      const settings: Record<string, string> = {};
+      for (const row of rows) {
+        settings[row.name] = row.setting;
+      }
+
+      const observedProjectId = settings['neon.project_id'];
+      const observedBranchId = settings['neon.branch_id'];
+      const observedEndpointId = settings['neon.endpoint_id'];
+
+      // If Neon server metadata is present, evaluate against trusted server-side allowlist
+      if (observedProjectId && observedBranchId) {
+        // Explicitly reject if connected to parent dev
+        if (parentDevBranchId && observedBranchId === parentDevBranchId) {
+          return {
+            isDisposableTestDb: false,
+            isCloudShared: true,
+            classification: 'neon_parent_dev',
+            isApprovedTestBranch: false,
+          };
+        }
+
+        // Validate observed project, branch, and endpoint against server-side allowlist.
+        // Requires approved project, branch, and endpoint configuration to be explicitly set (fails closed if any is missing).
+        const hasRequiredConfig = Boolean(
+          approvedProjectId && approvedTestBranchId && approvedTestEndpointId,
+        );
+        const matchesProject =
+          hasRequiredConfig && observedProjectId === approvedProjectId;
+        const matchesBranch =
+          hasRequiredConfig && observedBranchId === approvedTestBranchId;
+        const matchesEndpoint =
+          hasRequiredConfig && observedEndpointId === approvedTestEndpointId;
+
+        if (matchesProject && matchesBranch && matchesEndpoint) {
+          // Condition 4: Classify as dedicated_neon_test, not unrestricted disposable
+          return {
+            isDisposableTestDb: false,
+            isCloudShared: false,
+            classification: 'dedicated_neon_test',
+            isApprovedTestBranch: true,
+          };
+        }
+
+        // Mismatched, unconfigured or unknown branch in cloud
+        return {
+          isDisposableTestDb: false,
+          isCloudShared: true,
+          classification: 'shared_cloud_dev',
+          isApprovedTestBranch: false,
+        };
+      }
+    } catch (err) {
+      this.logger.warn(
+        `Failed to query pg_settings for Neon isolation metadata: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
+    // Fallback: check for local test database (e.g. SQLite / local PostgreSQL)
+    const options = (this.dataSource.options || {}) as unknown as Record<
+      string,
+      unknown
+    >;
+    let host = String(options.host || '');
+    let database = String(options.database || '');
+
+    if (options.url && typeof options.url === 'string') {
+      try {
+        const parsed = new URL(options.url);
+        host = parsed.hostname;
+        database = parsed.pathname.replace(/^\//, '');
+      } catch {
+        // Fallback
+      }
+    }
+
+    const isLocal =
+      host === 'localhost' ||
+      host === '127.0.0.1' ||
+      host === '::1' ||
+      host === '';
+    const dbLower = database.toLowerCase();
+    const isTestDbName =
+      dbLower.endsWith('_test') ||
+      dbLower.includes('disposable') ||
+      dbLower.includes('_test_') ||
+      dbLower === 'foss_test';
+
+    if (isLocal && isTestDbName && process.env.NODE_ENV === 'test') {
+      return {
+        isDisposableTestDb: true,
+        isCloudShared: false,
+        classification: 'disposable_local_test',
+        isApprovedTestBranch: false,
+      };
+    }
+
+    return {
+      isDisposableTestDb: false,
+      isCloudShared: host.includes('neon.tech') || host.includes('aws'),
+      classification: 'unknown',
+      isApprovedTestBranch: false,
+    };
+  }
+
+  /**
    * Evaluates system readiness including live database query probe.
+   * Public readiness probe returns minimal health status without internal infrastructure details.
    */
   async checkReadiness(): Promise<ReadinessResponseDto> {
     const uptime = Number(process.uptime().toFixed(2));

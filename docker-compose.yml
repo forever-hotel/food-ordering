@@ -6,17 +6,17 @@ services:
     container_name: foss-backend
     restart: unless-stopped
     ports:
-      - "4300:4300"
+      - "127.0.0.1:4300:4300"
+    env_file:
+      - path: ./backend/.env
+        required: false
     environment:
       - NODE_ENV=${NODE_ENV:-development}
-      - PORT=4300
-      - DATABASE_URL=${DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/food_ordering}
+      - PORT=${PORT:-4300}
+      - HOST=0.0.0.0
       - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
       - MOCK_EXTERNAL_SERVICES=${MOCK_EXTERNAL_SERVICES:-true}
       - DEMO_MODE=${DEMO_MODE:-true}
-      - QR_SIGNING_SECRET=${QR_SIGNING_SECRET:-development-demo-qr-signing-secret-at-least-32-chars-long}
-      - INTERNAL_SERVICE_KEY=${INTERNAL_SERVICE_KEY:-development-internal-service-key-at-least-32-chars}
-      - FDS_WEBHOOK_SECRET=${FDS_WEBHOOK_SECRET:-development-fds-webhook-secret-at-least-32-chars}
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:4300/health/live"]
       interval: 10s
@@ -28,15 +28,20 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:4300}
+        - NEXT_PUBLIC_GATEWAY_URL=${NEXT_PUBLIC_GATEWAY_URL:-http://localhost:8080}
     container_name: foss-frontend
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     environment:
       - NODE_ENV=${NODE_ENV:-production}
       - PORT=3000
-      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8080/foss}
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:4300}
       - NEXT_PUBLIC_GATEWAY_URL=${NEXT_PUBLIC_GATEWAY_URL:-http://localhost:8080}
+      - INTERNAL_API_URL=http://backend:4300
+      - DEMO_MODE=${DEMO_MODE:-true}
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3000/"]
       interval: 15s
@@ -45,6 +50,7 @@ services:
       start_period: 10s
 
   postgres:
+    profiles: ["local-db"]
     image: postgres:16
     container_name: foss-postgres
     restart: unless-stopped
@@ -53,7 +59,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
@@ -62,8 +68,8 @@ services:
     container_name: foss-rabbitmq
     restart: unless-stopped
     ports:
-      - "5672:5672"
-      - "15672:15672"
+      - "127.0.0.1:5672:5672"
+      - "127.0.0.1:15672:15672"
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
 
