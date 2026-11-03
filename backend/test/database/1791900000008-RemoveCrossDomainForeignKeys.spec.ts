@@ -1,4 +1,11 @@
-import { jest } from '@jest/globals';
+import {
+  afterAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  jest,
+} from '@jest/globals';
 import { RemoveCrossDomainForeignKeys1791900000008 } from '../../src/database/migrations/1791900000008-RemoveCrossDomainForeignKeys.js';
 import type { QueryRunner, DataSource } from 'typeorm';
 

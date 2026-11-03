@@ -18,13 +18,20 @@ import { KMS_FIXTURE_CREATE_ORDER_VALID } from '../src/integrations/internal-ser
 
 import { MockWkmsAdapter } from '../src/integrations/internal-services/wkms/adapters/mock-wkms.adapter.js';
 import { RealWkmsAdapter } from '../src/integrations/internal-services/wkms/adapters/real-wkms.adapter.js';
-import { WkmsCreateTaskDto } from '../src/integrations/internal-services/wkms/dto/wkms-task.dto.js';
+import {
+  TaskPriority,
+  WkmsCreateTaskDto,
+} from '../src/integrations/internal-services/wkms/dto/wkms-task.dto.js';
 import { WkmsTaskResultDto } from '../src/integrations/internal-services/wkms/dto/wkms-task-result.dto.js';
 import { WKMS_FIXTURE_CREATE_TASK_VALID } from '../src/integrations/internal-services/wkms/fixtures/wkms-contract.fixtures.js';
 
 import { MockMadComplaintAdapter } from '../src/integrations/internal-services/mad/adapters/mock-mad-complaint.adapter.js';
 import { RealMadComplaintAdapter } from '../src/integrations/internal-services/mad/adapters/real-mad-complaint.adapter.js';
-import { MadCreateComplaintDto } from '../src/integrations/internal-services/mad/dto/mad-complaint.dto.js';
+import {
+  ComplaintCategory,
+  ComplaintSeverity,
+  MadCreateComplaintDto,
+} from '../src/integrations/internal-services/mad/dto/mad-complaint.dto.js';
 import { MadComplaintResultDto } from '../src/integrations/internal-services/mad/dto/mad-complaint-result.dto.js';
 import { MAD_FIXTURE_CREATE_COMPLAINT_VALID } from '../src/integrations/internal-services/mad/fixtures/mad-contract.fixtures.js';
 
@@ -107,7 +114,7 @@ describe('Cross-Service FOSS -> KMS -> WKMS -> FDS -> MAD Integration & Money Ow
         bookingId: 'b1010000-0000-4000-8000-000000000101',
         taskType: 'EXTRA_TOWELS',
         description: 'Please deliver 2 extra bath towels and bathrobes',
-        priority: 'NORMAL',
+        priority: TaskPriority.NORMAL,
         idempotencyKey: 'idemp-cross-task-001',
         version: ContractVersion.V1_0,
       };
@@ -124,8 +131,8 @@ describe('Cross-Service FOSS -> KMS -> WKMS -> FDS -> MAD Integration & Money Ow
       const complaintPayload: MadCreateComplaintDto = {
         roomNumber: '101',
         bookingId: 'b1010000-0000-4000-8000-000000000101',
-        category: 'FOOD',
-        severity: 'MEDIUM',
+        category: ComplaintCategory.FOOD,
+        severity: ComplaintSeverity.MEDIUM,
         subject: 'Burger arrived lukewarm',
         description:
           'The burger was tasty but lukewarm by the time it was delivered to room 101.',
