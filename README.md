@@ -220,10 +220,11 @@ When connecting to Neon PostgreSQL, the backend's [`HealthService`](backend/src/
 
 ## 9. Known Limitations & Acceptance Status
 
-- **Automated Playwright Execution:** E2E browser tests are scaffolded in `frontend/tests/e2e/`. Running them inside the Windows sandbox requires elevated host network privileges (`BypassSandbox: true`) due to loopback TCP restrictions (`connect EACCES 127.0.0.1:3000`).
+- **Automated Playwright Execution:** E2E browser tests are scaffolded in `frontend/tests/e2e/`. Automated execution remains unverified due to Windows sandbox loopback TCP restrictions (`connect EACCES 127.0.0.1:3000`).
+- **WCAG Accessibility Conformance:** Axe-core WCAG 2.1 AA rules and responsive viewports (320px, 375px, 390px, 768px) are authored in `frontend/tests/e2e/accessibility-wcag-axe.spec.ts`. Full WCAG conformance is not claimed until automated browser testing is verified.
 - **Live Upstream Systems:** Direct integration with live FDS, KMS, WKMS, and MAD staging servers is deferred. All flows are verified against typed mock adapters.
 - **Critical Branch Coverage Target:** Critical branch coverage stands at **84.21%** against the 90% stretch target (statement coverage is at **96.10%**).
-- **Redis & Transactional Outbox:** Redis is optional and disabled by default. Transactional outbox pattern remains unapproved and not implemented.
+- **Redis & Transactional Outbox:** Redis is optional and disabled by default (`REDIS_ENABLED=false`). The PostgreSQL transactional outbox is NOT implemented and remains subject to architectural change request approval (`CR-outbox-foss.md`).
 
 ---
 

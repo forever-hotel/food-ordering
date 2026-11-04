@@ -37,13 +37,13 @@ backend/src/
 
 The backend exposes **36 HTTP REST endpoints** across 9 controllers with global prefix `/${API_PREFIX}` (default: `/foss`):
 
-* **Guest Sessions (`/foss/guest-sessions`):** QR redemption (`POST /activate`), current session (`GET /me`), session refresh (`POST /refresh`), demo token resolver (`GET /demo-tokens`), checkout revocation webhook (`POST /revoke`), sign-out (`POST /logout`).
-* **Menu (`/foss/menu`):** Catalog retrieval (`GET /`), meal period windows (`GET /meal-windows`), single dish lookup (`GET /:id`).
-* **Food Orders (`/foss/orders`):** Order placement (`POST /`), order status tracking (`GET /:id`), guest stay order history (`GET /`), order cancellation (`POST /:id/cancel`).
-* **Service Requests (`/foss/service-requests`):** Request creation (`POST /`), stay requests list (`GET /`), single request lookup (`GET /:id`), worker status webhook (`POST /events`).
-* **Complaints (`/foss/complaints`):** File complaint (`POST /`), list complaints (`GET /`), complaint detail (`GET /:id`), manager resolution webhook (`POST /events`).
-* **Realtime (`/foss/realtime`):** Authenticated SSE event stream (`GET /stream`), short-polling fallback (`GET /poll`).
-* **Health & Readiness (`/foss/health`):** Liveness (`GET /`), database isolation check (`GET /ready`).
+- **Guest Sessions (`/foss/guest-sessions`):** QR redemption (`POST /activate`), current session (`GET /me`), session refresh (`POST /refresh`), demo token resolver (`GET /demo-tokens`), checkout revocation webhook (`POST /revoke`), sign-out (`POST /logout`).
+- **Menu (`/foss/menu`):** Catalog retrieval (`GET /`), meal period windows (`GET /meal-windows`), single dish lookup (`GET /:id`).
+- **Food Orders (`/foss/orders`):** Order placement (`POST /`), order status tracking (`GET /:id`), guest stay order history (`GET /`), order cancellation (`POST /:id/cancel`).
+- **Service Requests (`/foss/service-requests`):** Request creation (`POST /`), stay requests list (`GET /`), single request lookup (`GET /:id`), worker status webhook (`POST /events`).
+- **Complaints (`/foss/complaints`):** File complaint (`POST /`), list complaints (`GET /`), complaint detail (`GET /:id`), manager resolution webhook (`POST /events`).
+- **Realtime (`/foss/realtime`):** Authenticated SSE event stream (`GET /stream`), short-polling fallback (`GET /poll`).
+- **Health & Readiness (`/foss/health`):** Liveness (`GET /`), database isolation check (`GET /ready`).
 
 ---
 
@@ -51,9 +51,9 @@ The backend exposes **36 HTTP REST endpoints** across 9 controllers with global 
 
 FOSS uses **TypeORM** connected to PostgreSQL (Neon Cloud or local Docker):
 
-* **Synchronize Disabled:** `synchronize: false` is enforced in all environments. Schema changes occur exclusively via migrations.
-* **Server-Side Isolation Guard:** [`HealthService`](src/health/health.service.ts) verifies PostgreSQL `pg_settings` (`neon.project_id`, `neon.branch_id`, `neon.endpoint_id`) to ensure tests never write to shared development or production databases.
-* **Migration Scripts:**
+- **Synchronize Disabled:** `synchronize: false` is enforced in all environments. Schema changes occur exclusively via migrations.
+- **Server-Side Isolation Guard:** [`HealthService`](src/health/health.service.ts) verifies PostgreSQL `pg_settings` (`neon.project_id`, `neon.branch_id`, `neon.endpoint_id`) to ensure tests never write to shared development or production databases.
+- **Migration Scripts:**
   ```bash
   npm run migration:run       # Runs migrations against local DATABASE_URL
   npm run migration:revert    # Reverts the latest migration batch
@@ -67,14 +67,14 @@ FOSS uses **TypeORM** connected to PostgreSQL (Neon Cloud or local Docker):
 
 ## 4. Messaging & Real-Time Security
 
-* **RabbitMQ (AMQP 0-9-1):**
-  * Exchange: `forever.hotel.events` (Topic).
-  * Queues: Dedicated durable queues with Dead-Letter Exchanges (`forever.hotel.dlx`) and DLQ routing.
-  * Controlled via `RABBITMQ_ENABLED` (default: `true`).
-* **Real-time SSE:**
-  * Uses fetch-based authentication passing `Authorization: Bearer <token>`.
-  * URL query parameters are strictly forbidden for transmitting session tokens.
-  * Clients receive only events partitioned to their verified room and booking.
+- **RabbitMQ (AMQP 0-9-1):**
+  - Exchange: `forever.hotel.events` (Topic).
+  - Queues: Dedicated durable queues with Dead-Letter Exchanges (`forever.hotel.dlx`) and DLQ routing.
+  - Controlled via `RABBITMQ_ENABLED` (default: `true`).
+- **Real-time SSE:**
+  - Uses fetch-based authentication passing `Authorization: Bearer <token>`.
+  - URL query parameters are strictly forbidden for transmitting session tokens.
+  - Clients receive only events partitioned to their verified room and booking.
 
 ---
 
@@ -104,6 +104,7 @@ npm run build
 
 ## 6. Known Limitations
 
-* Live staging endpoints for external hotel services (FDS, KMS, WKMS, MAD) are simulated using typed mock adapters.
-* Critical branch coverage currently stands at **84.21%** against the 90% stretch target.
-* Redis caching is optional and disabled by default.
+- Live staging endpoints for external hotel services (FDS, KMS, WKMS, MAD) are simulated using typed mock adapters.
+- Critical branch coverage currently stands at **84.21%** against the 90% stretch target.
+- Redis caching is optional and disabled by default (`REDIS_ENABLED=false`).
+- The PostgreSQL transactional outbox is NOT implemented and remains subject to architectural change request approval (`CR-outbox-foss.md`).

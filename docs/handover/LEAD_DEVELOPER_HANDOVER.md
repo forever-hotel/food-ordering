@@ -38,11 +38,13 @@ The Forever Hotel Food Ordering System (FOSS) is **stable, demonstrable, and reg
   * `DATA_MODE=api`: Real HTTP REST + SSE calls to the NestJS backend.
 
 ### Asynchronous Messaging & Realtime
-* **RabbitMQ:** Shared exchange `forever.hotel.events`. Consumers listen on durable queues:
+* **RabbitMQ:** Shared exchange `forever.hotel.events`. Dead-Letter Queue (DLQ) topology (`forever.hotel.dlq`) and poisoned message isolation are implemented. Consumers listen on durable queues:
   * `kms.order.status_changed` -> updates food order status in FOSS.
   * `wkms.task.status_changed` -> updates service request status in FOSS.
   * `mad.complaint.status_changed` -> updates complaint status in FOSS.
-* **Server-Sent Events (SSE):** `GET /foss/realtime/stream` authenticated via `Authorization: Bearer <token>` header. Strictly room-scoped; disconnects upon checkout revocation.
+* **Server-Sent Events (SSE):** `GET /foss/realtime/stream` authenticated via `Authorization: Bearer <token>` header. Strictly room-scoped; disconnects upon checkout revocation. Short-polling fallback (`GET /foss/realtime/poll`) is supported.
+* **Optional Redis Cache:** Transparent, non-authoritative cache layer, disabled by default (`REDIS_ENABLED=false`).
+* **Transactional Outbox:** The PostgreSQL transactional outbox is NOT implemented and remains subject to architectural approval (`CR-outbox-foss.md`).
 
 ---
 
@@ -101,13 +103,13 @@ All quality gates pass 100% cleanly on the latest base commit:
 2. **Automated Playwright E2E Browser Tests (DDP-147):**
    * 5 test specifications are scaffolded in `frontend/tests/e2e/`. Running them inside Windows sandboxes encounters loopback socket isolation (`connect EACCES 127.0.0.1:3000`). Run on host network with `npm run test:e2e:mock`.
 3. **WCAG Accessibility Audit (DDP-147):**
-   * Axe-core WCAG 2.1 AA rules and responsive viewports (320px, 375px, 390px, 768px) are authored. Automated headless execution is pending.
+   * Axe-core WCAG 2.1 AA rules and responsive viewports (320px, 375px, 390px, 768px) are authored. Automated headless execution is pending; full WCAG conformance is not claimed.
 4. **Live Upstream Subsystem Integration (DDP-165):**
    * Physical staging integration with FDS, KMS, WKMS, and MAD is deferred. All communication is verified using typed mock adapters.
 5. **Security & Performance (DDP-148, DDP-149):**
    * Formal OWASP penetration audits, rate-limiting audits, and k6/Artillery stress tests remain open.
 6. **Architectural Change Requests (CRs):**
-   * `CR-outbox-foss.md` (Transactional Outbox) and `CR-redis-foss.md` (Redis cache) remain **Proposed** pending organization-wide review.
+   * `CR-outbox-foss.md` (PostgreSQL Transactional Outbox — not implemented) and `CR-redis-foss.md` (Redis cache) remain **Proposed** pending organization-wide review.
 
 ---
 
