@@ -17,6 +17,13 @@ services:
       - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
       - MOCK_EXTERNAL_SERVICES=${MOCK_EXTERNAL_SERVICES:-true}
       - DEMO_MODE=${DEMO_MODE:-true}
+      - RABBITMQ_URL=${RABBITMQ_URL:-amqp://rabbitmq:5672}
+      - RABBITMQ_ENABLED=${RABBITMQ_ENABLED:-true}
+      - REDIS_ENABLED=${REDIS_ENABLED:-false}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+    depends_on:
+      rabbitmq:
+        condition: service_started
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:4300/health/live"]
       interval: 10s
@@ -73,6 +80,24 @@ services:
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
 
+  redis:
+    profiles: ["redis"]
+    image: redis:7-alpine
+    container_name: foss-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    volumes:
+      - redis_data:/data
+
 volumes:
   postgres_data:
   rabbitmq_data:
+  redis_data:

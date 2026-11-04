@@ -76,6 +76,20 @@ export class DatabaseHealthDto {
   error?: string | null;
 }
 
+export class MessagingHealthDto {
+  @ApiProperty({
+    description: 'Messaging broker status',
+    example: 'up',
+  })
+  status!: 'up' | 'down' | 'disabled';
+
+  @ApiProperty({
+    description: 'Whether connection to broker is established',
+    example: true,
+  })
+  connected!: boolean;
+}
+
 export class ReadinessResponseDto {
   @ApiProperty({
     description: 'Overall system readiness status',
@@ -100,4 +114,11 @@ export class ReadinessResponseDto {
     type: DatabaseHealthDto,
   })
   database!: DatabaseHealthDto;
+
+  @ApiProperty({
+    description: 'RabbitMQ messaging component health',
+    type: MessagingHealthDto,
+    required: false,
+  })
+  messaging?: MessagingHealthDto;
 }

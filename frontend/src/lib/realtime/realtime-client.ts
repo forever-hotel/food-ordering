@@ -69,6 +69,7 @@ export class FossRealtimeClient {
   private readonly maxBackoffMs: number;
   private pollIntervalMs: number;
 
+  private abortController: AbortController | null = null;
   private eventSource: EventSource | null = null;
   private pollTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -96,16 +97,19 @@ export class FossRealtimeClient {
   }
 
   public connect(): void {
-    if (this.status === 'CONNECTED' || this.status === 'CONNECTING') {
+    if (this.status === 'CONNECTED') {
+      return;
+    }
+    if (this.status === 'CONNECTING' && this.abortController) {
       return;
     }
 
     activeRealtimeClients.add(this);
     this.setStatus('CONNECTING');
 
-    // Attempt real SSE stream if EventSource is available; otherwise HTTP polling fallback
-    if (typeof EventSource !== 'undefined') {
-      this.initEventSource();
+    // Prefer secure fetch-based streaming with Authorization header; fallback to polling
+    if (typeof fetch !== 'undefined') {
+      void this.startFetchStream();
     } else {
       this.startPollingFallback();
     }
@@ -115,6 +119,11 @@ export class FossRealtimeClient {
     activeRealtimeClients.delete(this);
     this.setStatus('DISCONNECTED');
     this.reconnectAttempts = 0;
+
+    if (this.abortController) {
+      this.abortController.abort();
+      this.abortController = null;
+    }
 
     if (this.eventSource) {
       this.eventSource.close();
@@ -132,39 +141,81 @@ export class FossRealtimeClient {
     }
   }
 
-  private initEventSource(): void {
+  /**
+   * Connects via fetch-based streaming. Passes the bearer token strictly in the
+   * Authorization HTTP header, completely eliminating security risks associated
+   * with tokens in query strings and proxy URL logs.
+   */
+  private async startFetchStream(): Promise<void> {
+    this.abortController = new AbortController();
+    const token = this.config.sessionToken?.trim();
+    const url = `${this.config.apiUrl}/realtime/events/stream`;
+
     try {
-      const token = this.config.sessionToken?.trim();
-      const queryParam = token ? `?token=${encodeURIComponent(token)}` : '';
-      const url = `${this.config.apiUrl}/realtime/events/stream${queryParam}`;
-      // Note: native EventSource does not support custom headers, so standard
-      // token query parameter passing is used for SSE stream authentication
-      this.eventSource = new EventSource(url);
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          Accept: 'text/event-stream',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        signal: this.abortController.signal,
+      });
 
-      this.eventSource.onopen = () => {
-        this.reconnectAttempts = 0;
-        this.setStatus('CONNECTED');
-      };
+      if (!response.ok) {
+        throw new Error(`SSE connection error: HTTP ${response.status}`);
+      }
 
-      this.eventSource.onmessage = (messageEvent) => {
-        try {
-          const parsed = JSON.parse(messageEvent.data) as FossRealtimeEvent;
-          this.handleIncomingEvent(parsed);
-        } catch {
-          // ignore parsing error
+      if (!response.body) {
+        // Fallback to polling if readable body is not supported
+        this.startPollingFallback();
+        return;
+      }
+
+      this.reconnectAttempts = 0;
+      this.setStatus('CONNECTED');
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let buffer = '';
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) {
+          break;
         }
-      };
 
-      this.eventSource.onerror = (err) => {
-        if (this.eventSource) {
-          this.eventSource.close();
-          this.eventSource = null;
+        buffer += decoder.decode(value, { stream: true });
+        const blocks = buffer.split('\n\n');
+        buffer = blocks.pop() ?? '';
+
+        for (const block of blocks) {
+          const trimmed = block.trim();
+          if (!trimmed) continue;
+
+          for (const line of trimmed.split('\n')) {
+            if (line.startsWith('data:')) {
+              const dataStr = line.slice(5).trim();
+              if (dataStr) {
+                try {
+                  const parsed = JSON.parse(dataStr) as FossRealtimeEvent;
+                  this.handleIncomingEvent(parsed);
+                } catch {
+                  // ignore heartbeat or parsing errors
+                }
+              }
+            }
+          }
         }
+      }
 
-        this.config.onError?.(new Error(`SSE connection error: ${JSON.stringify(err)}`));
+      // Stream closed by server
+      if (this.status !== 'DISCONNECTED') {
         this.handleReconnectOrFallback();
-      };
+      }
     } catch (err: unknown) {
+      if (this.abortController?.signal.aborted) {
+        return; // normal intentional disconnect
+      }
       const error = err instanceof Error ? err : new Error(String(err));
       this.config.onError?.(error);
       this.handleReconnectOrFallback();
@@ -183,7 +234,7 @@ export class FossRealtimeClient {
 
       this.setStatus('CONNECTING');
       this.reconnectTimer = setTimeout(() => {
-        this.connect();
+        void this.startFetchStream();
       }, backoff);
     } else {
       // Reconnection exhausted -> Switch to continuous polling fallback

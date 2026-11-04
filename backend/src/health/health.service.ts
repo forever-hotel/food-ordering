@@ -2,6 +2,7 @@ import { Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
 
+import { RabbitMqConnectionService } from '../messaging/rabbitmq-connection.service.js';
 import {
   DatabaseIsolationDto,
   LivenessResponseDto,
@@ -15,6 +16,7 @@ export class HealthService {
   constructor(
     @Optional() private readonly dataSource?: DataSource,
     @Optional() private readonly configService?: ConfigService,
+    @Optional() private readonly rabbitMqConnection?: RabbitMqConnectionService,
   ) {}
 
   /**
@@ -190,6 +192,20 @@ export class HealthService {
     const uptime = Number(process.uptime().toFixed(2));
     const timestamp = new Date().toISOString();
 
+    let messaging:
+      { status: 'up' | 'down' | 'disabled'; connected: boolean } | undefined;
+    if (this.rabbitMqConnection) {
+      if (!this.rabbitMqConnection.isEnabled()) {
+        messaging = { status: 'disabled', connected: false };
+      } else {
+        const isConn = this.rabbitMqConnection.isConnected();
+        messaging = {
+          status: isConn ? 'up' : 'down',
+          connected: isConn,
+        };
+      }
+    }
+
     if (!this.dataSource) {
       return {
         status: 'ok',
@@ -199,6 +215,7 @@ export class HealthService {
           status: 'up',
           type: 'postgres',
         },
+        messaging,
       };
     }
 
@@ -212,6 +229,7 @@ export class HealthService {
           status: 'up',
           type: 'postgres',
         },
+        messaging,
       };
     } catch (error) {
       const errorMessage =
@@ -226,6 +244,7 @@ export class HealthService {
           type: 'postgres',
           error: errorMessage,
         },
+        messaging,
       };
     }
   }

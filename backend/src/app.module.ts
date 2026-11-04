@@ -14,6 +14,8 @@ import { FoodOrdersModule } from './modules/food-orders/food-orders.module.js';
 import { ServiceRequestsModule } from './modules/service-requests/service-requests.module.js';
 import { ComplaintsModule } from './modules/complaints/complaints.module.js';
 import { RealtimeModule } from './realtime/realtime.module.js';
+import { MessagingModule } from './messaging/messaging.module.js';
+import { RedisModule } from './redis/redis.module.js';
 
 @Module({
   imports: [
@@ -32,6 +34,8 @@ import { RealtimeModule } from './realtime/realtime.module.js';
     ServiceRequestsModule,
     ComplaintsModule,
     RealtimeModule,
+    MessagingModule,
+    RedisModule,
   ],
   controllers: [AppController],
   providers: [AppService],

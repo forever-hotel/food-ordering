@@ -1,3 +1,4 @@
+import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { INestApplication } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';

@@ -1,9 +1,19 @@
-import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+  Optional,
+} from '@nestjs/common';
 import {
   KmsProvider,
   KMS_PROVIDER,
 } from '../../integrations/internal-services/kms/interfaces/kms-provider.interface.js';
-import { KmsMenuItemDto } from '../../integrations/internal-services/kms/dto/kms-menu.dto.js';
+import {
+  KmsMenuItemDto,
+  KmsMenuCatalogDto,
+} from '../../integrations/internal-services/kms/dto/kms-menu.dto.js';
+import { RedisService } from '../../redis/redis.service.js';
 import { GetMenuQueryDto } from './dto/get-menu-query.dto.js';
 import { GuestMenuItemDto } from './dto/guest-menu-item.dto.js';
 import { GuestMenuResponseDto } from './dto/guest-menu-response.dto.js';
@@ -20,6 +30,8 @@ export class MenuService {
     private readonly kmsProvider: KmsProvider,
     private readonly mealWindowService: MealWindowService,
     private readonly clockService: HotelClockService,
+    @Optional()
+    private readonly redisService?: RedisService,
   ) {}
 
   public async getGuestMenu(
@@ -34,7 +46,17 @@ export class MenuService {
       `Fetching menu catalog. Active meal periods in Colombo [${isoColombo}]: ${activeMealPeriods.join(', ') || 'None'}`,
     );
 
-    const catalog = await this.kmsProvider.getMenuCatalog(query?.mealPeriod);
+    const cacheKey = `foss:menu:catalog:v1:${query?.mealPeriod || 'ALL'}`;
+    let catalog = this.redisService
+      ? await this.redisService.get<KmsMenuCatalogDto>(cacheKey)
+      : null;
+
+    if (!catalog) {
+      catalog = await this.kmsProvider.getMenuCatalog(query?.mealPeriod);
+      if (this.redisService) {
+        await this.redisService.set(cacheKey, catalog);
+      }
+    }
 
     let mappedItems: GuestMenuItemDto[] = catalog.items.map((item) =>
       this.enrichMenuItem(item, now),
@@ -64,7 +86,18 @@ export class MenuService {
   }
 
   public async getItemById(id: string): Promise<GuestMenuItemDto> {
-    const catalog = await this.kmsProvider.getMenuCatalog();
+    const cacheKey = 'foss:menu:catalog:v1:ALL';
+    let catalog = this.redisService
+      ? await this.redisService.get<KmsMenuCatalogDto>(cacheKey)
+      : null;
+
+    if (!catalog) {
+      catalog = await this.kmsProvider.getMenuCatalog();
+      if (this.redisService) {
+        await this.redisService.set(cacheKey, catalog);
+      }
+    }
+
     const item = catalog.items.find((i) => i.id === id);
 
     if (!item) {
@@ -74,6 +107,12 @@ export class MenuService {
     }
 
     return this.enrichMenuItem(item, this.clockService.now());
+  }
+
+  public async invalidateMenuCache(): Promise<void> {
+    if (this.redisService) {
+      await this.redisService.flushPattern('foss:menu:catalog:v1:');
+    }
   }
 
   public getMealWindows(): MealWindowStatusDto[] {
