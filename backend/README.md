@@ -1,114 +1,109 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# FOSS Backend API Subsystem
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+The **Forever Hotel Food Ordering System (FOSS) Backend** is a NestJS 12 enterprise microservice powering guest dining, room service requests, management feedback, and real-time order tracking.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+---
 
-## Description
+## 1. Architecture & Module Structure
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+The backend follows modular Domain-Driven Design principles organized under `src/`:
 
-## Project setup
-
-```bash
-$ npm install
+```
+backend/src/
+├── app.module.ts                   # Root application module registering all submodules
+├── main.ts                         # Bootstrap entry point, global filters, Swagger docs
+├── common/                         # Global exception filters, logging interceptors
+├── config/                         # Configuration service schemas
+├── database/                       # TypeORM data sources, identity assertion guards
+│   ├── migrations/                 # 11 formal TypeORM migrations (1789... to 1791...)
+│   └── scripts/                    # Disposable CI verification scripts
+├── health/                         # Health checks and Neon isolation evaluator
+├── integrations/                   # Subsystem adapters (FDS, KMS, WKMS, MAD)
+│   └── internal-services/          # Mock and real HTTP client implementations
+├── messaging/                      # RabbitMQ connection, topology, publisher, consumer
+├── modules/
+│   ├── guest-sessions/             # QR activation, token signing, session lifecycle
+│   ├── menu/                       # Meal periods, catalog caching, meal windows
+│   ├── food-orders/                # Cart checkout, ordering, 10-min cancellation
+│   ├── service-requests/           # Housekeeping, maintenance, WKMS reconciliation
+│   └── complaints/                 # Management feedback, MAD escalation
+├── realtime/                       # Fetch-based SSE stream & room event multiplexer
+└── redis/                          # Optional Redis client and caching service
 ```
 
-## Compile and run the project
+---
+
+## 2. API Endpoints Overview
+
+The backend exposes **36 HTTP REST endpoints** across 9 controllers with global prefix `/${API_PREFIX}` (default: `/foss`):
+
+* **Guest Sessions (`/foss/guest-sessions`):** QR redemption (`POST /activate`), current session (`GET /me`), session refresh (`POST /refresh`), demo token resolver (`GET /demo-tokens`), checkout revocation webhook (`POST /revoke`), sign-out (`POST /logout`).
+* **Menu (`/foss/menu`):** Catalog retrieval (`GET /`), meal period windows (`GET /meal-windows`), single dish lookup (`GET /:id`).
+* **Food Orders (`/foss/orders`):** Order placement (`POST /`), order status tracking (`GET /:id`), guest stay order history (`GET /`), order cancellation (`POST /:id/cancel`).
+* **Service Requests (`/foss/service-requests`):** Request creation (`POST /`), stay requests list (`GET /`), single request lookup (`GET /:id`), worker status webhook (`POST /events`).
+* **Complaints (`/foss/complaints`):** File complaint (`POST /`), list complaints (`GET /`), complaint detail (`GET /:id`), manager resolution webhook (`POST /events`).
+* **Realtime (`/foss/realtime`):** Authenticated SSE event stream (`GET /stream`), short-polling fallback (`GET /poll`).
+* **Health & Readiness (`/foss/health`):** Liveness (`GET /`), database isolation check (`GET /ready`).
+
+---
+
+## 3. Database Architecture & Safety Guards
+
+FOSS uses **TypeORM** connected to PostgreSQL (Neon Cloud or local Docker):
+
+* **Synchronize Disabled:** `synchronize: false` is enforced in all environments. Schema changes occur exclusively via migrations.
+* **Server-Side Isolation Guard:** [`HealthService`](src/health/health.service.ts) verifies PostgreSQL `pg_settings` (`neon.project_id`, `neon.branch_id`, `neon.endpoint_id`) to ensure tests never write to shared development or production databases.
+* **Migration Scripts:**
+  ```bash
+  npm run migration:run       # Runs migrations against local DATABASE_URL
+  npm run migration:revert    # Reverts the latest migration batch
+  npm run migration:show      # Displays applied vs pending migration status
+  ```
+
+> [!CAUTION]
+> Never execute migrations or truncation tests against shared Neon databases without explicit approval.
+
+---
+
+## 4. Messaging & Real-Time Security
+
+* **RabbitMQ (AMQP 0-9-1):**
+  * Exchange: `forever.hotel.events` (Topic).
+  * Queues: Dedicated durable queues with Dead-Letter Exchanges (`forever.hotel.dlx`) and DLQ routing.
+  * Controlled via `RABBITMQ_ENABLED` (default: `true`).
+* **Real-time SSE:**
+  * Uses fetch-based authentication passing `Authorization: Bearer <token>`.
+  * URL query parameters are strictly forbidden for transmitting session tokens.
+  * Clients receive only events partitioned to their verified room and booking.
+
+---
+
+## 5. Development & Testing Commands
 
 ```bash
-# development
-$ npm run start
+# Install dependencies
+npm install
 
-# watch mode
-$ npm run start:dev
+# Run backend linter (Oxlint: 240 files)
+npm run lint
 
-# production mode
-$ npm run start:prod
+# Check formatting (Prettier)
+npm run format:check
+
+# Run unit tests and measure coverage
+npm run test:cov -- --runInBand
+
+# Run backend E2E tests
+npm run test:e2e
+
+# Compile production build
+npm run build
 ```
 
-## Run tests
+---
 
-```bash
-# unit tests
-$ npm run test
+## 6. Known Limitations
 
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
-```
-
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
-
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
-```
-
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
-
-## Observability
-
-In production applications, observability is essential for understanding how your system behaves, detecting issues early, and maintaining reliable performance.
-
-[NestJS Observe](https://observe.nestjs.com) automatically instruments your NestJS application, giving you deep visibility into your system with minimal setup:
-
-- **Distributed tracing:** Follow requests across services and understand how they flow through your system.
-- **Waterfall analysis:** Visualize request execution and identify slow operations, bottlenecks, and unexpected delays.
-- **Performance analysis:** Analyze application performance in real time and quickly pinpoint areas that need optimization.
-- **Metrics:** Track key application and infrastructure metrics to understand system health and performance trends.
-- **Logging:** Centralize and correlate logs with traces and other telemetry to make debugging easier.
-- **Error tracking:** Detect errors quickly and investigate their root causes with the surrounding context.
-- **SLA monitoring:** Track service-level objectives and identify when your application is approaching or exceeding defined thresholds.
-- **Alarms and alerts:** Set up alerts for critical errors, performance degradation, SLA violations, and other anomalies so your team can react quickly.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Auto-instrument your application with [NestJS Observer](https://observer.nestjs.com). Distributed tracing, metrics, and logging made easy. Error tracking and performance monitoring for your NestJS applications.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+* Live staging endpoints for external hotel services (FDS, KMS, WKMS, MAD) are simulated using typed mock adapters.
+* Critical branch coverage currently stands at **84.21%** against the 90% stretch target.
+* Redis caching is optional and disabled by default.
