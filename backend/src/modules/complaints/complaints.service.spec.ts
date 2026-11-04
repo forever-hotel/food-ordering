@@ -952,4 +952,95 @@ describe('ComplaintsService', () => {
       }
     });
   });
+
+  describe('Additional Edge Cases & Branch Coverage (DDP-146)', () => {
+    it('handles fileComplaint with URGENT severity and maps assignedManager from MAD result', async () => {
+      (complaintRepo.findByIdempotencyKey as any).mockResolvedValueOnce(null);
+      (madProvider.fileComplaint as any).mockResolvedValueOnce({
+        complaintId: 'mad-cmp-urgent',
+        assignedManager: 'Duty Manager Alice',
+        status: ComplaintStatus.UNDER_INVESTIGATION,
+      });
+
+      const res = await service.fileComplaint(
+        mockGuest,
+        {
+          category: ComplaintCategory.ROOM,
+          severity: ComplaintSeverity.URGENT,
+          subject: 'Water leak in bathroom ceiling',
+          description: 'Water is dripping rapidly onto the floor.',
+        },
+        'idemp-urgent-001',
+      );
+
+      expect(res.assignedManager).toBe('Duty Manager Alice');
+      expect(res.status).toBe(ComplaintStatus.UNDER_INVESTIGATION);
+    });
+
+    it('handles concurrent duplicate key race condition during complaint save', async () => {
+      (complaintRepo.findByIdempotencyKey as any)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(existingComplaint);
+
+      (complaintRepo.save as any).mockRejectedValueOnce({
+        code: '23505',
+        message:
+          'duplicate key value violates unique constraint on idempotency_key',
+      });
+
+      const res = await service.fileComplaint(
+        mockGuest,
+        {
+          category: ComplaintCategory.FOOD,
+          severity: ComplaintSeverity.MEDIUM,
+          subject: 'Cold soup delivered',
+          description: 'The mushroom soup was completely cold.',
+        },
+        'idemp-existing-001',
+      );
+
+      expect(res.complaintId).toBe(existingComplaint.complaintId);
+    });
+
+    it('updates assignedManager and resolutionNotes when processing MAD status event', async () => {
+      (complaintRepo.findById as any).mockResolvedValueOnce(existingComplaint);
+
+      const result = await service.handleMadStatusEvent({
+        eventId: '550e8400-e29b-41d4-a716-446655440077',
+        complaintId: existingComplaint.complaintId,
+        roomNumber: mockGuest.roomNumber,
+        status: ComplaintStatus.RESOLVED,
+        assignedManager: 'Manager Bob',
+        resolutionNotes:
+          'Guest provided with complimentary dessert and apology.',
+        occurredAt: '2026-10-29T21:00:00.000Z',
+      });
+
+      expect(result.processed).toBe(true);
+      expect(result.complaint?.assignedManager).toBe('Manager Bob');
+      expect(result.complaint?.resolutionNotes).toBe(
+        'Guest provided with complimentary dessert and apology.',
+      );
+    });
+
+    it('trims seenMadEventIds when cache reaches maxSeenEvents capacity', async () => {
+      const set = (service as any).seenMadEventIds as Set<string>;
+      for (let i = 0; i < 1000; i++) {
+        set.add(`seen-mad-${i}`);
+      }
+
+      (complaintRepo.findById as any).mockResolvedValueOnce(existingComplaint);
+
+      await service.handleMadStatusEvent({
+        eventId: 'new-mad-event-1001',
+        complaintId: existingComplaint.complaintId,
+        roomNumber: mockGuest.roomNumber,
+        status: ComplaintStatus.UNDER_INVESTIGATION,
+        occurredAt: '2026-10-29T21:05:00.000Z',
+      });
+
+      expect(set.has('seen-mad-0')).toBe(false);
+      expect(set.has('new-mad-event-1001')).toBe(true);
+    });
+  });
 });

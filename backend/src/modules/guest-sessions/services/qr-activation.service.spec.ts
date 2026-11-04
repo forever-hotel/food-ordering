@@ -471,9 +471,57 @@ describe('QrActivationService', () => {
         service.redeemActivationCredential('unknown-random-token'),
       ).rejects.toThrow(UnauthorizedException);
     });
+
+    it('throws BadRequestException if rawToken is empty or non-string', async () => {
+      await expect(
+        service.redeemActivationCredential('' as any),
+      ).rejects.toThrow(BadRequestException);
+
+      await expect(
+        service.redeemActivationCredential(null as any),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('issueActivationCredential edge cases', () => {
+    it('throws BadRequestException when both bookingId and bookingReference are UUIDs but differ', async () => {
+      await expect(
+        service.issueActivationCredential({
+          bookingId: '550e8400-e29b-41d4-a716-446655440000',
+          bookingReference: '550e8400-e29b-41d4-a716-446655440099',
+          roomNumber: '101',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('throws BadRequestException when bookingId alone is not a valid UUID format', async () => {
+      await expect(
+        service.issueActivationCredential({
+          bookingId: 'invalid-non-uuid-reference',
+          roomNumber: '101',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('throws BadRequestException when roomNumber is missing or whitespace', async () => {
+      await expect(
+        service.issueActivationCredential({
+          bookingId: '550e8400-e29b-41d4-a716-446655440000',
+          roomNumber: '   ',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
   });
 
   describe('revokeBookingActivations', () => {
+    it('returns 0 without database query when bookingId is empty', async () => {
+      const count = await service.revokeBookingActivations('');
+      expect(count).toBe(0);
+      expect(
+        qrActivationRepo.revokeUnredeemedByBookingId,
+      ).not.toHaveBeenCalled();
+    });
+
     it('revokes unredeemed activations for the specified booking', async () => {
       qrActivationRepo.revokeUnredeemedByBookingId.mockResolvedValue(3);
 

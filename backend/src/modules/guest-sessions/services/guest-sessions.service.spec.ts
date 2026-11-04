@@ -89,6 +89,11 @@ describe('GuestSessionsService', () => {
       revokeBookingActivations: jest
         .fn<(bookingId: string) => Promise<number>>()
         .mockResolvedValue(0),
+      handleRoomReassignment: jest
+        .fn<
+          (bookingId: string, oldRoom: string, newRoom: string) => Promise<void>
+        >()
+        .mockResolvedValue(undefined),
     };
 
     mockBookingVerificationService = {

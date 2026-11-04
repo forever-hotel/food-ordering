@@ -2,7 +2,7 @@
 
 > **Specification Authority:** Approved SRS §4.4; SDS §1.4, §5, §6; DDP-146; CIT-05.  
 > **Baseline Commit:** `2e27c0d91a43b1b46743068f620993a27936aa01`  
-> **Status:** Verified Active Register (35 exposed endpoints across 9 controllers)
+> **Status:** Verified Active Register (36 exposed HTTP endpoints across 9 controllers, including 10 in GuestSessionsController)
 
 ---
 
