@@ -543,5 +543,201 @@ describe('FoodOrdersService', () => {
         process.env.NODE_ENV = 'test';
       }
     });
+
+    it('throws NotFoundException if order to advance does not exist', async () => {
+      mockOrderRepository.findById.mockResolvedValue(null);
+
+      await expect(
+        service.advanceOrderStatus(
+          sampleGuest,
+          'order-not-found',
+          FoodOrderStatus.READY,
+        ),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('throws ForbiddenException if order belongs to a different room or booking', async () => {
+      const foreignOrder = new FossDemoOrder();
+      foreignOrder.orderId = 'order-foreign';
+      foreignOrder.bookingId = 'booking-foreign';
+      foreignOrder.roomNumber = '999';
+
+      mockOrderRepository.findById.mockResolvedValue(foreignOrder);
+
+      await expect(
+        service.advanceOrderStatus(
+          sampleGuest,
+          'order-foreign',
+          FoodOrderStatus.READY,
+        ),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('sets estimatedDeliveryMinutes to 5 when advanced to READY', async () => {
+      const order = new FossDemoOrder();
+      order.orderId = 'order-ready-test';
+      order.bookingId = sampleGuest.bookingId;
+      order.roomNumber = sampleGuest.roomNumber;
+      order.status = FoodOrderStatus.IN_PREPARATION;
+      order.createdAt = clockService.now();
+      order.updatedAt = clockService.now();
+      order.items = [];
+
+      mockOrderRepository.findById.mockResolvedValue(order);
+      (mockKms as any).orders.set('order-ready-test', {
+        orderId: 'order-ready-test',
+        status: FoodOrderStatus.IN_PREPARATION,
+      });
+
+      const result = await service.advanceOrderStatus(
+        sampleGuest,
+        'order-ready-test',
+        FoodOrderStatus.READY,
+      );
+
+      expect(result.status).toBe(FoodOrderStatus.READY);
+      expect(result.estimatedDeliveryMinutes).toBe(5);
+    });
+
+    it('sets estimatedDeliveryMinutes to 0 when advanced to DELIVERED', async () => {
+      const order = new FossDemoOrder();
+      order.orderId = 'order-delivered-test';
+      order.bookingId = sampleGuest.bookingId;
+      order.roomNumber = sampleGuest.roomNumber;
+      order.status = FoodOrderStatus.READY;
+      order.createdAt = clockService.now();
+      order.updatedAt = clockService.now();
+      order.items = [];
+
+      mockOrderRepository.findById.mockResolvedValue(order);
+      (mockKms as any).orders.set('order-delivered-test', {
+        orderId: 'order-delivered-test',
+        status: FoodOrderStatus.READY,
+      });
+
+      const result = await service.advanceOrderStatus(
+        sampleGuest,
+        'order-delivered-test',
+        FoodOrderStatus.DELIVERED,
+      );
+
+      expect(result.status).toBe(FoodOrderStatus.DELIVERED);
+      expect(result.estimatedDeliveryMinutes).toBe(0);
+    });
+  });
+
+  describe('Additional Edge Cases & Branch Coverage (DDP-146)', () => {
+    it('throws BadRequestException if items array is empty', async () => {
+      mockOrderRepository.findByIdempotencyKey.mockResolvedValue(null);
+
+      await expect(
+        service.createFoodOrder(
+          sampleGuest,
+          { items: [] },
+          'idemp-empty-items',
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('wraps generic errors from KMS menu catalog in UpstreamServiceUnavailableException', async () => {
+      mockOrderRepository.findByIdempotencyKey.mockResolvedValue(null);
+      jest
+        .spyOn(mockKms, 'getMenuCatalog')
+        .mockRejectedValueOnce(new Error('Connection timed out'));
+
+      await expect(
+        service.createFoodOrder(sampleGuest, {
+          items: [{ menuItemId: 'menu-item-001', quantity: 1 }],
+          idempotencyKey: 'idemp-kms-err',
+        }),
+      ).rejects.toThrow(UpstreamServiceUnavailableException);
+    });
+
+    it('handles cancelFoodOrder with custom reason and upstream ConflictException', async () => {
+      const order = new FossDemoOrder();
+      order.orderId = 'order-to-cancel';
+      order.bookingId = sampleGuest.bookingId;
+      order.roomNumber = sampleGuest.roomNumber;
+      order.status = FoodOrderStatus.PLACED;
+      order.createdAt = clockService.now();
+      order.items = [];
+
+      mockOrderRepository.findById.mockResolvedValue(order);
+      jest
+        .spyOn(mockKms, 'cancelOrder')
+        .mockRejectedValueOnce(
+          new Error(
+            'Order cannot be cancelled because preparation has already begun',
+          ),
+        );
+
+      await expect(
+        service.cancelFoodOrder(
+          sampleGuest,
+          'order-to-cancel',
+          'Guest requested',
+        ),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('handles cancelFoodOrder when KMS throws generic upstream error', async () => {
+      const order = new FossDemoOrder();
+      order.orderId = 'order-cancel-fail';
+      order.bookingId = sampleGuest.bookingId;
+      order.roomNumber = sampleGuest.roomNumber;
+      order.status = FoodOrderStatus.PLACED;
+      order.createdAt = clockService.now();
+      order.items = [];
+
+      mockOrderRepository.findById.mockResolvedValue(order);
+      jest
+        .spyOn(mockKms, 'cancelOrder')
+        .mockRejectedValueOnce(new Error('KMS socket timeout'));
+
+      await expect(
+        service.cancelFoodOrder(sampleGuest, 'order-cancel-fail'),
+      ).rejects.toThrow(UpstreamServiceUnavailableException);
+    });
+
+    it('handles date parsing when order dates are string representations', async () => {
+      const order = new FossDemoOrder();
+      order.orderId = 'order-string-dates';
+      order.bookingId = sampleGuest.bookingId;
+      order.roomNumber = sampleGuest.roomNumber;
+      order.status = FoodOrderStatus.IN_PREPARATION;
+      (order as any).createdAt = '2026-10-28T07:25:00.000Z';
+      (order as any).updatedAt = '2026-10-28T07:28:00.000Z';
+      order.items = [];
+
+      mockOrderRepository.findById.mockResolvedValue(order);
+
+      const result = await service.getGuestOrderById(
+        sampleGuest,
+        'order-string-dates',
+      );
+      expect(result.createdAt).toBe('2026-10-28T07:25:00.000Z');
+      expect(result.updatedAt).toBe('2026-10-28T07:28:00.000Z');
+      expect(result.timeline?.length).toBe(4);
+    });
+
+    it('handles date parsing when order dates are missing or invalid Date', async () => {
+      const order = new FossDemoOrder();
+      order.orderId = 'order-invalid-dates';
+      order.bookingId = sampleGuest.bookingId;
+      order.roomNumber = sampleGuest.roomNumber;
+      order.status = FoodOrderStatus.READY;
+      (order as any).createdAt = new Date('invalid');
+      (order as any).updatedAt = null;
+      order.items = [];
+
+      mockOrderRepository.findById.mockResolvedValue(order);
+
+      const result = await service.getGuestOrderById(
+        sampleGuest,
+        'order-invalid-dates',
+      );
+      expect(result.orderId).toBe('order-invalid-dates');
+      expect(result.status).toBe(FoodOrderStatus.READY);
+    });
   });
 });
