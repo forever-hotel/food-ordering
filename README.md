@@ -156,11 +156,38 @@ npm run dev
 
 ---
 
-### Mode B: Full Local Stack (Backend + Local Infrastructure)
+### Mode B: Full Stack via Docker Compose (Containerized)
+
+To build and run all FOSS services inside Docker containers:
+
+```bash
+# Start backend, frontend, and rabbitmq containers in detached mode
+docker compose up -d --build
+
+# (Optional) If you also want a local PostgreSQL database container:
+docker compose --profile local-db up -d --build
+
+# View container logs
+docker compose logs -f
+
+# Stop and remove containers
+docker compose down
+```
+
+- **Frontend:** [http://localhost:3000](http://localhost:3000)
+- **Backend API:** [http://localhost:4300/foss](http://localhost:4300/foss)
+- **Swagger OpenAPI Docs:** [http://localhost:4300/foss/api-docs](http://localhost:4300/foss/api-docs)
+- **RabbitMQ Management UI:** [http://localhost:15672](http://localhost:15672)
+
+---
+
+### Mode C: Hybrid Local Development (Backend + Local Infrastructure)
+
+To run the local database and message broker in Docker while running the frontend and backend applications directly via Node.js:
 
 ```bash
 # 1. Start Local Supporting Services (PostgreSQL + RabbitMQ)
-docker compose -f docker-compose.local.yml up -d
+docker compose -f docker-compose.local.yml --env-file docker-compose.local.env up -d
 
 # 2. Run Database Migrations
 cd backend
@@ -225,14 +252,3 @@ When connecting to Neon PostgreSQL, the backend's [`HealthService`](backend/src/
 - **Live Upstream Systems:** Direct integration with live FDS, KMS, WKMS, and MAD staging servers is deferred. All flows are verified against typed mock adapters.
 - **Critical Branch Coverage Target:** Critical branch coverage stands at **84.21%** against the 90% stretch target (statement coverage is at **96.10%**).
 - **Redis & Transactional Outbox:** Redis is optional and disabled by default (`REDIS_ENABLED=false`). The PostgreSQL transactional outbox is NOT implemented and remains subject to architectural change request approval (`CR-outbox-foss.md`).
-
----
-
-## 10. Issue & Branch Tracking
-
-- **Current Ticket:** Issue [#108](https://github.com/forever-hotel/food-ordering/issues/108) (`chore: Safe repository cleanup`)
-- **Active Branch:** `chore/108-final-cleanup-handover`
-- **Base Branch:** `develop` (`b78094c418e557f0053de275011673d9d5f3910d`)
-- **Previous Merged PRs:**
-  - CIT-04: PR [#105](https://github.com/forever-hotel/food-ordering/pull/105) (RabbitMQ, SSE & Redis)
-  - CIT-05: PR [#107](https://github.com/forever-hotel/food-ordering/pull/107) (Backend Testing & E2E Scaffolding)
