@@ -11,7 +11,10 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "node --test --experimental-strip-types tests/**/*.test.ts"
+    "test": "node --test --experimental-strip-types tests/**/*.test.ts",
+    "test:e2e:mock": "playwright test --project=default",
+    "test:e2e:api": "NEXT_PUBLIC_DATA_MODE=api playwright test --project=default",
+    "test:e2e:all": "playwright test"
   },
   "dependencies": {
     "@ant-design/icons": "^6.3.4",
@@ -22,6 +25,8 @@
     "react-dom": "19.2.8"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
+    "@playwright/test": "^1.64.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
