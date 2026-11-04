@@ -753,4 +753,104 @@ describe('ServiceRequestsService', () => {
       ).toBe('2 bath towels');
     });
   });
+
+  describe('Additional Edge Cases & Branch Coverage (DDP-146)', () => {
+    it('wraps generic Error from wkmsProvider.createTask in UpstreamServiceUnavailableException', async () => {
+      mockRequestRepository.findByIdempotencyKey.mockResolvedValueOnce(null);
+      jest
+        .spyOn(mockWkms, 'createTask')
+        .mockRejectedValueOnce(new Error('Socket timeout to WKMS'));
+
+      await expect(
+        service.createServiceRequest(sampleGuest, {
+          requestType: FossServiceCategory.EXTRA_TOWELS,
+          idempotencyKey: 'idemp-wkms-timeout',
+        }),
+      ).rejects.toThrow(UpstreamServiceUnavailableException);
+    });
+
+    it('throws ForbiddenException when concurrent race condition duplicate key matches another room', async () => {
+      mockRequestRepository.findByIdempotencyKey.mockResolvedValueOnce(null);
+
+      const foreign = new FossServiceRequest();
+      foreign.requestId = 'req-foreign';
+      foreign.bookingId = 'booking-different';
+      foreign.roomNumber = '999';
+      foreign.category = FossServiceCategory.EXTRA_TOWELS;
+      foreign.status = ServiceRequestStatus.SUBMITTED;
+      foreign.priority = TaskPriority.NORMAL;
+      foreign.idempotencyKey = 'idemp-shared-race';
+      foreign.createdAt = new Date();
+      foreign.updatedAt = new Date();
+
+      mockRequestRepository.save.mockRejectedValueOnce({
+        code: '23505',
+        message: 'duplicate key value violates unique constraint',
+      });
+      mockRequestRepository.findByIdempotencyKey.mockResolvedValueOnce(foreign);
+
+      await expect(
+        service.createServiceRequest(sampleGuest, {
+          requestType: FossServiceCategory.EXTRA_TOWELS,
+          idempotencyKey: 'idemp-shared-race',
+        }),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('sets estimatedCompletionMinutes to 0 when status transitioned to COMPLETED', async () => {
+      const existing = new FossServiceRequest();
+      existing.requestId = 'req-to-complete';
+      existing.taskId = 'task-wkms-comp';
+      existing.bookingId = sampleGuest.bookingId;
+      existing.roomNumber = sampleGuest.roomNumber;
+      existing.status = ServiceRequestStatus.IN_PROGRESS;
+      existing.category = FossServiceCategory.ROOM_CLEANING;
+      existing.priority = TaskPriority.NORMAL;
+      existing.estimatedCompletionMinutes = 15;
+      existing.createdAt = new Date();
+      existing.updatedAt = new Date();
+
+      mockRequestRepository.findByTaskId.mockResolvedValueOnce(existing);
+
+      const result = await service.handleWkmsStatusEvent({
+        eventId: '550e8400-e29b-41d4-a716-446655440050',
+        taskId: 'task-wkms-comp',
+        roomNumber: sampleGuest.roomNumber,
+        status: ServiceRequestStatus.COMPLETED,
+        occurredAt: new Date(Date.now() + 1000).toISOString(),
+      });
+
+      expect(result.processed).toBe(true);
+      expect(result.request?.estimatedCompletionMinutes).toBe(0);
+      expect(result.request?.status).toBe(ServiceRequestStatus.COMPLETED);
+    });
+
+    it('discards out-of-order events when occurredAt is older than request updatedAt', async () => {
+      const existing = new FossServiceRequest();
+      existing.requestId = 'req-stale';
+      existing.taskId = 'task-wkms-stale';
+      existing.bookingId = sampleGuest.bookingId;
+      existing.roomNumber = sampleGuest.roomNumber;
+      existing.status = ServiceRequestStatus.IN_PROGRESS;
+      existing.category = FossServiceCategory.ROOM_CLEANING;
+      existing.priority = TaskPriority.NORMAL;
+      existing.createdAt = new Date('2026-10-28T10:00:00Z');
+      existing.updatedAt = new Date('2026-10-28T10:30:00Z');
+
+      mockRequestRepository.findByTaskId.mockResolvedValueOnce(existing);
+
+      const result = await service.handleWkmsStatusEvent({
+        eventId: '550e8400-e29b-41d4-a716-446655440051',
+        taskId: 'task-wkms-stale',
+        roomNumber: sampleGuest.roomNumber,
+        status: ServiceRequestStatus.ASSIGNED,
+        occurredAt: '2026-10-28T10:15:00Z', // older than updatedAt
+      });
+
+      expect(result.processed).toBe(false);
+      expect(result.message).toContain(
+        'Stale event discarded without updating state.',
+      );
+    });
+  });
 });

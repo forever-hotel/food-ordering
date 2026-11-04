@@ -277,4 +277,184 @@ describe('RabbitMqConsumerService', () => {
 
     expect(mockChannel.nack).toHaveBeenCalledWith(msg, false, false); // requeue = false -> DLQ
   });
+
+  it('processes wkms.task.status_changed event and emits SERVICE_REQUEST_STATUS_UPDATED', async () => {
+    const msg = createSignedMessage('wkms.task.status_changed', {
+      bookingId: 'booking-wkms-101',
+      roomNumber: '101',
+      taskId: 'task-123',
+      status: 'IN_PROGRESS',
+    });
+
+    await service.handleIncomingMessage(mockChannel as Channel, msg);
+
+    expect(mockRealtimeService.emitToStay).toHaveBeenCalledWith(
+      'booking-wkms-101',
+      '101',
+      RealtimeEventType.SERVICE_REQUEST_STATUS_UPDATED,
+      expect.objectContaining({ taskId: 'task-123', status: 'IN_PROGRESS' }),
+      expect.any(String),
+    );
+    expect(mockChannel.ack).toHaveBeenCalledWith(msg);
+  });
+
+  it('processes mad.complaint.status_changed event and emits COMPLAINT_STATUS_UPDATED', async () => {
+    const msg = createSignedMessage('mad.complaint.status_changed', {
+      bookingId: 'booking-mad-101',
+      roomNumber: '101',
+      complaintId: 'cmp-123',
+      status: 'INVESTIGATING',
+    });
+
+    await service.handleIncomingMessage(mockChannel as Channel, msg);
+
+    expect(mockRealtimeService.emitToStay).toHaveBeenCalledWith(
+      'booking-mad-101',
+      '101',
+      RealtimeEventType.COMPLAINT_STATUS_UPDATED,
+      expect.objectContaining({ complaintId: 'cmp-123' }),
+      expect.any(String),
+    );
+    expect(mockChannel.ack).toHaveBeenCalledWith(msg);
+  });
+
+  it('processes fds.guest.room_reassigned event, invokes handler and revokes old room sessions', async () => {
+    const msg = createSignedMessage('fds.guest.room_reassigned', {
+      bookingId: 'booking-reassign-101',
+      oldRoomNumber: '101',
+      newRoomNumber: '202',
+    });
+
+    await service.handleIncomingMessage(mockChannel as Channel, msg);
+
+    expect(
+      mockGuestSessionsService.handleFdsRoomReassignEvent,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        bookingId: 'booking-reassign-101',
+        previousRoomNumber: '101',
+        newRoomNumber: '202',
+      }),
+    );
+    expect(mockRealtimeService.revokeStaySessions).toHaveBeenCalledWith(
+      'booking-reassign-101',
+      '101',
+    );
+    expect(mockChannel.ack).toHaveBeenCalledWith(msg);
+  });
+
+  it('dispatches to custom handlers registered via registerCustomHandler', async () => {
+    const customHandler = jest.fn();
+    service.registerCustomHandler('custom.test.event', customHandler);
+
+    const msg = createSignedMessage('custom.test.event', {
+      bookingId: 'b-custom',
+      roomNumber: '101',
+      customData: 'test-value',
+    });
+
+    await service.handleIncomingMessage(mockChannel as Channel, msg);
+
+    expect(customHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'custom.test.event',
+        payload: expect.objectContaining({ customData: 'test-value' }),
+      }),
+      'custom.test.event',
+    );
+    expect(mockChannel.ack).toHaveBeenCalledWith(msg);
+  });
+
+  it('handles null message in consumer callback gracefully', async () => {
+    let capturedCallback: any;
+    (mockChannel.consume as jest.Mock).mockImplementationOnce(
+      (_queue: any, cb: any) => {
+        capturedCallback = cb;
+        return Promise.resolve({ consumerTag: 'tag-test' });
+      },
+    );
+
+    await service.startConsumer();
+    expect(capturedCallback).toBeDefined();
+
+    // Invoking callback with null (e.g. consumer cancelled by RabbitMQ)
+    await expect(capturedCallback(null)).resolves.not.toThrow();
+    expect(mockChannel.ack).not.toHaveBeenCalled();
+  });
+
+  it('handles startConsumer safely when channel is null', async () => {
+    const connService = (service as any).connectionService;
+    jest.spyOn(connService, 'getChannel').mockReturnValueOnce(null);
+
+    await service.startConsumer();
+    expect(mockChannel.consume).not.toHaveBeenCalled();
+  });
+
+  it('handles stopConsumer cancelling active consumer tag', async () => {
+    (service as any).consumerTag = 'active-tag-123';
+    await service.stopConsumer();
+    expect(mockChannel.cancel).toHaveBeenCalledWith('active-tag-123');
+  });
+
+  it('nacks message with requeue=true when broker is disconnected during retry republish', async () => {
+    const msg = createSignedMessage(
+      'kms.order.status_changed',
+      { bookingId: 'b1', roomNumber: '101' },
+      'evt-retry-disconnected',
+      1,
+    );
+
+    (mockRealtimeService.emitToStay as jest.Mock).mockImplementationOnce(() => {
+      throw new Error('Transient error');
+    });
+
+    const connService = (service as any).connectionService;
+    jest.spyOn(connService, 'isConnected').mockReturnValueOnce(false);
+
+    await service.handleIncomingMessage(mockChannel as Channel, msg);
+    expect(mockChannel.nack).toHaveBeenCalledWith(msg, false, true);
+  });
+
+  it('nacks message with requeue=true when confirmChannel publish encounters error in callback', async () => {
+    const msg = createSignedMessage(
+      'kms.order.status_changed',
+      { bookingId: 'b1', roomNumber: '101' },
+      'evt-callback-err',
+      1,
+    );
+
+    (mockRealtimeService.emitToStay as jest.Mock).mockImplementationOnce(() => {
+      throw new Error('Transient error');
+    });
+
+    mockConfirmChannel.publish = jest.fn(
+      (_ex: any, _rk: any, _buf: any, _opts: any, cb?: (err?: any) => void) => {
+        if (cb) cb(new Error('Publish failed'));
+        return false;
+      },
+    );
+
+    await service.handleIncomingMessage(mockChannel as Channel, msg);
+    expect(mockChannel.nack).toHaveBeenCalledWith(msg, false, true);
+  });
+
+  it('trims processedEventIds LRU set when size exceeds 5000', async () => {
+    const cache = (service as any).processedEventIds as Set<string>;
+    for (let i = 0; i < 5001; i++) {
+      cache.add(`existing-evt-${i}`);
+    }
+
+    const msg = createSignedMessage(
+      'kms.order.status_changed',
+      {
+        bookingId: 'b-cache',
+        roomNumber: '101',
+      },
+      'new-evt-5002',
+    );
+
+    await service.handleIncomingMessage(mockChannel as Channel, msg);
+    expect(cache.has('existing-evt-0')).toBe(false);
+    expect(cache.has('new-evt-5002')).toBe(true);
+  });
 });

@@ -25,6 +25,9 @@ describe('RabbitMqPublisherService', () => {
           return true;
         },
       ) as any,
+      on: jest.fn() as any,
+      off: jest.fn() as any,
+      removeListener: jest.fn() as any,
     };
 
     const mockConnectionService = {
@@ -128,6 +131,55 @@ describe('RabbitMqPublisherService', () => {
     const result = await service.publishEvent('foss.order.created', {
       test: true,
     });
+
+    expect(result).toBeNull();
+  });
+
+  it('handles mandatory publish successfully and removes return listener', async () => {
+    const payload = { orderId: 'ord-mandatory' };
+    const result = await service.publishEvent('foss.order.created', payload, {
+      mandatory: true,
+    });
+
+    expect(result).not.toBeNull();
+    expect(mockConfirmChannel.on).toHaveBeenCalledWith(
+      'return',
+      expect.any(Function),
+    );
+    expect(mockConfirmChannel.off).toHaveBeenCalledWith(
+      'return',
+      expect.any(Function),
+    );
+  });
+
+  it('returns null when mandatory publish encounters a matching unrouted return event', async () => {
+    (mockConfirmChannel.publish as jest.Mock).mockImplementation(
+      (
+        _ex: string,
+        _rk: string,
+        content: Buffer,
+        _opts: any,
+        callback?: (err?: any) => void,
+      ) => {
+        const parsed = JSON.parse(content.toString('utf8'));
+        // trigger return listener
+        const calls = (mockConfirmChannel.on as jest.Mock).mock.calls;
+        const returnListener = calls.find((c: any) => c[0] === 'return')?.[1];
+        if (returnListener) {
+          returnListener({
+            properties: { messageId: parsed.eventId },
+          });
+        }
+        if (callback) callback();
+        return true;
+      },
+    );
+
+    const result = await service.publishEvent(
+      'foss.order.created',
+      { orderId: 'ord-unrouted' },
+      { mandatory: true },
+    );
 
     expect(result).toBeNull();
   });

@@ -225,4 +225,67 @@ describe('RealtimeService', () => {
       expect(otherPoll.events).toHaveLength(1);
     });
   });
+
+  describe('Buffer limits and timestamp filtering (DDP-146)', () => {
+    it('filters events by sinceTimestamp accurately', () => {
+      const t0 = new Date('2026-10-28T10:00:00Z');
+      const t1 = new Date('2026-10-28T10:05:00Z');
+
+      const ev1 = service.emitToStay(
+        'b-time',
+        '101',
+        RealtimeEventType.FOOD_ORDER_STATUS_UPDATED,
+        { step: 1 },
+      );
+      (ev1 as any).serverTimestamp = t0.toISOString();
+
+      const ev2 = service.emitToStay(
+        'b-time',
+        '101',
+        RealtimeEventType.FOOD_ORDER_STATUS_UPDATED,
+        { step: 2 },
+      );
+      (ev2 as any).serverTimestamp = t1.toISOString();
+
+      const poll = service.getEventsSince(
+        'b-time',
+        '101',
+        undefined,
+        '2026-10-28T10:02:00Z',
+      );
+      expect(poll.events).toHaveLength(1);
+      expect(poll.events[0].data).toEqual({ step: 2 });
+    });
+
+    it('ignores invalid sinceTimestamp without throwing or crashing filter', () => {
+      service.emitToStay(
+        'b-invalid-time',
+        '101',
+        RealtimeEventType.FOOD_ORDER_STATUS_UPDATED,
+        { step: 1 },
+      );
+      const poll = service.getEventsSince(
+        'b-invalid-time',
+        '101',
+        undefined,
+        'not-a-valid-date',
+      );
+      expect(poll.events).toHaveLength(1);
+    });
+
+    it('trims buffer when exceeding maxBufferSize (100 events)', () => {
+      for (let i = 0; i < 105; i++) {
+        service.emitToStay(
+          'b-buf-overflow',
+          '101',
+          RealtimeEventType.FOOD_ORDER_STATUS_UPDATED,
+          { i },
+        );
+      }
+
+      const poll = service.getEventsSince('b-buf-overflow', '101');
+      expect(poll.events.length).toBe(100);
+      expect((poll.events[0].data as any).i).toBe(5); // first 5 shifted out
+    });
+  });
 });
