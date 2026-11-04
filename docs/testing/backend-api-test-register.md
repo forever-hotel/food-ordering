@@ -1,50 +1,98 @@
 # FOSS Backend API Test Traceability Register (CIT-05 / DDP-146)
 
-> **Specification Authority:** Approved SRS §4.4, SDS §1.4, §5, §6; DDP-146; CIT-05.  
+> **Specification Authority:** Approved SRS §4.4; SDS §1.4, §5, §6; DDP-146; CIT-05.  
 > **Baseline Commit:** `2e27c0d91a43b1b46743068f620993a27936aa01`  
-> **Coverage Goal:** 100% route coverage across all implemented REST controllers with positive, negative, authorization, idempotency, and upstream-failure test cases.
+> **Status:** Verified Active Register (35 exposed endpoints across 9 controllers)
 
 ---
 
-## 1. Controller & Endpoint Inventory Matrix
+## 1. Complete Controller & Endpoint Inventory Matrix
 
-| Endpoint | Method | Auth Level | Controller Path | Service Handler | Unit Test Suite | E2E Integration Suite |
-|---|---|---|---|---|---|---|
-| `/` | `GET` | Public | [`AppController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/app.controller.ts) | `getHello()` | N/A | `test/app.e2e-spec.ts` |
-| `/health` | `GET` | Public | [`HealthController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/health/health.controller.ts) | `checkHealth()` | `src/health/health.controller.spec.ts` | `test/health.e2e-spec.ts` |
-| `/health/live` | `GET` | Public | [`HealthController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/health/health.controller.ts) | `checkLiveness()` | `src/health/health.controller.spec.ts` | `test/health.e2e-spec.ts` |
-| `/health/ready` | `GET` | Public | [`HealthController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/health/health.controller.ts) | `checkReadiness()` | `src/health/health.controller.spec.ts` | `test/health.e2e-spec.ts` |
-| `/health/internal/database-isolation` | `GET` | Internal Key | [`HealthController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/health/health.controller.ts) | `getDatabaseIsolation()` | `src/health/health.controller.spec.ts` | `test/health.e2e-spec.ts` |
-| `/guest-sessions/qr-activate` | `POST` | Public / QR | [`GuestSessionsController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/modules/guest-sessions/guest-sessions.controller.ts) | `activateQrSession()` | `src/modules/guest-sessions/guest-sessions.controller.spec.ts` | `test/guest-sessions.e2e-spec.ts`, `test/qr-activation-lifecycle.e2e-spec.ts` |
-| `/guest-sessions/verify-room` | `POST` | Public / Code | [`GuestSessionsController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/modules/guest-sessions/guest-sessions.controller.ts) | `verifyRoomCode()` | `src/modules/guest-sessions/guest-sessions.controller.spec.ts` | `test/guest-sessions.e2e-spec.ts`, `test/qr-activation-lifecycle.e2e-spec.ts` |
-| `/guest-sessions/current` | `GET` | Guest Bearer | [`GuestSessionsController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/modules/guest-sessions/guest-sessions.controller.ts) | `getCurrentSession()` | `src/modules/guest-sessions/guest-sessions.controller.spec.ts` | `test/guest-sessions.e2e-spec.ts` |
-| `/guest-sessions/revoke` | `POST` | Guest Bearer | [`GuestSessionsController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/modules/guest-sessions/guest-sessions.controller.ts) | `revokeSession()` | `src/modules/guest-sessions/guest-sessions.controller.spec.ts` | `test/guest-sessions.e2e-spec.ts` |
-| `/guest-sessions/dev-issue-token` | `POST` | Demo Only | [`GuestSessionsController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/modules/guest-sessions/guest-sessions.controller.ts) | `issueDevToken()` | `src/modules/guest-sessions/guest-sessions.controller.spec.ts` | `test/guest-sessions.e2e-spec.ts` |
-| `/menu` | `GET` | Guest Bearer | [`MenuController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/modules/menu/menu.controller.ts) | `getMenu()` | `src/modules/menu/menu.controller.spec.ts` | `test/menu.e2e-spec.ts` |
-| `/menu/categories` | `GET` | Guest Bearer | [`MenuController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/modules/menu/menu.controller.ts) | `getCategories()` | `src/modules/menu/menu.controller.spec.ts` | `test/menu.e2e-spec.ts` |
-| `/menu/:id` | `GET` | Guest Bearer | [`MenuController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/modules/menu/menu.controller.ts) | `getItemById()` | `src/modules/menu/menu.controller.spec.ts` | `test/menu.e2e-spec.ts` |
-| `/food-orders` | `POST` | Guest Bearer | [`FoodOrdersController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/modules/food-orders/food-orders.controller.ts) | `createOrder()` | `src/modules/food-orders/food-orders.controller.spec.ts` | `test/food-orders.e2e-spec.ts` |
-| `/food-orders` | `GET` | Guest Bearer | [`FoodOrdersController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/modules/food-orders/food-orders.controller.ts) | `getOrders()` | `src/modules/food-orders/food-orders.controller.spec.ts` | `test/food-orders.e2e-spec.ts` |
-| `/food-orders/:id` | `GET` | Guest Bearer | [`FoodOrdersController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/modules/food-orders/food-orders.controller.ts) | `getOrder()` | `src/modules/food-orders/food-orders.controller.spec.ts` | `test/food-orders.e2e-spec.ts` |
-| `/food-orders/:id/cancel` | `POST` | Guest Bearer | [`FoodOrdersController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/modules/food-orders/food-orders.controller.ts) | `cancelOrder()` | `src/modules/food-orders/food-orders.controller.spec.ts` | `test/food-orders.e2e-spec.ts` |
-| `/food-orders/demo/status-advance` | `POST` | Guest / Demo | [`FoodOrdersController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/modules/food-orders/food-orders.controller.ts) | `advanceStatus()` | `src/modules/food-orders/food-orders.controller.spec.ts` | `test/food-orders.e2e-spec.ts` |
-| `/service-requests` | `POST` | Guest Bearer | [`ServiceRequestsController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/modules/service-requests/service-requests.controller.ts) | `createRequest()` | `src/modules/service-requests/service-requests.controller.spec.ts` | `test/service-requests.e2e-spec.ts` |
-| `/service-requests` | `GET` | Guest Bearer | [`ServiceRequestsController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/modules/service-requests/service-requests.controller.ts) | `getRequests()` | `src/modules/service-requests/service-requests.controller.spec.ts` | `test/service-requests.e2e-spec.ts` |
-| `/service-requests/:id` | `GET` | Guest Bearer | [`ServiceRequestsController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/modules/service-requests/service-requests.controller.ts) | `getRequest()` | `src/modules/service-requests/service-requests.controller.spec.ts` | `test/service-requests.e2e-spec.ts` |
-| `/service-requests/:id/cancel` | `POST` | Guest Bearer | [`ServiceRequestsController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/modules/service-requests/service-requests.controller.ts) | `cancelRequest()` | `src/modules/service-requests/service-requests.controller.spec.ts` | `test/service-requests.e2e-spec.ts` |
-| `/service-requests/internal/events/status-updated` | `POST` | Internal Key | [`ServiceRequestsController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/modules/service-requests/service-requests.controller.ts) | `handleWkmsStatusEvent()` | `src/modules/service-requests/service-requests.controller.spec.ts` | `test/service-requests.e2e-spec.ts` |
-| `/complaints` | `POST` | Guest Bearer | [`ComplaintsController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/modules/complaints/complaints.controller.ts) | `createComplaint()` | `src/modules/complaints/complaints.controller.spec.ts` | `test/complaints.e2e-spec.ts` |
-| `/complaints` | `GET` | Guest Bearer | [`ComplaintsController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/modules/complaints/complaints.controller.ts) | `getComplaints()` | `src/modules/complaints/complaints.controller.spec.ts` | `test/complaints.e2e-spec.ts` |
-| `/complaints/:id` | `GET` | Guest Bearer | [`ComplaintsController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/modules/complaints/complaints.controller.ts) | `getComplaint()` | `src/modules/complaints/complaints.controller.spec.ts` | `test/complaints.e2e-spec.ts` |
-| `/complaints/:id/status` | `PATCH` | Demo Only | [`ComplaintsController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/modules/complaints/complaints.controller.ts) | `advanceComplaintStatus()` | `src/modules/complaints/complaints.controller.spec.ts` | `test/complaints.e2e-spec.ts` |
-| `/complaints/internal/events/status-updated` | `POST` | Internal Key | [`ComplaintsController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/modules/complaints/complaints.controller.ts) | `handleMadStatusEvent()` | `src/modules/complaints/complaints.controller.spec.ts` | `test/complaints.e2e-spec.ts` |
-| `/realtime/events/stream` | `GET` | Guest Bearer / SSE | [`RealtimeController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/realtime/realtime.controller.ts) | `streamEvents()` | `src/realtime/realtime.service.spec.ts` | `test/realtime.e2e-spec.ts` |
-| `/realtime/events/poll` | `GET` | Guest Bearer | [`RealtimeController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/realtime/realtime.controller.ts) | `pollEvents()` | `src/realtime/realtime.service.spec.ts` | `test/realtime.e2e-spec.ts` |
-| `/booking/verify` | `POST` | Internal Key | [`BookingController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/integrations/internal-services/booking/booking.controller.ts) | `verifyBooking()` | `src/integrations/internal-services/booking/adapters/mock-booking.adapter.spec.ts` | `test/booking-verification.e2e-spec.ts` |
+| # | Endpoint | Method | Auth Level | Controller Path | Service Handler | Unit Test Suite | E2E Integration Suite |
+|---|---|---|---|---|---|---|---|
+| 1 | `/` | `GET` | Public | [`AppController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/app.controller.ts) | `getHello()` | N/A (trivial) | `test/app.e2e-spec.ts` |
+| 2 | `/health` | `GET` | Public | [`HealthController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/health/health.controller.ts) | `checkHealth()` | `src/health/health.controller.spec.ts` | `test/health.e2e-spec.ts` |
+| 3 | `/health/live` | `GET` | Public | [`HealthController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/health/health.controller.ts) | `checkLiveness()` | `src/health/health.controller.spec.ts` | `test/health.e2e-spec.ts` |
+| 4 | `/health/ready` | `GET` | Public | [`HealthController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/health/health.controller.ts) | `checkReadiness()` | `src/health/health.controller.spec.ts` | `test/health.e2e-spec.ts` |
+| 5 | `/health/internal/database-isolation` | `GET` | Internal Key | [`HealthController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/health/health.controller.ts) | `getDatabaseIsolation()` | `src/health/health.controller.spec.ts` | `test/health.e2e-spec.ts` |
+| 6 | `/guest-sessions/internal/qr/issue` | `POST` | Internal Key | [`GuestSessionsController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/modules/guest-sessions/guest-sessions.controller.ts) | `issueGuestQrSlip()` | `src/modules/guest-sessions/guest-sessions.controller.spec.ts` | `test/qr-activation-lifecycle.e2e-spec.ts` |
+| 7 | `/guest-sessions/internal/qr-issue` | `POST` | Internal Key | [`GuestSessionsController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/modules/guest-sessions/guest-sessions.controller.ts) | `issueGuestQrSlipAlias()` | `src/modules/guest-sessions/guest-sessions.controller.spec.ts` | `test/qr-activation-lifecycle.e2e-spec.ts` |
+| 8 | `/guest-sessions/qr` | `POST` | Public / Token | [`GuestSessionsController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/modules/guest-sessions/guest-sessions.controller.ts) | `authenticateWithQr()` | `src/modules/guest-sessions/guest-sessions.controller.spec.ts`, `src/modules/guest-sessions/services/qr-activation.service.spec.ts` | `test/guest-sessions.e2e-spec.ts`, `test/qr-activation-lifecycle.e2e-spec.ts` |
+| 9 | `/guest-sessions/me` | `GET` | Guest Bearer | [`GuestSessionsController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/modules/guest-sessions/guest-sessions.controller.ts) | `getMe()` | `src/modules/guest-sessions/guest-sessions.controller.spec.ts` | `test/guest-sessions.e2e-spec.ts` |
+| 10 | `/guest-sessions/rooms/:roomNumber` | `GET` | Guest Bearer | [`GuestSessionsController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/modules/guest-sessions/guest-sessions.controller.ts) | `verifyRoomAccess()` | `src/modules/guest-sessions/guest-sessions.controller.spec.ts` | `test/room-scoped-auth.e2e-spec.ts` |
+| 11 | `/guest-sessions/bookings/:bookingId` | `GET` | Guest Bearer | [`GuestSessionsController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/modules/guest-sessions/guest-sessions.controller.ts) | `verifyBookingAccess()` | `src/modules/guest-sessions/guest-sessions.controller.spec.ts` | `test/room-scoped-auth.e2e-spec.ts` |
+| 12 | `/guest-sessions/logout` | `POST` | Guest Bearer | [`GuestSessionsController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/modules/guest-sessions/guest-sessions.controller.ts) | `logout()` | `src/modules/guest-sessions/guest-sessions.controller.spec.ts` | `test/guest-sessions.e2e-spec.ts` |
+| 13 | `/guest-sessions/internal/events/checkout` | `POST` | Internal Key | [`GuestSessionsController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/modules/guest-sessions/guest-sessions.controller.ts) | `handleCheckoutEvent()` | `src/modules/guest-sessions/guest-sessions.controller.spec.ts` | `test/fds-checkout-session-revocation.e2e-spec.ts` |
+| 14 | `/guest-sessions/internal/events/room-reassign` | `POST` | Internal Key | [`GuestSessionsController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/modules/guest-sessions/guest-sessions.controller.ts) | `handleRoomReassignEvent()` | `src/modules/guest-sessions/guest-sessions.controller.spec.ts` | `test/fds-checkout-session-revocation.e2e-spec.ts` |
+| 15 | `/guest-sessions/internal/events/:eventId` | `GET` | Internal Key | [`GuestSessionsController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/modules/guest-sessions/guest-sessions.controller.ts) | `getProcessedEvent()` | `src/modules/guest-sessions/guest-sessions.controller.spec.ts` | `test/fds-checkout-session-revocation.e2e-spec.ts` |
+| 16 | `/menu` | `GET` | Guest Bearer | [`MenuController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/modules/menu/menu.controller.ts) | `getMenu()` | `src/modules/menu/menu.controller.spec.ts`, `src/modules/menu/menu.service.spec.ts` | `test/menu.e2e-spec.ts` |
+| 17 | `/menu/windows` | `GET` | Guest Bearer | [`MenuController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/modules/menu/menu.controller.ts) | `getMealWindows()` | `src/modules/menu/menu.controller.spec.ts`, `src/modules/menu/menu.service.spec.ts` | `test/menu.e2e-spec.ts` |
+| 18 | `/menu/items/:id` | `GET` | Guest Bearer | [`MenuController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/modules/menu/menu.controller.ts) | `getMenuItem()` | `src/modules/menu/menu.controller.spec.ts`, `src/modules/menu/menu.service.spec.ts` | `test/menu.e2e-spec.ts` |
+| 19 | `/food-orders` | `POST` | Guest Bearer | [`FoodOrdersController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/modules/food-orders/food-orders.controller.ts) | `createOrder()` | `src/modules/food-orders/food-orders.controller.spec.ts`, `src/modules/food-orders/food-orders.service.spec.ts` | `test/food-orders.e2e-spec.ts` |
+| 20 | `/food-orders` | `GET` | Guest Bearer | [`FoodOrdersController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/modules/food-orders/food-orders.controller.ts) | `getOrders()` | `src/modules/food-orders/food-orders.controller.spec.ts`, `src/modules/food-orders/food-orders.service.spec.ts` | `test/food-orders.e2e-spec.ts` |
+| 21 | `/food-orders/:id` | `GET` | Guest Bearer | [`FoodOrdersController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/modules/food-orders/food-orders.controller.ts) | `getOrder()` | `src/modules/food-orders/food-orders.controller.spec.ts`, `src/modules/food-orders/food-orders.service.spec.ts` | `test/food-orders.e2e-spec.ts` |
+| 22 | `/food-orders/:id/cancel` | `POST` | Guest Bearer | [`FoodOrdersController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/modules/food-orders/food-orders.controller.ts) | `cancelOrder()` | `src/modules/food-orders/food-orders.controller.spec.ts`, `src/modules/food-orders/food-orders.service.spec.ts` | `test/food-orders.e2e-spec.ts` |
+| 23 | `/food-orders/:id/status` | `POST` | Guest / Demo | [`FoodOrdersController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/modules/food-orders/food-orders.controller.ts) | `advanceOrderStatus()` | `src/modules/food-orders/food-orders.controller.spec.ts`, `src/modules/food-orders/food-orders.service.spec.ts` | `test/food-orders.e2e-spec.ts` |
+| 24 | `/service-requests` | `POST` | Guest Bearer | [`ServiceRequestsController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/modules/service-requests/service-requests.controller.ts) | `createServiceRequest()` | `src/modules/service-requests/service-requests.controller.spec.ts`, `src/modules/service-requests/service-requests.service.spec.ts` | `test/service-requests.e2e-spec.ts` |
+| 25 | `/service-requests` | `GET` | Guest Bearer | [`ServiceRequestsController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/modules/service-requests/service-requests.controller.ts) | `getGuestServiceRequests()` | `src/modules/service-requests/service-requests.controller.spec.ts`, `src/modules/service-requests/service-requests.service.spec.ts` | `test/service-requests.e2e-spec.ts` |
+| 26 | `/service-requests/:id` | `GET` | Guest Bearer | [`ServiceRequestsController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/modules/service-requests/service-requests.controller.ts) | `getGuestServiceRequestById()` | `src/modules/service-requests/service-requests.controller.spec.ts`, `src/modules/service-requests/service-requests.service.spec.ts` | `test/service-requests.e2e-spec.ts` |
+| 27 | `/service-requests/:id/status` | `POST` | Guest / Demo | [`ServiceRequestsController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/modules/service-requests/service-requests.controller.ts) | `advanceServiceRequestStatus()` | `src/modules/service-requests/service-requests.controller.spec.ts`, `src/modules/service-requests/service-requests.service.spec.ts` | `test/service-requests.e2e-spec.ts` |
+| 28 | `/service-requests/internal/events/status-updated` | `POST` | Internal Key | [`ServiceRequestsController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/modules/service-requests/service-requests.controller.ts) | `handleWkmsStatusEvent()` | `src/modules/service-requests/service-requests.controller.spec.ts`, `src/modules/service-requests/service-requests.service.spec.ts` | `test/service-requests.e2e-spec.ts` |
+| 29 | `/complaints` | `POST` | Guest Bearer | [`ComplaintsController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/modules/complaints/complaints.controller.ts) | `fileComplaint()` | `src/modules/complaints/complaints.controller.spec.ts`, `src/modules/complaints/complaints.service.spec.ts` | `test/complaints.e2e-spec.ts` |
+| 30 | `/complaints` | `GET` | Guest Bearer | [`ComplaintsController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/modules/complaints/complaints.controller.ts) | `getComplaints()` | `src/modules/complaints/complaints.controller.spec.ts`, `src/modules/complaints/complaints.service.spec.ts` | `test/complaints.e2e-spec.ts` |
+| 31 | `/complaints/:id` | `GET` | Guest Bearer | [`ComplaintsController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/modules/complaints/complaints.controller.ts) | `getComplaintById()` | `src/modules/complaints/complaints.controller.spec.ts`, `src/modules/complaints/complaints.service.spec.ts` | `test/complaints.e2e-spec.ts` |
+| 32 | `/complaints/:id/status` | `PATCH` | Guest / Demo | [`ComplaintsController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/modules/complaints/complaints.controller.ts) | `advanceComplaintStatus()` | `src/modules/complaints/complaints.controller.spec.ts`, `src/modules/complaints/complaints.service.spec.ts` | `test/complaints.e2e-spec.ts` |
+| 33 | `/complaints/internal/events/status-updated` | `POST` | Internal Key | [`ComplaintsController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/modules/complaints/complaints.controller.ts) | `handleMadStatusEvent()` | `src/modules/complaints/complaints.controller.spec.ts`, `src/modules/complaints/complaints.service.spec.ts` | `test/complaints.e2e-spec.ts` |
+| 34 | `/realtime/events/stream` | `GET` (SSE) | Guest Bearer | [`RealtimeController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/realtime/realtime.controller.ts) | `streamEvents()` | `src/realtime/realtime.service.spec.ts` | `test/realtime.e2e-spec.ts` |
+| 35 | `/realtime/events/poll` | `GET` | Guest Bearer | [`RealtimeController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/realtime/realtime.controller.ts) | `pollEvents()` | `src/realtime/realtime.service.spec.ts` | `test/realtime.e2e-spec.ts` |
+| 36 | `/integrations/booking/verify` | `POST` | Public / Key | [`BookingController`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/integrations/internal-services/booking/booking.controller.ts) | `verifyBooking()` | `src/integrations/internal-services/booking/adapters/mock-booking.adapter.spec.ts` | `test/booking-verification.e2e-spec.ts` |
 
 ---
 
-## 2. Test Case ID Mapping (TC-DDP-146)
+## 2. Route-by-Route Response Dimension Verification
+
+| # | Endpoint | Method | 200/201 Success | 400 Validation | 401 Auth Failure | 403 IDOR / Forbidden | 404 Not Found | 409 Conflict | 503 Upstream |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | `/` | `GET` | Verified | N/A | N/A | N/A | N/A | N/A | N/A |
+| 2 | `/health` | `GET` | Verified | N/A | N/A | N/A | N/A | N/A | Verified |
+| 3 | `/health/live` | `GET` | Verified | N/A | N/A | N/A | N/A | N/A | N/A |
+| 4 | `/health/ready` | `GET` | Verified | N/A | N/A | N/A | N/A | N/A | Verified |
+| 5 | `/health/internal/database-isolation` | `GET` | Verified | N/A | Verified | Verified | N/A | N/A | N/A |
+| 6 | `/guest-sessions/internal/qr/issue` | `POST` | Verified | Verified | Verified | Verified | Verified | N/A | Verified |
+| 7 | `/guest-sessions/internal/qr-issue` | `POST` | Verified | Verified | Verified | Verified | Verified | N/A | Verified |
+| 8 | `/guest-sessions/qr` | `POST` | Verified | Verified | Verified | N/A | N/A | N/A | Verified |
+| 9 | `/guest-sessions/me` | `GET` | Verified | N/A | Verified | N/A | N/A | N/A | N/A |
+| 10 | `/guest-sessions/rooms/:roomNumber` | `GET` | Verified | N/A | Verified | Verified | N/A | N/A | N/A |
+| 11 | `/guest-sessions/bookings/:bookingId` | `GET` | Verified | N/A | Verified | Verified | N/A | N/A | N/A |
+| 12 | `/guest-sessions/logout` | `POST` | Verified | N/A | Verified | N/A | N/A | N/A | N/A |
+| 13 | `/guest-sessions/internal/events/checkout` | `POST` | Verified | Verified | Verified | Verified | Verified | N/A | N/A |
+| 14 | `/guest-sessions/internal/events/room-reassign` | `POST` | Verified | Verified | Verified | Verified | Verified | N/A | N/A |
+| 15 | `/guest-sessions/internal/events/:eventId` | `GET` | Verified | N/A | Verified | Verified | Verified | N/A | N/A |
+| 16 | `/menu` | `GET` | Verified | Verified | Verified | N/A | N/A | N/A | Verified |
+| 17 | `/menu/windows` | `GET` | Verified | N/A | Verified | N/A | N/A | N/A | N/A |
+| 18 | `/menu/items/:id` | `GET` | Verified | N/A | Verified | N/A | Verified | N/A | Verified |
+| 19 | `/food-orders` | `POST` | Verified | Verified | Verified | Verified | N/A | Verified | Verified |
+| 20 | `/food-orders` | `GET` | Verified | N/A | Verified | N/A | N/A | N/A | N/A |
+| 21 | `/food-orders/:id` | `GET` | Verified | N/A | Verified | Verified | Verified | N/A | N/A |
+| 22 | `/food-orders/:id/cancel` | `POST` | Verified | Verified | Verified | Verified | Verified | Verified | Verified |
+| 23 | `/food-orders/:id/status` | `POST` | Verified | Verified | Verified | Verified | Verified | N/A | N/A |
+| 24 | `/service-requests` | `POST` | Verified | Verified | Verified | Verified | N/A | N/A | Verified |
+| 25 | `/service-requests` | `GET` | Verified | Verified | Verified | N/A | N/A | N/A | N/A |
+| 26 | `/service-requests/:id` | `GET` | Verified | N/A | Verified | Verified | Verified | N/A | N/A |
+| 27 | `/service-requests/:id/status` | `POST` | Verified | Verified | Verified | Verified | Verified | Verified | N/A |
+| 28 | `/service-requests/internal/events/status-updated` | `POST` | Verified | Verified | Verified | Verified | Verified | N/A | N/A |
+| 29 | `/complaints` | `POST` | Verified | Verified | Verified | Verified | N/A | Verified | Verified |
+| 30 | `/complaints` | `GET` | Verified | Verified | Verified | N/A | N/A | N/A | N/A |
+| 31 | `/complaints/:id` | `GET` | Verified | N/A | Verified | N/A | Verified | N/A | N/A |
+| 32 | `/complaints/:id/status` | `PATCH` | Verified | Verified | Verified | N/A | Verified | N/A | N/A |
+| 33 | `/complaints/internal/events/status-updated` | `POST` | Verified | Verified | Verified | Verified | Verified | N/A | N/A |
+| 34 | `/realtime/events/stream` | `GET` (SSE) | Verified | N/A | Verified | Verified | N/A | N/A | N/A |
+| 35 | `/realtime/events/poll` | `GET` | Verified | Verified | Verified | Verified | N/A | N/A | N/A |
+| 36 | `/integrations/booking/verify` | `POST` | Verified | Verified | N/A | N/A | N/A | N/A | Verified |
+
+---
+
+## 3. Test Case ID Mapping (TC-DDP-146)
 
 ### TC-DDP-146-AC1: Successful Workflow & Authorized Routes
 - **`TC-DDP-146-AC1.1`**: QR session activation returns valid Bearer session token and stay context ([`guest-sessions.e2e-spec.ts`](file:///d:/ForeverHotel-Development/food-ordering/backend/test/guest-sessions.e2e-spec.ts)).
@@ -75,4 +123,3 @@
 - **`TC-DDP-146-AC4.1`**: No foreign keys to external subsystem tables (FDS bookings/rooms, KMS orders, WKMS tasks) exist ([`1791900000008-RemoveCrossDomainForeignKeys.spec.ts`](file:///d:/ForeverHotel-Development/food-ordering/backend/test/database/1791900000008-RemoveCrossDomainForeignKeys.spec.ts)).
 - **`TC-DDP-146-AC4.2`**: Disposable CI database guard strictly blocks test migrations or resets against production Neon ([`assert-ci-disposable-database.spec.ts`](file:///d:/ForeverHotel-Development/food-ordering/backend/src/database/guards/assert-ci-disposable-database.spec.ts)).
 - **`TC-DDP-146-AC4.3`**: Inbound webhooks require `x-internal-service-key`; missing or invalid keys return `401 Unauthorized` / `403 Forbidden` ([`service-requests.e2e-spec.ts`](file:///d:/ForeverHotel-Development/food-ordering/backend/test/service-requests.e2e-spec.ts)).
-

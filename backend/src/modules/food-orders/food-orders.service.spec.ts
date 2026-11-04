@@ -739,5 +739,146 @@ describe('FoodOrdersService', () => {
       expect(result.orderId).toBe('order-invalid-dates');
       expect(result.status).toBe(FoodOrderStatus.READY);
     });
+
+    it('rejects cancellation with ConflictException if order is already DELIVERED', async () => {
+      const order = new FossDemoOrder();
+      order.orderId = 'order-delivered';
+      order.bookingId = sampleGuest.bookingId;
+      order.roomNumber = sampleGuest.roomNumber;
+      order.status = FoodOrderStatus.DELIVERED;
+      order.createdAt = clockService.now();
+      order.items = [];
+
+      mockOrderRepository.findById.mockResolvedValue(order);
+
+      await expect(
+        service.cancelFoodOrder(sampleGuest, 'order-delivered'),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('rejects cancellation with ConflictException if order is already CANCELLED', async () => {
+      const order = new FossDemoOrder();
+      order.orderId = 'order-cancelled';
+      order.bookingId = sampleGuest.bookingId;
+      order.roomNumber = sampleGuest.roomNumber;
+      order.status = FoodOrderStatus.CANCELLED;
+      order.createdAt = clockService.now();
+      order.items = [];
+
+      mockOrderRepository.findById.mockResolvedValue(order);
+
+      await expect(
+        service.cancelFoodOrder(sampleGuest, 'order-cancelled'),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('rejects cancellation with ConflictException if order is READY', async () => {
+      const order = new FossDemoOrder();
+      order.orderId = 'order-ready';
+      order.bookingId = sampleGuest.bookingId;
+      order.roomNumber = sampleGuest.roomNumber;
+      order.status = FoodOrderStatus.READY;
+      order.createdAt = clockService.now();
+      order.items = [];
+
+      mockOrderRepository.findById.mockResolvedValue(order);
+
+      await expect(
+        service.cancelFoodOrder(sampleGuest, 'order-ready'),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('rethrows UpstreamServiceUnavailableException when KMS cancel throws it directly', async () => {
+      const order = new FossDemoOrder();
+      order.orderId = 'order-upstream-fail';
+      order.bookingId = sampleGuest.bookingId;
+      order.roomNumber = sampleGuest.roomNumber;
+      order.status = FoodOrderStatus.PLACED;
+      order.createdAt = clockService.now();
+      order.items = [];
+
+      mockOrderRepository.findById.mockResolvedValue(order);
+      jest
+        .spyOn(mockKms, 'cancelOrder')
+        .mockRejectedValueOnce(
+          new UpstreamServiceUnavailableException(
+            'KMS',
+            'Downstream connection dropped',
+          ),
+        );
+
+      await expect(
+        service.cancelFoodOrder(sampleGuest, 'order-upstream-fail'),
+      ).rejects.toThrow(UpstreamServiceUnavailableException);
+    });
+
+    it('handles KMS cancel error containing already been delivered as ConflictException', async () => {
+      const order = new FossDemoOrder();
+      order.orderId = 'order-delivered-conflict';
+      order.bookingId = sampleGuest.bookingId;
+      order.roomNumber = sampleGuest.roomNumber;
+      order.status = FoodOrderStatus.PLACED;
+      order.createdAt = clockService.now();
+      order.items = [];
+
+      mockOrderRepository.findById.mockResolvedValue(order);
+      jest
+        .spyOn(mockKms, 'cancelOrder')
+        .mockRejectedValueOnce(
+          new Error('KMS says order has already been delivered to room'),
+        );
+
+      await expect(
+        service.cancelFoodOrder(sampleGuest, 'order-delivered-conflict'),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('rethrows UpstreamServiceUnavailableException when KMS createOrder throws it directly', async () => {
+      mockOrderRepository.findByIdempotencyKey.mockResolvedValue(null);
+      jest
+        .spyOn(mockKms, 'createOrder')
+        .mockRejectedValueOnce(
+          new UpstreamServiceUnavailableException(
+            'KMS',
+            'KMS gateway unavailable',
+          ),
+        );
+
+      await expect(
+        service.createFoodOrder(
+          sampleGuest,
+          { items: [{ menuItemId: 'menu-item-001', quantity: 1 }] },
+          'idemp-kms-direct-err',
+        ),
+      ).rejects.toThrow(UpstreamServiceUnavailableException);
+    });
+
+    it('handles concurrent race condition during save() with duplicate key code 23505', async () => {
+      mockOrderRepository.findByIdempotencyKey
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          orderId: 'order-race-winner',
+          bookingId: sampleGuest.bookingId,
+          roomNumber: sampleGuest.roomNumber,
+          status: FoodOrderStatus.PLACED,
+          totalAmount: 18,
+          items: [],
+          createdAt: clockService.now(),
+          updatedAt: clockService.now(),
+        } as unknown as FossDemoOrder);
+
+      mockOrderRepository.save.mockRejectedValueOnce({
+        code: '23505',
+        message: 'duplicate key value violates unique constraint',
+      });
+
+      const res = await service.createFoodOrder(
+        sampleGuest,
+        { items: [{ menuItemId: 'menu-item-001', quantity: 1 }] },
+        'idemp-race-key',
+      );
+
+      expect(res.orderId).toBe('order-race-winner');
+    });
   });
 });
