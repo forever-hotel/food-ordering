@@ -1,264 +1,254 @@
-# Forever Hotel Food Ordering System
+# Forever Hotel Food Ordering System (FOSS)
 
-Food ordering application for the Forever Hotel Management System. The
-repository currently contains the initial frontend and backend scaffolds.
-Food browsing, cart management, ordering, and order tracking are planned
-features and are not implemented yet.
+[![FOSS CI](https://github.com/forever-hotel/food-ordering/actions/workflows/ci.yml/badge.svg)](https://github.com/forever-hotel/food-ordering/actions/workflows/ci.yml)
+[![Node Version](https://img.shields.io/badge/node-%3E%3D24.0.0-brightgreen.svg)](https://nodejs.org/)
+[![License: UNLICENSED](https://img.shields.io/badge/license-UNLICENSED-red.svg)](LICENSE)
 
-## Project Structure
+The **Forever Hotel Food Ordering System (FOSS)** is the guest-facing digital dining and in-room services subsystem of the Forever Hotel Management System. It delivers an authenticated mobile web application for in-stay dining, room service requests, and management feedback with real-time order tracking and strict guest stay isolation.
 
-- `frontend/` - Next.js 16 application using React 19, TypeScript, and Tailwind CSS 4
-- `backend/` - NestJS 12 application using TypeScript
-- `docker-compose.yml` - optional local PostgreSQL 16 and RabbitMQ 3 services
+---
 
-## Quick Start
+## 1. Project Overview & Implemented Features
 
-For a local development setup, start the supporting services once with Docker:
+FOSS provides a complete end-to-end guest journey adhering to approved Final Design Report specifications (Figures 31–39):
 
-```bash
-docker compose up -d
+- **Guest Session Activation & Security (Figure 31):** Cryptographic QR code redemption (`/activate`), single-use token consumption, timing-safe SHA-256 session tokens, 24-hour TTL, and strict room/stay data isolation.
+- **Menu Browsing & Meal Windows (Figure 32):** Real-time meal period scheduling synchronized with Colombo time (Asia/Colombo) for Breakfast, Lunch, Dinner, and High Tea. Live service countdowns, dietary flags, and allergen badges.
+- **Cart Operations & Kitchen Notes (Figure 34):** Dynamic portion limits (1–20), 300-character allergy note bounds, and subtotal/total calculations with zero unapproved surcharges.
+- **Order Placement & Status Tracking (Figure 35):** Idempotent food order submission, double-tap prevention, automated kitchen dispatch, 25–35 minute ETA range, and a 10-minute order cancellation countdown window.
+- **In-Room Service Requests (Figure 38):** 6 canonical service categories (Towels, Toiletries, Cleaning, Maintenance, Laundry Pickup, Other), Worker Management Subsystem (WKMS) event reconciliation, and active request tracking.
+- **Guest Complaints & Feedback (Figure 39):** Manager Dashboard (MAD) escalation, severity grading (Low, Medium, High, Urgent), and unique `CMP-...` reference code tracking.
+- **Asynchronous Messaging:** RabbitMQ event publishing and consumption (`kms.order.status_changed`, `wkms.task.status_changed`, `mad.complaint.status_changed`) with Dead-Letter Queues (DLQ) and poisoned message isolation.
+- **Real-time Updates:** Fetch-based Server-Sent Events (SSE) with authenticated Bearer tokens and resilient short-polling fallback.
+- **Optional Redis Cache:** Transparent, non-authoritative caching layer with graceful degradation when Redis is unavailable (`REDIS_ENABLED=false`).
+- **Dual-Mode Operation:** Built-in seamless switching between deterministic **Mock Demo Mode** (for grading and standalone evaluation) and **Live API Mode** (for gateway integration).
+
+---
+
+## 2. High-Level Architecture
+
+```
+                    ┌────────────────────────────────────────┐
+                    │      Forever Hotel API Gateway         │
+                    │         (:8080/foss/*)                 │
+                    └──────────────────┬─────────────────────┘
+                                       │ (Client traffic)
+                    ┌──────────────────▼─────────────────────┐
+                    │       Next.js 16 Mobile SPA            │
+                    │   React 19 · Ant Design · Tailwind 4   │
+                    │              (:3000)                   │
+                    └──────────────────┬─────────────────────┘
+                                       │ (REST + SSE)
+                    ┌──────────────────▼─────────────────────┐
+                    │         NestJS 12 Backend API          │
+                    │   TypeORM · Express · OpenAPI Swagger  │
+                    │         (:4300 / API_PREFIX)           │
+                    └──────┬─────────────┬─────────────┬─────┘
+                           │             │             │
+        ┌──────────────────▼──┐   ┌──────▼──────┐   ┌──▼────────────────┐
+        │  PostgreSQL / Neon  │   │  RabbitMQ   │   │  Optional Redis   │
+        │  Database (Cloud/   │   │  3.13 AMQP  │   │  Cache Layer      │
+        │  Local Container)   │   │  Broker     │   │  (REDIS_ENABLED)  │
+        └─────────────────────┘   └─────────────┘   └───────────────────┘
 ```
 
-Then open two terminals and run the backend and frontend separately:
+### Upstream Service Integrations (Simulated via Typed Adapters)
 
-```bash
-cd backend
-npm install
-npm run start:dev
-```
+- **Front Desk Subsystem (FDS):** Authoritative room assignment, guest check-in verification, and checkout session revocation.
+- **Kitchen Management Subsystem (KMS):** Authoritative menu item catalog and kitchen preparation state transitions.
+- **Worker Management Subsystem (WKMS):** Room service dispatch, worker assignment, and completion events.
+- **Manager Dashboard (MAD):** Complaint escalation, resolution notes, and manager notifications.
 
-```bash
-cd frontend
-npm install
-npm run dev
-```
+---
 
-## Prerequisites
+## 3. Technology Stack
 
-- Node.js 20 or later
-- npm
-- Docker Desktop with Docker Compose (only needed for the optional services)
+- **Frontend:** Next.js 16.4.1 (Webpack runtime), React 19.2.8, Ant Design 6.6.5, Tailwind CSS 4, `@playwright/test`, `@axe-core/playwright`.
+- **Backend:** NestJS 12.0.1, Express, TypeORM 1.1.1, PostgreSQL driver `pg` 8.23.0, `amqplib` 2.2.1, `ioredis` 5.11.1, `class-validator`, `class-transformer`.
+- **Testing:** Jest 30 (with experimental VM modules for ESM), Node.js native test runner (`node:test`), Playwright test scaffolding.
+- **Code Quality:** Oxlint (backend linter), ESLint 9 (frontend), Prettier 3.
 
-## Install Dependencies
+---
 
-From the repository root, install each application independently:
+## 4. Local Prerequisites
 
-```bash
-cd backend
-npm install
+- **Node.js:** v24.x or later (tested on Node v24.22.1).
+- **Package Manager:** `npm` (v10+).
+- **Docker & Docker Compose:** Required only if running local PostgreSQL, RabbitMQ, or Redis containers.
 
-cd ../frontend
-npm install
-```
+---
 
-The available configuration variables are:
+## 5. Environment Configuration
 
-| Application | Variable              | Default                 | Purpose                                    |
-| ----------- | --------------------- | ----------------------- | ------------------------------------------ |
-| Frontend    | `NEXT_PUBLIC_API_URL` | `http://localhost:3001` | Base URL reserved for backend API requests |
-| Backend     | `PORT`                | `3001`                  | HTTP listening port                        |
-| Backend     | `FRONTEND_URL`        | `http://localhost:3000` | Allowed CORS origin                        |
-| Backend     | `DATABASE_URL`        | Required; no default    | PostgreSQL URL, for example `postgresql://postgres:postgres@localhost:5432/food_ordering` |
-| Backend     | `RABBITMQ_URL`        | `amqp://localhost:5672` | Reserved RabbitMQ URL; not used by the backend yet |
+### Backend Configuration (`backend/.env`)
 
-To override the frontend API URL, create `frontend/.env.local`. Backend
-variables must be defined in the shell or a local `.env` file before starting
-the application. Copy the example values from `backend/.env.example` into a
-`backend/.env` file when working locally. The `DATABASE_URL` value must be a
-valid PostgreSQL URL, for example:
+Copy `backend/.env.example` to `backend/.env`:
 
 ```env
+NODE_ENV=development
+PORT=4300
+HOST=127.0.0.1
+API_PREFIX=foss
+FRONTEND_URL=http://localhost:3000
+
+# Database (TypeORM)
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/food_ordering
+
+# Server-Side Neon Isolation Guard (Required only when using Neon Cloud)
+# APPROVED_NEON_PROJECT_ID=project-id-placeholder
+# APPROVED_NEON_TEST_BRANCH_ID=br-test-branch-placeholder
+# APPROVED_NEON_TEST_ENDPOINT_ID=ep-test-endpoint-placeholder
+# PARENT_DEV_BRANCH_ID=br-parent-dev-branch-placeholder
+
+# RabbitMQ Event Broker
+RABBITMQ_ENABLED=true
+RABBITMQ_URL=amqp://localhost:5672
+
+# Optional Redis Cache (disabled by default)
+REDIS_ENABLED=false
+REDIS_URL=redis://localhost:6379
+
+# Service Integration Controls
+MOCK_EXTERNAL_SERVICES=true
+DEMO_MODE=true
+
+# Cryptographic QR & Session Signing Secret
+QR_SIGNING_SECRET=development-demo-qr-signing-secret-at-least-32-chars-long
+SESSION_TTL_HOURS=24
+INTERNAL_SERVICE_KEY=development-internal-service-key-at-least-32-chars
+FDS_WEBHOOK_SECRET=development-fds-webhook-secret-at-least-32-chars
 ```
 
-## Run the Applications
+### Frontend Configuration (`frontend/.env.local`)
 
-Open two terminals from the repository root.
+Copy `frontend/.env.example` to `frontend/.env.local`:
 
-Start the backend in the first terminal:
-
-```bash
-cd backend
-npm run start:dev
+```env
+PORT=3000
+NEXT_PUBLIC_API_URL=http://localhost:4300
+NEXT_PUBLIC_DATA_MODE=demo
+NEXT_PUBLIC_DEPLOYMENT_ENV=development
 ```
 
-The backend is available at [http://localhost:3001](http://localhost:3001).
-Its only current route is `GET /`, which returns the NestJS starter response
-`Hello World!`.
+> [!IMPORTANT]
+> If `NEXT_PUBLIC_DEPLOYMENT_ENV=production` is set in `frontend/.env.local`, Demo Mode is **strictly locked down** for security. Keep it set to `development` for local grading and demonstration.
 
-Start the frontend in the second terminal:
+---
+
+## 6. Quick Start & Execution Modes
+
+### Mode A: Deterministic Mock Demo (Standalone Evaluation)
+
+Demo mode runs purely on pre-configured, realistic fixtures with no external database or message broker required:
 
 ```bash
+# Terminal 1: Start Frontend
 cd frontend
+npm install
 npm run dev
 ```
 
-The frontend is available at [http://localhost:3000](http://localhost:3000).
+1. Navigate to `http://localhost:3000`.
+2. Click **Quick demo access codes** on the landing screen.
+3. Select **Room 101 (John Doe)** to log in immediately.
+4. Browse menu, add dishes to cart, enter allergy notes, and place an order.
+5. Watch order progression, cancel an order within 10 minutes, request towels, or submit a complaint.
 
-Example frontend override:
+---
 
-```env
-NEXT_PUBLIC_API_URL=http://localhost:3001
-```
+### Mode B: Full Stack via Docker Compose (Containerized)
 
-Example backend overrides in PowerShell:
-
-```powershell
-$env:PORT = '3010'
-$env:FRONTEND_URL = 'http://localhost:3000'
-npm run start:dev
-```
-
-When the backend port is changed, update `NEXT_PUBLIC_API_URL` to match it.
-
-## Database Development
-
-The backend uses PostgreSQL with TypeORM.
-
-Database schema changes are managed through version-controlled migrations.
-Automatic TypeORM schema synchronization is disabled.
-
-### Start the Development Database
-
-Start the configured PostgreSQL development environment:
+To build and run all FOSS services inside Docker containers:
 
 ```bash
-docker compose up -d
-```
+# Start backend, frontend, and rabbitmq containers in detached mode
+docker compose up -d --build
 
-### Run Migrations
+# (Optional) If you also want a local PostgreSQL database container:
+docker compose --profile local-db up -d --build
 
-From the `backend/` directory, apply the pending migrations:
+# View container logs
+docker compose logs -f
 
-```bash
-npm run migration:run
-```
-
-Other migration commands are available for inspecting, creating, generating,
-and reverting migrations:
-
-```bash
-npm run migration:show
-npm run migration:create -- src/database/migrations/MigrationName
-npm run migration:generate -- src/database/migrations/MigrationName
-npm run migration:revert
-```
-
-## Optional Local Services
-
-The Compose file also starts RabbitMQ for future application integration.
-
-```bash
-docker compose up -d
-```
-
-Available service endpoints:
-
-- PostgreSQL: `localhost:5432` (`food_ordering` database, `postgres` user,
-  `postgres` password)
-- RabbitMQ: `localhost:5672`
-- RabbitMQ Management UI: [http://localhost:15672](http://localhost:15672)
-  (`guest` / `guest`)
-
-The Compose service names are `postgres` and `rabbitmq`; the local container
-names are `foss-postgres` and `foss-rabbitmq`.
-
-Check or stop the services:
-
-```bash
-docker compose ps
+# Stop and remove containers
 docker compose down
 ```
 
-To also remove the local data volumes:
+- **Frontend:** [http://localhost:3000](http://localhost:3000)
+- **Backend API:** [http://localhost:4300/foss](http://localhost:4300/foss)
+- **Swagger OpenAPI Docs:** [http://localhost:4300/foss/api-docs](http://localhost:4300/foss/api-docs)
+- **RabbitMQ Management UI:** [http://localhost:15672](http://localhost:15672)
+
+---
+
+### Mode C: Hybrid Local Development (Backend + Local Infrastructure)
+
+To run the local database and message broker in Docker while running the frontend and backend applications directly via Node.js:
 
 ```bash
-docker compose down -v
-```
+# 1. Start Local Supporting Services (PostgreSQL + RabbitMQ)
+docker compose -f docker-compose.local.yml --env-file docker-compose.local.env up -d
 
-## Useful Commands
-
-### Backend
-
-```bash
+# 2. Run Database Migrations
 cd backend
-npm run build
-npm run lint
-npm run format:check
-npm test
-npm run test:e2e
+npm install
+npm run migration:run
+
+# 3. Start Backend API
+npm run start:dev
+
+# 4. In a separate terminal, start Frontend
+cd ../frontend
+npm install
+npm run dev
 ```
 
-### Frontend
+- **Frontend:** [http://localhost:3000](http://localhost:3000)
+- **Backend API:** [http://localhost:4300/foss](http://localhost:4300/foss)
+- **Swagger OpenAPI Docs:** [http://localhost:4300/foss/api-docs](http://localhost:4300/foss/api-docs)
+- **RabbitMQ Management UI:** [http://localhost:15672](http://localhost:15672) (User: `foreverhotel_dev`)
+
+---
+
+## 7. Testing & Quality Verification
+
+Run each application's verification independently from its directory:
 
 ```bash
+# Backend Quality Verification
+cd backend
+npm run lint                  # Oxlint (240 files, 0 errors, 0 warnings)
+npm run format:check          # Prettier style check
+npm run test:cov -- --runInBand # 557 tests, 63 suites, branch & statement coverage
+npm run build                 # NestJS production build
+
+# Frontend Quality Verification
 cd frontend
-npm run lint
-npm run format:check
-npm run build
+npm run lint                  # ESLint (0 errors, 0 warnings)
+npm run format:check          # Prettier style check
+npm test                      # 270 tests, 81 suites (Node test runner)
+npm run build -- --webpack    # Next.js production build
+
+# Playwright E2E Verification (Host / Non-Sandboxed environments only)
+npm run test:e2e:mock         # Executes Playwright E2E against mock server
 ```
 
-If the frontend app routes are moved or renamed, remove the generated Next.js
-output before rebuilding so stale type validators are not used:
+---
 
-```powershell
-cd frontend
-Remove-Item -Recurse -Force .next
-npm run build
-```
+## 8. Database Safety & Neon Branching
 
-## Current Implementation Status
+When connecting to Neon PostgreSQL, the backend's [`HealthService`](backend/src/health/health.service.ts) queries `pg_settings` for `neon.project_id`, `neon.branch_id`, and `neon.endpoint_id`:
 
-- Frontend: default Next.js starter page; no food ordering screens are
-  implemented yet
-- Backend: NestJS starter endpoint at `GET /`, with CORS configuration and
-  starter unit/e2e tests
-- API client: backend base URL constant exists in
-  `frontend/src/lib/api/config.ts`, but no requests are currently made from
-  the UI
-- Database: PostgreSQL is configured through TypeORM and managed with
-  version-controlled migrations
-- Messaging: RabbitMQ is available through Docker Compose, but is not yet
-  connected to the backend
-- Authentication, menus, carts, orders, payments, and order tracking: not yet
-  implemented
+- **Rejects Shared Parent Dev:** If connected to `PARENT_DEV_BRANCH_ID`, write-capable test migrations are blocked.
+- **Enforces Allowlist:** Requires `APPROVED_NEON_PROJECT_ID`, `APPROVED_NEON_TEST_BRANCH_ID`, and `APPROVED_NEON_TEST_ENDPOINT_ID` to match exactly.
+- **Fails Closed:** Any unconfigured or mismatched cloud database connection is classified as untrusted.
 
-Update this README and the relevant environment documentation whenever a new
-runtime dependency, service, or configuration variable is introduced.
+---
 
-## Planned Backend Structure
+## 9. Known Limitations & Acceptance Status
 
-The backend currently contains the NestJS starter application and TypeORM
-database infrastructure. The following directories are reserved for the
-planned Forever Hotel backend structure; they are not implemented or
-registered as NestJS modules yet.
-
-```text
-backend/src/
-├── config/         # Planned environment-driven configuration
-├── common/         # Planned cross-cutting reusable backend code
-├── database/       # TypeORM connection and persistence infrastructure
-├── messaging/      # Planned RabbitMQ infrastructure
-├── realtime/       # Planned shared real-time platform adapter
-├── integrations/   # Planned Auth Service, KMS and WKMS clients
-├── health/         # Planned liveness/readiness endpoints
-└── modules/        # Planned FOSS domain modules
-```
-
-## Frontend Architecture
-
-The FOSS Guest App follows the Forever Hotel standard Next.js App Router
-structure.
-
-```text
-frontend/src/
-├── app/          # Routes and layouts
-├── components/   # Reusable shared UI
-├── features/     # FOSS business features
-├── lib/          # API, auth and realtime infrastructure
-├── hooks/        # Shared hooks
-├── providers/    # Application providers
-├── config/       # Frontend configuration
-├── types/        # Shared TypeScript types
-└── styles/       # Shared styles
-```
+- **Automated Playwright Execution:** E2E browser tests are scaffolded in `frontend/tests/e2e/`. Automated execution remains unverified due to Windows sandbox loopback TCP restrictions (`connect EACCES 127.0.0.1:3000`).
+- **WCAG Accessibility Conformance:** Axe-core WCAG 2.1 AA rules and responsive viewports (320px, 375px, 390px, 768px) are authored in `frontend/tests/e2e/accessibility-wcag-axe.spec.ts`. Full WCAG conformance is not claimed until automated browser testing is verified.
+- **Live Upstream Systems:** Direct integration with live FDS, KMS, WKMS, and MAD staging servers is deferred. All flows are verified against typed mock adapters.
+- **Critical Branch Coverage Target:** Critical branch coverage stands at **84.21%** against the 90% stretch target (statement coverage is at **96.10%**).
+- **Redis & Transactional Outbox:** Redis is optional and disabled by default (`REDIS_ENABLED=false`). The PostgreSQL transactional outbox is NOT implemented and remains subject to architectural change request approval (`CR-outbox-foss.md`).
