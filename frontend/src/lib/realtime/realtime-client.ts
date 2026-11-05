@@ -1,3 +1,5 @@
+import { io, type Socket } from 'socket.io-client';
+
 export const RealtimeEventType = {
   FOOD_ORDER_STATUS_UPDATED: 'FOOD_ORDER_STATUS_UPDATED',
   SERVICE_REQUEST_STATUS_UPDATED: 'SERVICE_REQUEST_STATUS_UPDATED',
@@ -38,6 +40,7 @@ export interface RealtimeClientConfig {
   onEvent?: (event: FossRealtimeEvent) => void;
   onError?: (err: Error) => void;
   onStatusChange?: (status: ConnectionStatus) => void;
+  onRefresh?: () => void;
 }
 
 /**
@@ -71,6 +74,7 @@ export class FossRealtimeClient {
 
   private abortController: AbortController | null = null;
   private eventSource: EventSource | null = null;
+  private socket: Socket | null = null;
   private pollTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private lastVersion = 0;
@@ -107,8 +111,9 @@ export class FossRealtimeClient {
     activeRealtimeClients.add(this);
     this.setStatus('CONNECTING');
 
-    // Prefer secure fetch-based streaming with Authorization header; fallback to polling
-    if (typeof fetch !== 'undefined') {
+    if (process.env.NEXT_PUBLIC_GATEWAY_URL) {
+      void this.startSharedSocket();
+    } else if (typeof fetch !== 'undefined') {
       void this.startFetchStream();
     } else {
       this.startPollingFallback();
@@ -119,6 +124,8 @@ export class FossRealtimeClient {
     activeRealtimeClients.delete(this);
     this.setStatus('DISCONNECTED');
     this.reconnectAttempts = 0;
+    this.socket?.disconnect();
+    this.socket = null;
 
     if (this.abortController) {
       this.abortController.abort();
@@ -138,6 +145,64 @@ export class FossRealtimeClient {
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
+    }
+  }
+
+  private async startSharedSocket(): Promise<void> {
+    const controller = new AbortController();
+    this.abortController = controller;
+    try {
+      const response = await fetch(`${this.config.apiUrl}/guest-sessions/realtime-ticket`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${this.config.sessionToken}` },
+        signal: controller.signal,
+      });
+      if (!response.ok) throw new Error(`Realtime ticket failed: ${response.status}`);
+      const body = await response.json();
+      if (typeof body.ticket !== 'string' || !/^[\w-]{43}$/.test(body.ticket))
+        throw new Error('Invalid realtime ticket');
+      if (controller.signal.aborted || this.status === 'DISCONNECTED') return;
+      const socket = io(process.env.NEXT_PUBLIC_GATEWAY_URL!, {
+        path: '/realtime/socket.io',
+        auth: { ticket: body.ticket },
+        transports: ['websocket'],
+        reconnection: false,
+        timeout: 5000,
+      });
+      this.socket = socket;
+      socket.on('connect', () => {
+        if (this.socket !== socket) return;
+        this.reconnectAttempts = 0;
+        this.setStatus('CONNECTED');
+        // Recover buffered events missed while offline; REST remains authenticated.
+        void this.pollOnce().catch(() => undefined);
+      });
+      socket.on('guest.event', (event: FossRealtimeEvent) => this.handleIncomingEvent(event));
+      socket.on('guest.refresh', () => this.config.onRefresh?.());
+      socket.on('realtime.status', (state: { healthy?: boolean }) => {
+        if (this.socket !== socket) return;
+        if (state.healthy !== true) {
+          this.startPollingFallback();
+        } else {
+          if (this.pollTimer) clearTimeout(this.pollTimer);
+          this.pollTimer = null;
+          this.setStatus('CONNECTED');
+          this.config.onRefresh?.();
+        }
+      });
+      const retry = () => {
+        if (this.socket !== socket || this.status === 'DISCONNECTED') return;
+        this.socket = null;
+        socket.disconnect();
+        this.handleReconnectOrFallback();
+      };
+      socket.on('disconnect', retry);
+      socket.on('connect_error', retry);
+    } catch (error) {
+      if (!controller.signal.aborted && this.status !== 'DISCONNECTED') {
+        this.config.onError?.(error instanceof Error ? error : new Error('Realtime unavailable'));
+        this.handleReconnectOrFallback();
+      }
     }
   }
 
@@ -234,7 +299,8 @@ export class FossRealtimeClient {
 
       this.setStatus('CONNECTING');
       this.reconnectTimer = setTimeout(() => {
-        void this.startFetchStream();
+        if (process.env.NEXT_PUBLIC_GATEWAY_URL) void this.startSharedSocket();
+        else void this.startFetchStream();
       }, backoff);
     } else {
       // Reconnection exhausted -> Switch to continuous polling fallback
@@ -244,6 +310,7 @@ export class FossRealtimeClient {
 
   private startPollingFallback(): void {
     if (this.status === 'DISCONNECTED') return;
+    if (this.status === 'FALLBACK_POLLING') return;
     this.setStatus('FALLBACK_POLLING');
     this.scheduleNextPoll(0);
   }

@@ -91,7 +91,7 @@ describe('FossServiceRequestRepository', () => {
         bookingId: 'booking-101',
         roomNumber: '101',
         status: ServiceRequestStatus.SUBMITTED,
-        requestType: 'EXTRA_TOWELS',
+        category: 'EXTRA_TOWELS',
       },
       order: { createdAt: 'DESC' },
       take: 10,

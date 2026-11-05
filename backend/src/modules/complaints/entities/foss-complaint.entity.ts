@@ -135,4 +135,12 @@ export class FossComplaint {
 
   @UpdateDateColumn({ type: 'timestamptz', name: 'updated_at' })
   updatedAt!: Date;
+
+  @Column({
+    type: 'timestamptz',
+    name: 'resolved_at',
+    nullable: true,
+    select: false,
+  })
+  resolvedAt?: Date | null;
 }

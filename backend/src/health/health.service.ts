@@ -221,6 +221,18 @@ export class HealthService {
 
     try {
       await this.dataSource.query('SELECT 1');
+      if (this.configService?.get<string>('SHARED_DATABASE_MODE') === 'true') {
+        // Read-only deployment gate: startup never creates or alters schema.
+        await this.dataSource.query(
+          'SELECT activation_id,token_hash,redeemed_at FROM public.foss_qr_activations LIMIT 0',
+        );
+        await this.dataSource.query(
+          'SELECT public_reference,priority,task_id,idempotency_key,completed_at FROM public.foss_service_requests LIMIT 0',
+        );
+        await this.dataSource.query(
+          'SELECT public_reference,subject,assigned_manager,idempotency_key,resolved_at FROM public.foss_complaints LIMIT 0',
+        );
+      }
       return {
         status: 'ok',
         uptime,

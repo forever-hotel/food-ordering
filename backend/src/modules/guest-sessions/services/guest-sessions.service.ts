@@ -5,6 +5,7 @@ import {
   Injectable,
   Logger,
   Optional,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -180,6 +181,8 @@ export class GuestSessionsService {
         session.roomNumber,
       );
     } catch (error) {
+      // An unavailable booking authority must not permanently revoke a valid stay.
+      if (error instanceof ServiceUnavailableException) throw error;
       this.logger.warn(
         `Stay verification failed for session [${session.sessionId}]: ${error instanceof Error ? error.message : String(error)}`,
       );

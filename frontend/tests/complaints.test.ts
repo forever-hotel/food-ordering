@@ -101,7 +101,8 @@ describe('TC-DDP-143-AC1: Successful Workflow - Complaint Creation & Lifecycle T
       // Verify header and payload forwarding
       const headersObj = requestHeaders as Record<string, string>;
       assert.equal(headersObj['Authorization'], `Bearer ${sessionToken}`);
-      assert.equal(headersObj['x-idempotency-key'], idempotencyKey);
+      assert.equal(headersObj['idempotency-key'], idempotencyKey);
+      assert.equal(headersObj['x-idempotency-key'], undefined);
 
       const parsedBody = JSON.parse(requestBody || '{}');
       assert.equal(parsedBody.idempotencyKey, idempotencyKey);

@@ -90,4 +90,12 @@ export class FossServiceRequest {
 
   @UpdateDateColumn({ type: 'timestamptz', name: 'updated_at' })
   updatedAt!: Date;
+
+  @Column({
+    type: 'timestamptz',
+    name: 'completed_at',
+    nullable: true,
+    select: false,
+  })
+  completedAt?: Date | null;
 }
