@@ -265,6 +265,9 @@ export function ComplaintsTab() {
 
     const client = new FossRealtimeClient({
       apiUrl: API_URL,
+      onRefresh: () => {
+        void loadComplaints(false);
+      },
       sessionToken,
       bookingId: guest.bookingId,
       roomNumber: guest.roomNumber,

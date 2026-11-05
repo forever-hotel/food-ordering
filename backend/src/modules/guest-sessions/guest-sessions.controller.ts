@@ -143,6 +143,54 @@ export class GuestSessionsController {
     };
   }
 
+  @Get('realtime-session')
+  @Header('Cache-Control', 'no-store')
+  @UseGuards(GuestAuthGuard)
+  realtimeSession(@Req() req: AuthenticatedRequest) {
+    const record = (
+      req as AuthenticatedRequest & { sessionRecord: { expiresAt: Date } }
+    ).sessionRecord;
+    return {
+      sub: req.guest.sessionId,
+      role: 'GUEST',
+      bookingId: req.guest.bookingId,
+      roomNumber: req.guest.roomNumber,
+      expiresAt: Math.floor(new Date(record.expiresAt).getTime() / 1000),
+      passwordChangeRequired: false,
+    };
+  }
+
+  @Post('realtime-ticket')
+  @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'no-store')
+  @UseGuards(GuestAuthGuard)
+  async realtimeTicket(@Req() req: AuthenticatedRequest) {
+    const url = process.env.SHARED_WEBSOCKET_URL;
+    const key = process.env.WEBSOCKET_RELAY_KEY;
+    if (!url || !key)
+      throw new ServiceUnavailableException(
+        'Realtime service is not configured',
+      );
+    try {
+      const response = await fetch(
+        `${url.replace(/\/$/, '')}/internal/tickets/foss`,
+        {
+          method: 'POST',
+          headers: {
+            authorization: `Bearer ${req.sessionToken}`,
+            'x-relay-key': key,
+          },
+          signal: AbortSignal.timeout(5000),
+          redirect: 'error',
+        },
+      );
+      if (!response.ok) throw new Error();
+      return await response.json();
+    } catch {
+      throw new ServiceUnavailableException('Realtime service is unavailable');
+    }
+  }
+
   /**
    * Verifies access to room-scoped resources.
    * Enforces server-side room ownership: rejects cross-room access with 403 Forbidden.

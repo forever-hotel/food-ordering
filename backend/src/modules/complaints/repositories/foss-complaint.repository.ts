@@ -14,6 +14,12 @@ export class FossComplaintRepository {
   ) {}
 
   public async save(complaint: FossComplaint): Promise<FossComplaint> {
+    if (process.env.SHARED_DATABASE_MODE === 'true') {
+      complaint.resolvedAt =
+        complaint.status === ComplaintStatus.RESOLVED
+          ? complaint.updatedAt
+          : null;
+    }
     return this.repository.save(complaint);
   }
 

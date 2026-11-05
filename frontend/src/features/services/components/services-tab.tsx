@@ -135,6 +135,9 @@ export function ServicesTab() {
 
     const client = new FossRealtimeClient({
       apiUrl: API_URL,
+      onRefresh: () => {
+        void loadRequests(false);
+      },
       sessionToken,
       bookingId: guest.bookingId,
       roomNumber: guest.roomNumber,
