@@ -129,6 +129,9 @@ export function OrdersTab() {
 
     const client = new FossRealtimeClient({
       apiUrl: API_URL,
+      onRefresh: () => {
+        void loadOrders();
+      },
       sessionToken,
       bookingId: guest.bookingId,
       roomNumber: guest.roomNumber,
@@ -173,7 +176,7 @@ export function OrdersTab() {
       client.disconnect();
       realtimeClientRef.current = null;
     };
-  }, [sessionToken, guest?.bookingId, guest?.roomNumber]);
+  }, [sessionToken, guest?.bookingId, guest?.roomNumber, loadOrders]);
 
   // Strict stay isolation: require verifiable room ownership and matching booking ID
   const roomNumber = guest?.roomNumber;

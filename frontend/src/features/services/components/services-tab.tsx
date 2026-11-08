@@ -34,6 +34,7 @@ import {
   type FossRealtimeEvent,
 } from '../../../lib/realtime/realtime-client.ts';
 import API_URL from '../../../lib/api/config.ts';
+import { getDataMode } from '../../../lib/data-mode/data-mode.ts';
 import { AlertNotice } from '../../../components/feedback/alert-notice.tsx';
 import { LoadingSkeleton } from '../../../components/feedback/loading-skeleton.tsx';
 import { EmptyState } from '../../../components/feedback/empty-state.tsx';
@@ -135,6 +136,9 @@ export function ServicesTab() {
 
     const client = new FossRealtimeClient({
       apiUrl: API_URL,
+      onRefresh: () => {
+        void loadRequests(false);
+      },
       sessionToken,
       bookingId: guest.bookingId,
       roomNumber: guest.roomNumber,
@@ -240,6 +244,7 @@ export function ServicesTab() {
   };
 
   const handleAdvanceStatus = async (requestId: string, targetStatus: ServiceRequestStatus) => {
+    if (getDataMode() !== 'demo') return;
     if (!sessionToken) return;
 
     setAdvancingId(requestId);
@@ -572,34 +577,36 @@ export function ServicesTab() {
                     </div>
 
                     {/* Demo status advancement buttons for evaluation */}
-                    <div className="pt-2 flex items-center gap-1.5 justify-end">
-                      {req.status !== 'IN_PROGRESS' && req.status !== 'COMPLETED' && (
-                        <Button
-                          size="small"
-                          disabled={advancingId === req.requestId}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleAdvanceStatus(req.requestId, 'IN_PROGRESS');
-                          }}
-                          className="text-[11px] !rounded-lg"
-                        >
-                          Demo: In Progress
-                        </Button>
-                      )}
-                      {req.status !== 'COMPLETED' && (
-                        <Button
-                          size="small"
-                          disabled={advancingId === req.requestId}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleAdvanceStatus(req.requestId, 'COMPLETED');
-                          }}
-                          className="text-[11px] !rounded-lg"
-                        >
-                          Demo: Complete
-                        </Button>
-                      )}
-                    </div>
+                    {getDataMode() === 'demo' && (
+                      <div className="pt-2 flex items-center gap-1.5 justify-end">
+                        {req.status !== 'IN_PROGRESS' && req.status !== 'COMPLETED' && (
+                          <Button
+                            size="small"
+                            disabled={advancingId === req.requestId}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleAdvanceStatus(req.requestId, 'IN_PROGRESS');
+                            }}
+                            className="text-[11px] !rounded-lg"
+                          >
+                            Demo: In Progress
+                          </Button>
+                        )}
+                        {req.status !== 'COMPLETED' && (
+                          <Button
+                            size="small"
+                            disabled={advancingId === req.requestId}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleAdvanceStatus(req.requestId, 'COMPLETED');
+                            }}
+                            className="text-[11px] !rounded-lg"
+                          >
+                            Demo: Complete
+                          </Button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </Card>

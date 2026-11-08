@@ -1,4 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional, OnModuleInit } from '@nestjs/common';
+import { RabbitMqConnectionService } from '../messaging/rabbitmq-connection.service.js';
 import { randomUUID } from 'node:crypto';
 import { Observable, Subject } from 'rxjs';
 import { map } from 'rxjs/operators';
@@ -7,7 +8,23 @@ import { FossRealtimeEvent } from './dto/realtime-event.dto.js';
 import { RealtimeEventType } from './enums/realtime-event-type.enum.js';
 
 @Injectable()
-export class RealtimeService {
+export class RealtimeService implements OnModuleInit {
+  private relayReady = false;
+  constructor(
+    @Optional() private readonly broker?: RabbitMqConnectionService,
+  ) {}
+
+  onModuleInit() {
+    this.broker?.onConnected(async () => {
+      const channel = this.broker?.getChannel();
+      if (channel) {
+        await channel.assertExchange('hotel.realtime', 'topic', {
+          durable: true,
+        });
+        this.relayReady = true;
+      }
+    });
+  }
   private readonly logger = new Logger(RealtimeService.name);
   private readonly maxBufferSize = 100;
   private readonly defaultPollIntervalMs = 3000;
@@ -72,6 +89,41 @@ export class RealtimeService {
       serverTimestamp: now,
       data,
     };
+
+    const relay = this.broker?.getChannel();
+    if (this.relayReady && relay) {
+      try {
+        relay.publish(
+          'hotel.realtime',
+          'foss.guest.event',
+          Buffer.from(
+            JSON.stringify({
+              subsystem: 'foss',
+              name: 'guest.event',
+              data: event,
+            }),
+          ),
+          { contentType: 'application/json', expiration: '60000' },
+        );
+        if (eventType === RealtimeEventType.COMPLAINT_STATUS_UPDATED) {
+          relay.publish(
+            'hotel.realtime',
+            'mad.notifications.changed',
+            Buffer.from(
+              JSON.stringify({
+                subsystem: 'mad',
+                name: 'notifications.changed',
+              }),
+            ),
+            { contentType: 'application/json', expiration: '60000' },
+          );
+        }
+      } catch {
+        this.logger.warn(
+          'Shared realtime relay unavailable; authenticated polling remains available.',
+        );
+      }
+    }
 
     // Buffer event for gap recovery and polling fallback
     let buffer = this.channelBuffers.get(channelKey);

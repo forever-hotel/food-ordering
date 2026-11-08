@@ -110,7 +110,6 @@ export class ApiComplaintsProvider implements ComplaintsProvider {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${sessionToken}`,
           'idempotency-key': idemKey,
-          'x-idempotency-key': idemKey,
         },
         body: JSON.stringify({
           category: payload.category,

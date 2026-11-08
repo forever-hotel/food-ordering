@@ -238,38 +238,40 @@ export class ComplaintsService {
     complaint.resolutionNotes = null;
     complaint.idempotencyKey = idempotencyKey;
 
-    // 6. Durable MAD Forwarding (FOSS forwards complaint intake to MAD for managerial workflow)
-    try {
-      const madResult = await this.madProvider.fileComplaint({
-        complaintId: canonicalComplaintId,
-        bookingId: guest.bookingId,
-        roomNumber: guest.roomNumber,
-        category: dto.category as unknown as MadCategory,
-        severity: dto.severity as unknown as MadSeverity,
-        subject: sanitizedSubject,
-        description: sanitizedDescription,
-        relatedOrderId: canonicalOrderId || dto.relatedOrderId,
-        relatedTaskId: canonicalRequestId || dto.relatedRequestId,
-        idempotencyKey,
-        version: ContractVersion.V1_0,
-      });
+    // Shared deployments expose the authoritative intake row directly to MAD.
+    // A separate MAD intake HTTP API is only needed with independent databases.
+    if (this.configService.get<string>('SHARED_DATABASE_MODE') !== 'true') {
+      try {
+        const madResult = await this.madProvider.fileComplaint({
+          complaintId: canonicalComplaintId,
+          bookingId: guest.bookingId,
+          roomNumber: guest.roomNumber,
+          category: dto.category as unknown as MadCategory,
+          severity: dto.severity as unknown as MadSeverity,
+          subject: sanitizedSubject,
+          description: sanitizedDescription,
+          relatedOrderId: canonicalOrderId || dto.relatedOrderId,
+          relatedTaskId: canonicalRequestId || dto.relatedRequestId,
+          idempotencyKey,
+          version: ContractVersion.V1_0,
+        });
 
-      if (madResult) {
-        if (madResult.assignedManager) {
-          complaint.assignedManager = madResult.assignedManager;
+        if (madResult) {
+          if (madResult.assignedManager) {
+            complaint.assignedManager = madResult.assignedManager;
+          }
+          if (madResult.status) {
+            complaint.status = madResult.status;
+          }
         }
-        if (madResult.status) {
-          complaint.status = madResult.status;
-        }
+      } catch (err) {
+        this.logger.warn(
+          `MAD upstream provider degraded or unreachable for complaint [${canonicalComplaintId}]: ${
+            err instanceof Error ? err.message : String(err)
+          }. Complaint is preserved in FOSS Neon persistence.`,
+        );
       }
-    } catch (err) {
-      this.logger.warn(
-        `MAD upstream provider degraded or unreachable for complaint [${canonicalComplaintId}]: ${
-          err instanceof Error ? err.message : String(err)
-        }. Complaint is preserved in FOSS Neon persistence.`,
-      );
     }
-
     // 7. Persist to FOSS Neon storage as the authoritative guest complaint intake owner
     try {
       await this.complaintRepository.save(complaint);

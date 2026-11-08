@@ -182,6 +182,9 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
 
     const client = new FossRealtimeClient({
       apiUrl: API_URL,
+      onRefresh: () => {
+        void loadOrder(false);
+      },
       sessionToken,
       bookingId: guest.bookingId,
       roomNumber: guest.roomNumber,
