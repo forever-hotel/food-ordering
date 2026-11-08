@@ -152,3 +152,106 @@ jobs:
 
       - name: Verify Frontend Multi-Stage Dockerfile Build
         run: docker build -t foss-frontend:ci ./frontend
+
+  publish-images:
+    name: Publish reviewed immutable images
+    needs: [backend-quality, frontend-quality, security, container-build-verification]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: read
+      pull-requests: read
+      packages: write
+    concurrency:
+      group: image-publication-${{ github.repository }}-develop
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Require peer approval on the release PR final code
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const prs = await github.paginate(github.rest.repos.listPullRequestsAssociatedWithCommit, { owner, repo, commit_sha: context.sha });
+            for (const pr of prs.filter(p => p.merged_at && p.base.ref === 'develop' && p.merge_commit_sha === context.sha)) {
+              const reviews = await github.paginate(github.rest.pulls.listReviews, { owner, repo, pull_number: pr.number });
+              const latest = new Map();
+              for (const review of reviews) {
+                if (review.user && ['APPROVED', 'CHANGES_REQUESTED', 'DISMISSED'].includes(review.state)) latest.set(review.user.login, review);
+              }
+              const decisions = [...latest.values()];
+              if (decisions.some(r => r.state === 'APPROVED' && r.commit_id === pr.head.sha && r.user.login !== pr.user.login) &&
+                  !decisions.some(r => r.state === 'CHANGES_REQUESTED')) return;
+            }
+            throw new Error('Publication requires a reviewed PR merge into develop with approval on the final code.');
+      - name: Validate frontend public build configuration
+        env:
+          PUBLIC_API_ORIGIN: ${{ vars.PUBLIC_API_ORIGIN }}
+          PUBLIC_SOCKET_ORIGIN: ${{ vars.PUBLIC_SOCKET_ORIGIN || vars.PUBLIC_API_ORIGIN }}
+        run: |
+          node - <<'NODE'
+          for (const name of ['PUBLIC_API_ORIGIN', 'PUBLIC_SOCKET_ORIGIN']) {
+            const value = process.env[name];
+            if (!value) throw new Error(`Repository variable ${name} is required`);
+            const url = new URL(value);
+            if (url.protocol !== 'https:' || url.origin !== value || url.username || url.password || /localhost|127\.0\.0\.1/.test(url.hostname))
+              throw new Error(`${name} must be a public HTTPS origin without path or trailing slash`);
+          }
+          NODE
+      - name: Prepare temporary registry authentication and builder
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          export DOCKER_CONFIG="$RUNNER_TEMP/publication-auth"
+          install -d -m 700 "$DOCKER_CONFIG"
+          echo "DOCKER_CONFIG=$DOCKER_CONFIG" >> "$GITHUB_ENV"
+          printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          docker buildx create --name service-release --driver docker-container --use
+          docker buildx inspect --bootstrap
+      - name: Build and publish images tagged by source commit
+        env:
+          PUBLIC_API_ORIGIN: ${{ vars.PUBLIC_API_ORIGIN }}
+          PUBLIC_SOCKET_ORIGIN: ${{ vars.PUBLIC_SOCKET_ORIGIN || vars.PUBLIC_API_ORIGIN }}
+          ROOM_IMAGE_HOSTS: ${{ vars.STAGING_ROOM_IMAGE_HOSTS }}
+        run: |
+          set -euo pipefail
+          repository="${GITHUB_REPOSITORY,,}"
+          for component in backend frontend; do
+            image="ghcr.io/$repository/$component"
+            args=()
+            if test "$component" = frontend; then
+              args+=(--build-arg "NEXT_PUBLIC_API_URL=$PUBLIC_API_ORIGIN/foss")
+              args+=(--build-arg "NEXT_PUBLIC_GATEWAY_URL=$PUBLIC_SOCKET_ORIGIN")
+              args+=(--build-arg "NEXT_PUBLIC_DATA_MODE=api")
+              args+=(--build-arg "NEXT_PUBLIC_ALLOW_DEMO_PREVIEW=false")
+            fi
+            docker buildx build --platform linux/amd64 --push \
+              --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+              --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+              --tag "$image:$GITHUB_SHA" \
+              --metadata-file "$RUNNER_TEMP/$component-image.json" \
+              "${args[@]}" "$component"
+            digest=$(jq -er '."containerimage.digest"' "$RUNNER_TEMP/$component-image.json")
+            [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
+            printf '%s=%s@%s\n' "$component" "$image" "$digest" >> "$RUNNER_TEMP/images.txt"
+          done
+          jq -n --arg commit "$GITHUB_SHA" \
+            --arg frontend "$(sed -n 's/^frontend=//p' "$RUNNER_TEMP/images.txt")" \
+            --arg backend "$(sed -n 's/^backend=//p' "$RUNNER_TEMP/images.txt")" \
+            '{commit:$commit,frontend:$frontend,backend:$backend}' > release-images.json
+          printf '### Published release images\n```json\n' >> "$GITHUB_STEP_SUMMARY"
+          cat release-images.json >> "$GITHUB_STEP_SUMMARY"
+          printf '\n```\n' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-images
+          path: release-images.json
+          if-no-files-found: error
+      - name: Remove temporary registry login
+        if: always()
+        run: |
+          if test -n "${DOCKER_CONFIG:-}"; then docker logout ghcr.io || true; fi
