@@ -87,7 +87,11 @@ export class ServiceRequestsService {
     // Check for existing request with this idempotency key
     const existing =
       await this.requestRepository.findByIdempotencyKey(idempotencyKey);
-    if (existing) {
+    if (
+      existing &&
+      (this.configService.get<string>('SHARED_DATABASE_MODE') !== 'true' ||
+        existing.taskId)
+    ) {
       if (
         existing.roomNumber !== guest.roomNumber ||
         existing.bookingId !== guest.bookingId
@@ -145,9 +149,11 @@ export class ServiceRequestsService {
           val,
         ),
       );
-    const requestUuid = isUuid(wkmsResult.taskId)
-      ? (wkmsResult.taskId as string)
-      : randomUUID();
+    const requestUuid =
+      (wkmsResult as typeof wkmsResult & { requestId?: string }).requestId ||
+      (isUuid(wkmsResult.taskId)
+        ? (wkmsResult.taskId as string)
+        : randomUUID());
 
     const entity = new FossServiceRequest();
     entity.requestId = requestUuid;

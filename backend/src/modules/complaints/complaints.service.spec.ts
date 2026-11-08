@@ -107,7 +107,11 @@ describe('ComplaintsService', () => {
     } as unknown as jest.Mocked<FossServiceRequestRepository>;
 
     configService = {
-      get: (jest.fn() as any).mockReturnValue('true'),
+      get: (jest.fn() as any).mockImplementation((key: string) =>
+        ['MOCK_EXTERNAL_SERVICES', 'DEMO_MODE'].includes(key)
+          ? 'true'
+          : 'false',
+      ),
     } as unknown as jest.Mocked<ConfigService>;
 
     realtimeService = {
@@ -134,6 +138,36 @@ describe('ComplaintsService', () => {
   });
 
   describe('fileComplaint', () => {
+    it('persists shared-database complaints without forwarding intake to MAD', async () => {
+      (configService.get as any).mockImplementation((key: string) =>
+        [
+          'SHARED_DATABASE_MODE',
+          'MOCK_EXTERNAL_SERVICES',
+          'DEMO_MODE',
+        ].includes(key)
+          ? 'true'
+          : 'false',
+      );
+
+      const result = await service.fileComplaint(mockGuest, {
+        category: ComplaintCategory.FOOD,
+        severity: ComplaintSeverity.HIGH,
+        subject: 'Cold meal',
+        description: 'The meal arrived cold.',
+      });
+
+      expect(madProvider.fileComplaint).not.toHaveBeenCalled();
+      expect(complaintRepo.save).toHaveBeenCalledTimes(1);
+      expect(result.assignedManager).toBeNull();
+      expect(result.status).toBe(ComplaintStatus.SUBMITTED);
+      expect(realtimeService.emitToStay).toHaveBeenCalledWith(
+        mockGuest.bookingId,
+        mockGuest.roomNumber,
+        RealtimeEventType.COMPLAINT_STATUS_UPDATED,
+        expect.objectContaining({ subject: 'Cold meal' }),
+      );
+    });
+
     it('creates a complaint successfully and emits real-time event', async () => {
       const result = await service.fileComplaint(mockGuest, {
         category: ComplaintCategory.FOOD,

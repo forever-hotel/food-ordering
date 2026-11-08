@@ -13,6 +13,12 @@ export class FossServiceRequestRepository {
   ) {}
 
   public async save(request: FossServiceRequest): Promise<FossServiceRequest> {
+    if (process.env.SHARED_DATABASE_MODE === 'true') {
+      request.completedAt =
+        request.status === ServiceRequestStatus.COMPLETED
+          ? request.updatedAt
+          : null;
+    }
     return this.repository.save(request);
   }
 
@@ -28,14 +34,12 @@ export class FossServiceRequestRepository {
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
         trimmed,
       );
-    if (isUuid) {
-      return this.repository.findOne({
-        where: [{ requestId: trimmed }, { publicReference: trimmed }],
-      });
-    }
-    return this.repository.findOne({
-      where: { publicReference: trimmed },
+    const request = await this.repository.findOne({
+      where: isUuid
+        ? [{ requestId: trimmed }, { publicReference: trimmed }]
+        : { publicReference: trimmed },
     });
+    return request ? (await this.withTaskState([request]))[0] : null;
   }
 
   public async findByBookingAndRoom(
@@ -53,15 +57,47 @@ export class FossServiceRequestRepository {
       where.status = filters.status;
     }
     if (filters?.requestType) {
-      where.requestType = filters.requestType;
+      where.category = filters.requestType;
     }
 
-    return this.repository.find({
+    const requests = await this.repository.find({
       where,
       order: { createdAt: 'DESC' },
       take: filters?.limit ?? 50,
       skip: filters?.offset ?? 0,
     });
+    return this.withTaskState(requests);
+  }
+
+  private async withTaskState(
+    requests: FossServiceRequest[],
+  ): Promise<FossServiceRequest[]> {
+    if (process.env.SHARED_DATABASE_MODE === 'true' && requests.length) {
+      const rows = await this.repository.manager.query(
+        `SELECT t.service_request_id,t.status,t.updated_at,s.full_name
+        FROM public.wkms_tasks t LEFT JOIN public.staff_users s ON s.worker_id=t.assigned_worker_id
+        WHERE t.service_request_id=ANY($1::uuid[])`,
+        [requests.map((item) => item.requestId)],
+      );
+      for (const item of requests) {
+        const task = rows.find(
+          (row: { service_request_id: string }) =>
+            row.service_request_id === item.requestId,
+        );
+        if (!task) continue;
+        item.status =
+          task.status === 'COMPLETED'
+            ? ServiceRequestStatus.COMPLETED
+            : task.status === 'IN_PROGRESS' || task.status === 'ESCALATED'
+              ? ServiceRequestStatus.IN_PROGRESS
+              : task.status === 'ASSIGNED'
+                ? ServiceRequestStatus.ASSIGNED
+                : ServiceRequestStatus.SUBMITTED;
+        item.assignedStaff = task.full_name ?? null;
+        item.updatedAt = new Date(task.updated_at);
+      }
+    }
+    return requests;
   }
 
   public async findByIdempotencyKey(
