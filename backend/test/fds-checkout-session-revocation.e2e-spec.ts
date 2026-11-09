@@ -287,4 +287,36 @@ describe('FDS Checkout, Session Revocation & Room Reassignment (e2e)', () => {
       'Guest stay has concluded or is no longer checked in',
     );
   });
+
+  it('TC-DDP-125-AC4: stay expiry enforcement: token validation authoritatively revokes session when stay window expires', async () => {
+    // 1. Establish session
+    const qrToken = qrTokenService.createToken(
+      'b1010000-0000-4000-8000-000000000101',
+      '101',
+    );
+    const authRes = await request(app.getHttpServer())
+      .post('/guest-sessions/qr')
+      .send({ qrToken })
+      .expect(200);
+
+    const bearerToken = authRes.body.sessionToken;
+
+    // 2. Expire the stay on provider
+    const fixture = (bookingAdapter as any).fixtures.get(
+      'b1010000-0000-4000-8000-000000000101',
+    );
+    if (fixture) {
+      fixture.stayEnd = new Date(Date.now() - 3600000); // 1 hour in the past
+    }
+
+    // 3. Calling protected endpoint detects expired stay through authoritative re-verification
+    const res = await request(app.getHttpServer())
+      .get('/guest-sessions/me')
+      .set('Authorization', `Bearer ${bearerToken}`)
+      .expect(401);
+
+    expect(res.body.message).toContain(
+      'Guest stay has concluded or is no longer checked in',
+    );
+  });
 });

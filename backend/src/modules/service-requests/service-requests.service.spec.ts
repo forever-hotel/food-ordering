@@ -852,5 +852,105 @@ describe('ServiceRequestsService', () => {
         'Stale event discarded without updating state.',
       );
     });
+
+    it('handles race conditions on save with duplicate key and matching stay', async () => {
+      mockRequestRepository.findByIdempotencyKey.mockResolvedValueOnce(null);
+      const existing = new FossServiceRequest();
+      existing.requestId = 'req-race-match';
+      existing.bookingId = sampleGuest.bookingId;
+      existing.roomNumber = sampleGuest.roomNumber;
+      existing.status = ServiceRequestStatus.SUBMITTED;
+      existing.category = FossServiceCategory.ROOM_CLEANING;
+      existing.priority = TaskPriority.NORMAL;
+      existing.createdAt = new Date();
+      existing.updatedAt = new Date();
+
+      mockRequestRepository.save.mockRejectedValueOnce({ code: '23505' });
+      mockRequestRepository.findByIdempotencyKey.mockResolvedValueOnce(
+        existing,
+      );
+
+      const res = await service.createServiceRequest(sampleGuest, validDto);
+      expect(res.requestId).toBe('req-race-match');
+
+      // duplicate key message
+      mockRequestRepository.findByIdempotencyKey.mockResolvedValueOnce(null);
+      mockRequestRepository.save.mockRejectedValueOnce({
+        message: 'duplicate key value violates',
+      });
+      mockRequestRepository.findByIdempotencyKey.mockResolvedValueOnce(
+        existing,
+      );
+
+      const res2 = await service.createServiceRequest(sampleGuest, validDto);
+      expect(res2.requestId).toBe('req-race-match');
+
+      // UNIQUE constraint when findByIdempotencyKey is null -> throws
+      mockRequestRepository.findByIdempotencyKey.mockResolvedValueOnce(null);
+      mockRequestRepository.save.mockRejectedValueOnce({
+        message: 'UNIQUE constraint failed',
+      });
+      mockRequestRepository.findByIdempotencyKey.mockResolvedValueOnce(null);
+
+      await expect(
+        service.createServiceRequest(sampleGuest, validDto),
+      ).rejects.toEqual({
+        message: 'UNIQUE constraint failed',
+      });
+
+      // generic error -> throws
+      mockRequestRepository.findByIdempotencyKey.mockResolvedValueOnce(null);
+      mockRequestRepository.save.mockRejectedValueOnce(
+        new Error('Connection terminated'),
+      );
+
+      await expect(
+        service.createServiceRequest(sampleGuest, validDto),
+      ).rejects.toThrow('Connection terminated');
+    });
+
+    it('handles stale event when occurredAt is an invalid date string', async () => {
+      const existing = new FossServiceRequest();
+      existing.requestId = 'req-invalid-date-event';
+      existing.taskId = 'task-invalid-date';
+      existing.bookingId = sampleGuest.bookingId;
+      existing.roomNumber = sampleGuest.roomNumber;
+      existing.status = ServiceRequestStatus.SUBMITTED;
+      existing.category = FossServiceCategory.ROOM_CLEANING;
+      existing.priority = TaskPriority.NORMAL;
+      existing.createdAt = new Date();
+      existing.updatedAt = new Date();
+
+      mockRequestRepository.findByTaskId.mockResolvedValueOnce(existing);
+
+      const result = await service.handleWkmsStatusEvent({
+        eventId: '550e8400-e29b-41d4-a716-446655440052',
+        taskId: 'task-invalid-date',
+        roomNumber: sampleGuest.roomNumber,
+        status: ServiceRequestStatus.ASSIGNED,
+        occurredAt: 'invalid-date-string',
+      });
+
+      expect(result.processed).toBe(true);
+      expect(result.request?.status).toBe(ServiceRequestStatus.ASSIGNED);
+    });
+
+    it('falls back gracefully in mapToResponse when dates are invalid or null and publicReference missing', async () => {
+      const existing = new FossServiceRequest();
+      existing.requestId = 'req-map-fallback';
+      existing.publicReference = undefined as any;
+      existing.bookingId = sampleGuest.bookingId;
+      existing.roomNumber = sampleGuest.roomNumber;
+      existing.status = ServiceRequestStatus.SUBMITTED;
+      existing.category = FossServiceCategory.ROOM_CLEANING;
+      existing.priority = TaskPriority.NORMAL;
+      existing.createdAt = 'not-a-date' as any;
+      existing.updatedAt = null as any;
+
+      const res = (service as any).mapToResponse(existing);
+      expect(res.requestId).toBe('req-map-fallback');
+      expect(res.createdAt).toBeDefined();
+      expect(res.updatedAt).toBeDefined();
+    });
   });
 });

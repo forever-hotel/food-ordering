@@ -8,6 +8,9 @@ import {
   fetchGuestOrderById,
   fetchGuestOrders,
   cancelFoodOrder,
+  applyIncrementalOrderUpdate,
+  mergeOrders,
+  advanceDemoOrderStatus,
 } from '../src/lib/api/orders.ts';
 import { ApiError } from '../src/lib/api/guest-sessions.ts';
 import type { CreateFoodOrderPayload, FoodOrderResponse } from '../src/types/orders.ts';
@@ -373,5 +376,97 @@ describe('TC-DDP-140-AC4: Contract & Visual Layout Fidelity Audit (Figure 35)', 
     } finally {
       globalThis.fetch = originalFetch;
     }
+  });
+
+  it('advanceDemoOrderStatus strips # prefix and forwards to provider', async () => {
+    const readyOrder: FoodOrderResponse = {
+      ...createMockOrderResponse({ items: [] }, 'idemp-advance', '103'),
+      status: 'READY',
+    };
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      assert.match(String(url), /\/food-orders\/ORD-291\/status$/);
+      return new Response(JSON.stringify(readyOrder), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as typeof fetch;
+
+    try {
+      const result = await advanceDemoOrderStatus('token-101', '#ORD-291', 'READY' as any);
+      assert.equal(result.status, 'READY');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('generateIdempotencyKey falls back when crypto.randomUUID is unavailable', () => {
+    const originalRandomUuid = globalThis.crypto.randomUUID;
+    try {
+      delete (globalThis.crypto as any).randomUUID;
+      const key = generateIdempotencyKey();
+      assert.ok(key.startsWith('idemp-'));
+    } finally {
+      (globalThis.crypto as any).randomUUID = originalRandomUuid;
+    }
+  });
+
+  it('createMockOrderResponse handles custom item IDs and fallback names', () => {
+    const mock = createMockOrderResponse(
+      {
+        items: [
+          { menuItemId: 'item-102', quantity: 1 },
+          { menuItemId: 'item-custom-unknown', quantity: 2 },
+        ],
+      },
+      'idemp-custom',
+    );
+    assert.equal(mock.items.length, 2);
+    assert.equal(mock.items[0].name, 'Vegetable Kottu');
+    assert.equal(mock.items[1].name, 'Grilled Chicken Rice');
+  });
+
+  it('merges orders incrementally when isAuthoritative is false and rejects out-of-order updates', () => {
+    const baseOrder: FoodOrderResponse = {
+      orderId: 'ORD-1',
+      roomNumber: '101',
+      status: 'DELIVERED',
+      totalAmount: 1000,
+      items: [],
+      createdAt: '2026-10-31T10:00:00Z',
+      updatedAt: '2026-10-31T10:30:00Z',
+    } as any;
+
+    // Stale incoming SSE update with lower rank and older timestamp is rejected
+    const staleUpdate: FoodOrderResponse = {
+      orderId: 'ORD-1',
+      roomNumber: '101',
+      status: 'IN_PREPARATION',
+      totalAmount: 1000,
+      items: [],
+      createdAt: '2026-10-31T10:00:00Z',
+      updatedAt: '2026-10-31T10:15:00Z',
+    } as any;
+
+    const reconciled = applyIncrementalOrderUpdate([baseOrder], staleUpdate);
+    assert.equal(reconciled[0].status, 'DELIVERED');
+
+    // Empty or invalid update returns current
+    const invalidRes = applyIncrementalOrderUpdate([baseOrder], {} as any);
+    assert.deepEqual(invalidRes, [baseOrder]);
+
+    // Incremental merge
+    const newOrder: FoodOrderResponse = {
+      orderId: 'ORD-2',
+      roomNumber: '101',
+      status: 'PLACED',
+      totalAmount: 500,
+      items: [],
+      createdAt: '2026-10-31T10:35:00Z',
+    } as any;
+    const merged = mergeOrders([baseOrder], [newOrder], { isAuthoritative: false });
+    assert.equal(merged.length, 2);
+    assert.equal(merged[0].orderId, 'ORD-2'); // Sorted DESC by createdAt
   });
 });

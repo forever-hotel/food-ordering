@@ -40,7 +40,11 @@ export class KmsMenuItemDto {
   @IsOptional()
   description!: string | null;
 
-  @ApiProperty({ example: 1250.5, description: 'Price in LKR rupees; KMS converts its integer cents at the contract boundary' })
+  @ApiProperty({
+    example: 1250.5,
+    description:
+      'Price in LKR rupees; KMS converts its integer cents at the contract boundary',
+  })
   @IsNumber()
   @IsPositive()
   price!: number;

@@ -6,6 +6,7 @@ node_modules/
 dist/
 build/
 coverage/
+coverage-components/
 
 # Environment secrets
 .env
@@ -26,3 +27,7 @@ Thumbs.db
 docs/
 AGENTS.md
 scratch/
+
+# Reference documentation archive from the Front Desk subsystem.
+# Used locally for FOSS report formatting only; never commit this archive.
+Forever_Hotel_FDS_Subsystem_PDF_Reports.zip

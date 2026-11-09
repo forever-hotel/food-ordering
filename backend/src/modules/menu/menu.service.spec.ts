@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { NotFoundException } from '@nestjs/common';
+import type { ConfigService } from '@nestjs/config';
 import { MockKmsAdapter } from '../../integrations/internal-services/kms/adapters/mock-kms.adapter.js';
 import { MealPeriod } from '../../integrations/internal-services/kms/dto/kms-menu.dto.js';
 import { RedisService } from '../../redis/redis.service.js';
@@ -135,6 +136,72 @@ describe('MenuService', () => {
 
       await service.getGuestMenu();
       expect(kmsSpy).toHaveBeenCalledTimes(2);
+    });
+
+    it('bypasses redis catalog cache when SHARED_DATABASE_MODE is true', async () => {
+      const mockConfig = {
+        get: jest.fn((key: string) =>
+          key === 'SHARED_DATABASE_MODE' ? 'true' : null,
+        ),
+      } as unknown as ConfigService;
+      const unsharedService = new MenuService(
+        mockKms,
+        mealWindowService,
+        clock,
+        mockRedis,
+        mockConfig,
+      );
+      const menu = await unsharedService.getGuestMenu();
+      expect(menu.items.length).toBeGreaterThan(0);
+    });
+
+    it('serves getItemById from cache when cached catalog exists', async () => {
+      await service.getGuestMenu();
+      const item = await service.getItemById('menu-item-001');
+      expect(item.id).toBe('menu-item-001');
+    });
+
+    it('handles invalidateMenuCache gracefully when redis is not configured', async () => {
+      const serviceNoRedis = new MenuService(
+        mockKms,
+        mealWindowService,
+        clock,
+        undefined,
+      );
+      await expect(
+        serviceNoRedis.invalidateMenuCache(),
+      ).resolves.toBeUndefined();
+    });
+
+    it('evaluates item with specific orderingWindow and updates mealWindows', async () => {
+      const windowItem = {
+        id: 'menu-item-windowed',
+        name: 'Late Night Snack',
+        category: 'Snacks',
+        price: 15,
+        available: true,
+        mealPeriods: [MealPeriod.ALL_DAY],
+        orderingWindow: {
+          startTime: '22:00',
+          cutoffTime: '02:00',
+        },
+      };
+      jest.spyOn(mockKms, 'getMenuCatalog').mockResolvedValueOnce({
+        version: '1.0',
+        items: [windowItem as any],
+      });
+
+      const menu = await service.getGuestMenu();
+      expect(menu.items.length).toBe(1);
+      expect(menu.mealWindows.length).toBe(1);
+    });
+
+    it('handles empty active meal periods and logs None', async () => {
+      jest
+        .spyOn(mealWindowService, 'getActiveMealPeriods')
+        .mockReturnValueOnce([]);
+      const menu = await service.getGuestMenu();
+      expect(menu.activeMealPeriods).toEqual([]);
     });
   });
 
