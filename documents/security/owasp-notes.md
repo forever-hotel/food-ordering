@@ -2,9 +2,9 @@
 
 **Subsystem:** Food Ordering System (FOSS)  
 **Repository:** `forever-hotel/food-ordering`  
-**Tracking Issue:** [#111](https://github.com/forever-hotel/food-ordering/issues/111)  
-**Reviewed Commit:** `9ac1e6f` (Merge PR #109, post-CIT-05 / CIT-06)  
-**Evidence Date:** 8 November 2026  
+**Tracking Issues:** [#111](https://github.com/forever-hotel/food-ordering/issues/111), [#115](https://github.com/forever-hotel/food-ordering/pull/115), [#116](https://github.com/forever-hotel/food-ordering/issues/116)  
+**Reviewed Commit:** `b4b19df` (`origin/fix/issue-116-fds-stay-expiry`)  
+**Evidence Date:** 9 November 2026  
 
 ---
 
@@ -16,15 +16,24 @@
   * Server-side `RoomOwnershipGuard` verifies that the `roomNumber` and `bookingId` inside the guest session token match the target resource.
   * Room and booking isolation routes (`GET /guest-sessions/rooms/:roomNumber`, `GET /guest-sessions/bookings/:bookingId`) return 403 Forbidden on IDOR attempts.
   * Immediate session revocation upon FDS checkout event (`POST /guest-sessions/internal/events/checkout`).
+  * Authoritative FDS stay window bounds enforcement: guest sessions and QR activation tokens validate `stayStart` and `stayEnd` timestamps from FDS check-in records (`Issue #116`). Sessions are rejected or revoked once `stayEnd` has passed, preventing post-stay zombie session access without relying solely on asynchronous checkout events.
+  * Verified stayEnd caps the QR access slip expiration timestamp, preventing issuance of credentials extending beyond authorized reservation dates.
 * **Test & Source References:**
   * `backend/src/common/auth/room-ownership.guard.ts`
   * `backend/src/common/auth/room-ownership.guard.spec.ts`
+  * `backend/src/modules/guest-sessions/services/guest-sessions.service.ts`
+  * `backend/src/modules/guest-sessions/services/guest-sessions.service.spec.ts`
+  * `backend/src/modules/guest-sessions/services/qr-activation.service.ts`
+  * `backend/src/modules/guest-sessions/services/qr-activation.service.spec.ts`
+  * `backend/src/integrations/internal-services/booking/adapters/real-booking.adapter.ts`
+  * `backend/src/integrations/internal-services/booking/adapters/real-booking.adapter.spec.ts`
   * `backend/test/room-scoped-auth.e2e-spec.ts`
   * `backend/test/fds-checkout-session-revocation.e2e-spec.ts`
   * `frontend/tests/fui-02-room-isolation.test.ts`
 * **Verified Test Results:**
   * Unit tests pass verifying cross-room access rejection (Room 101 attempting to read/order for Room 102 receives 403).
   * E2E tests confirm expired or revoked sessions receive 401 Unauthorized.
+  * Unit tests in `guest-sessions.service.spec.ts` and `qr-activation.service.spec.ts` verify rejection of bookings where `stayEnd` is in the past, or where `stayStart` is after `stayEnd`.
 * **Unverified Controls:**
   * Automated penetration testing across all 36 endpoints with fuzzing inputs.
   * Gateway-level rate limiting on access attempts per IP.

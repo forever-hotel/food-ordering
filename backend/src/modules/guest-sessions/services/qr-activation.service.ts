@@ -1,6 +1,7 @@
 import * as crypto from 'node:crypto';
 import {
   BadRequestException,
+  ForbiddenException,
   Inject,
   Injectable,
   Logger,
@@ -169,7 +170,25 @@ export class QrActivationService {
     }
 
     // 3. Compute expiration: bounded by configured TTL (default 15m) and stay checkout timestamp
+    const stayStartTime = new Date(stay.stayStart).getTime();
     const stayEndTime = new Date(stay.stayEnd).getTime();
+
+    if (
+      Number.isNaN(stayStartTime) ||
+      Number.isNaN(stayEndTime) ||
+      stayStartTime >= stayEndTime
+    ) {
+      throw new UnauthorizedException(
+        'Invalid authoritative stay window received from Front Desk.',
+      );
+    }
+
+    if (now.getTime() >= stayEndTime) {
+      throw new ForbiddenException(
+        'Stay window has expired. In-room ordering is no longer available.',
+      );
+    }
+
     const ttlMs = this.activationTtlMinutes * 60 * 1000;
     const computedExpiryTime = Math.min(now.getTime() + ttlMs, stayEndTime);
     const expiresAt = new Date(computedExpiryTime);
@@ -192,7 +211,7 @@ export class QrActivationService {
     await this.qrActivationRepository.save(activation);
 
     const activationUrl = this.buildActivationUrl(rawToken);
-    const validUntilDate = dto.checkOutDate || stay.stayEnd;
+    const validUntilDate = stay.stayEnd;
 
     this.logger.log(
       `Issued single-use QR activation [${activation.activationId}] for booking [${stay.bookingId}] room [${stay.roomNumber}], expires at [${expiresAt.toISOString()}]`,
@@ -276,7 +295,25 @@ export class QrActivationService {
     );
 
     // 3. Compute session duration: bounded by session TTL (default 24h) and stay checkout time
+    const stayStartTime = new Date(stay.stayStart).getTime();
     const stayEndTime = new Date(stay.stayEnd).getTime();
+
+    if (
+      Number.isNaN(stayStartTime) ||
+      Number.isNaN(stayEndTime) ||
+      stayStartTime >= stayEndTime
+    ) {
+      throw new UnauthorizedException(
+        'Invalid authoritative stay window received from Front Desk.',
+      );
+    }
+
+    if (now.getTime() >= stayEndTime) {
+      throw new ForbiddenException(
+        'Stay window has expired. In-room ordering is no longer available.',
+      );
+    }
+
     const sessionTtlMs = this.sessionTtlHours * 60 * 60 * 1000;
     const computedExpiryTime = Math.min(
       now.getTime() + sessionTtlMs,

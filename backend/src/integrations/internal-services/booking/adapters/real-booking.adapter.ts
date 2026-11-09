@@ -159,10 +159,25 @@ export class RealBookingAdapter implements BookingProvider {
       );
     }
 
+    if (
+      !data.stayStart ||
+      !data.stayEnd ||
+      typeof data.stayStart !== 'string' ||
+      typeof data.stayEnd !== 'string'
+    ) {
+      throw new ServiceUnavailableException(
+        'Invalid stay timestamps received from upstream provider.',
+      );
+    }
+
     const stayStart = new Date(data.stayStart);
     const stayEnd = new Date(data.stayEnd);
 
-    if (Number.isNaN(stayStart.getTime()) || Number.isNaN(stayEnd.getTime())) {
+    if (
+      Number.isNaN(stayStart.getTime()) ||
+      Number.isNaN(stayEnd.getTime()) ||
+      stayStart.getTime() >= stayEnd.getTime()
+    ) {
       throw new ServiceUnavailableException(
         'Invalid stay timestamps received from upstream provider.',
       );

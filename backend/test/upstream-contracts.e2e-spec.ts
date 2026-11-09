@@ -363,6 +363,7 @@ describe('Upstream KMS, WKMS, MAD, and FDS Versioned Contracts (e2e/contract)', 
     it('prevents unauthorized production status mutations across KMS, WKMS, and MAD by failing with ForbiddenException', async () => {
       const realKms = new RealKmsAdapter(
         'https://kms.internal.foreverhotel.com',
+        'kms-internal-test-secret-key-32chars!!',
       );
       const realWkms = new RealWkmsAdapter(
         'https://wkms.internal.foreverhotel.com',

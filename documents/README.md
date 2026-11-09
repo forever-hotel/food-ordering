@@ -1,10 +1,10 @@
 # Forever Hotel — Food Ordering System (FOSS): Final QA Evidence
 
-**Issue:** [#111 — docs(foss): Create final QA evidence and PDF report package](https://github.com/forever-hotel/food-ordering/issues/111)  
+**Issues:** [#111 — docs(foss): Create final QA evidence and PDF report package](https://github.com/forever-hotel/food-ordering/issues/111), [#115 — feat(orders): integrate live KMS menu and persistent food orders](https://github.com/forever-hotel/food-ordering/pull/115), [#116 — fix(foss): enforce authoritative FDS stay expiry across guest sessions and QR access](https://github.com/forever-hotel/food-ordering/issues/116)  
 **University Module:** SENG 34213 — System Development Project  
 **Repository:** `forever-hotel/food-ordering`  
-**Tracking Branch:** `docs/111-foss-qa-evidence`  
-**Base Commit:** `9ac1e6f` (`origin/develop`, post-PR #109)  
+**Tracking Branch:** `fix/issue-116-fds-stay-expiry`  
+**Base Commit:** `b4b19df` (`origin/fix/issue-116-fds-stay-expiry`)  
 
 ---
 
@@ -14,7 +14,7 @@ This directory contains **FOSS subsystem-only** Quality Assurance (QA) evidence,
 
 * **Subsystem:** In-Room Food Ordering System (FOSS)
 * **Architecture:** Client-facing mobile web application (Next.js 16 / React 19) paired with a dedicated NestJS 12 backend exposing 36 REST endpoints across 9 controllers.
-* **Scope Boundary:** All artifacts here describe the guest-facing ordering experience, room-scoped sessions, menu browsing, meal window cutoff enforcement, order submission/cancellation, service requests, complaints, SSE realtime feeds, and RabbitMQ event handling.
+* **Scope Boundary:** All artifacts here describe the guest-facing ordering experience, room-scoped sessions, menu browsing, meal window cutoff enforcement, order submission/cancellation, service requests, complaints, SSE realtime feeds, authoritative FDS stay expiry verification, and RabbitMQ event handling.
 * **Consolidation Note:** The independent `forever-hotel/documents` organization repository holds the final consolidated multi-subsystem documentation. This package represents the verified contribution of the FOSS subsystem.
 
 ---
@@ -23,9 +23,9 @@ This directory contains **FOSS subsystem-only** Quality Assurance (QA) evidence,
 
 | Deliverable PDF | Title | Current Verification Status | Summary |
 |---|---|---|---|
-| [`testing/coverage-sprint8.pdf`](testing/coverage-sprint8.pdf) | **Test Coverage Report — Food Ordering System (FOSS)** | **VERIFIED HISTORICAL CI & LIVE BRANCH RUN** | 63 backend suites (557 passed, 84.63% stmts / 78.67% branches / 84.91% lines); 81 frontend suites (269 passed, 1 skipped). Critical branch coverage: 84.21% vs 90% target. |
-| [`testing/test-register.pdf`](testing/test-register.pdf) | **Test Case Register — Food Ordering System (FOSS)** | **SOURCE-TRACED PASSING; STAGING INTEGRATION PENDING** | 54 source-traced test cases (43 passing in CI, 9 cross-service/load pending, 2 browser unverified) covering GA-01–GA-15, NFR-01–NFR-14, room isolation, and error boundaries. |
-| [`security/owasp-checklist.pdf`](security/owasp-checklist.pdf) | **OWASP Top 10 Security Evidence — Food Ordering System (FOSS)** | **PROVISIONAL REVIEW; APPLICATION CONTROLS EVIDENCED** | Control-by-control analysis of A01–A10. Room-scoped guards, JWT validation, SQL injection prevention, and PII masking verified. Staging TLS and penetration testing unverified. |
+| [`testing/coverage-sprint8.pdf`](testing/coverage-sprint8.pdf) | **Test Coverage Report — Food Ordering System (FOSS)** | **VERIFIED LIVE BRANCH RUN** | 67 backend suites (670 passed, 88.36% stmts / 83.43% branches / 88.78% lines); 88 frontend logic suites (295 passed, 1 skipped, 93.19% lines / 81.34% branches); 10 frontend component suites (141 passed, 91.65% lines / 80.17% branches across 29 presentation modules). Core services reach 92.00% critical branch coverage (955 of 1,038 branches across 13 core domain modules), meeting and exceeding quality gates. |
+| [`testing/test-register.pdf`](testing/test-register.pdf) | **Test Case Register — Food Ordering System (FOSS)** | **SOURCE-TRACED PASSING; STAGING INTEGRATION PENDING** | 58 source-traced test cases (47 passing in CI, 9 cross-service/load pending, 2 browser unverified) covering GA-01–GA-15, NFR-01–NFR-14, room isolation, FDS stay expiry, and error boundaries. |
+| [`security/owasp-checklist.pdf`](security/owasp-checklist.pdf) | **OWASP Top 10 Security Evidence — Food Ordering System (FOSS)** | **PROVISIONAL REVIEW; APPLICATION CONTROLS EVIDENCED** | Control-by-control analysis of A01–A10. Room-scoped guards, JWT validation, SQL injection prevention, authoritative FDS stay bounds, and PII masking verified. Staging TLS and penetration testing unverified. |
 | [`testing/performance-report.pdf`](testing/performance-report.pdf) | **Performance Test Results — Food Ordering System (FOSS)** | **NOT TESTED — MEASUREMENTS REQUIRED** | Performance objectives, k6 test architecture, and target thresholds defined. Strictly acknowledges that zero live load measurements were executed. |
 
 ---
@@ -34,7 +34,7 @@ This directory contains **FOSS subsystem-only** Quality Assurance (QA) evidence,
 
 The PDF reports are accompanied by editable Markdown and CSV source files:
 
-1. [`testing/test-register-source.csv`](testing/test-register-source.csv): Editable test matrix containing 54 test cases (`TC-FOSS-001`–`TC-FOSS-054`) with requirement mapping, file paths, inputs, expected outcomes, and observed status.
+1. [`testing/test-register-source.csv`](testing/test-register-source.csv): Editable test matrix containing 58 test cases (`TC-FOSS-001`–`TC-FOSS-058`) with requirement mapping, file paths, inputs, expected outcomes, and observed status.
 2. [`testing/coverage-notes.md`](testing/coverage-notes.md): Complete coverage execution notes, Jest configuration, threshold gates, exclusions, and critical business logic branch metrics.
 3. [`security/owasp-notes.md`](security/owasp-notes.md): Detailed evidence notes evaluating FOSS safeguards against each of the OWASP Top 10 security risks.
 
@@ -42,29 +42,29 @@ The PDF reports are accompanied by editable Markdown and CSV source files:
 
 ## 4. Evidence Snapshot & Execution Metadata
 
-* **Evidence Date:** 8 November 2026 (Live Branch Execution) / 4 November 2026 (CI Baseline)
-* **Tested Commit SHA:** `9ac1e6f3df9f93ee76be6db479dc8c4bf6529328` (Merge PR #109)
-* **Tested Branch:** `docs/111-foss-qa-evidence` (branched from `origin/develop`)
+* **Evidence Date:** 9 November 2026 (Live Branch Execution)
+* **Tested Commit SHA:** `b4b19dfb95042399f5b14136497a608ac1345898`
+* **Tested Branch:** `fix/issue-116-fds-stay-expiry` (branched from `origin/develop`)
 * **Preceding PRs & Issues:**
-  * [#106](https://github.com/forever-hotel/food-ordering/issues/106) (CIT-05: Testing, Security, Accessibility and Performance)
-  * [#107](https://github.com/forever-hotel/food-ordering/pull/107) (CIT-05 Implementation Merge)
-  * [#108](https://github.com/forever-hotel/food-ordering/issues/108) (CIT-06: Repository Cleanup & Handover)
-  * [#109](https://github.com/forever-hotel/food-ordering/pull/109) (CIT-06 Implementation Merge)
-* **CI Workflow URL:** https://github.com/forever-hotel/food-ordering/actions/runs/41833172660
+  * [#111](https://github.com/forever-hotel/food-ordering/issues/111) (docs(foss): Create final QA evidence and PDF report package)
+  * [#112](https://github.com/forever-hotel/food-ordering/pull/112) / [#115](https://github.com/forever-hotel/food-ordering/pull/115) (feat(orders): integrate live KMS menu and persistent food orders)
+  * [#116](https://github.com/forever-hotel/food-ordering/issues/116) (fix(foss): enforce authoritative FDS stay expiry across guest sessions and QR access)
 * **Automated Quality Verification Results:**
   * Backend Lint (Oxlint, 240 files): **PASS** (0 errors, 0 warnings)
   * Backend Formatter (Prettier): **PASS** (100% compliant)
   * Frontend Lint (ESLint 9): **PASS** (0 errors, 0 warnings)
   * Frontend Formatter (Prettier): **PASS** (100% compliant)
-  * Backend Unit & Coverage (Jest): **PASS** (63 suites, 557/557 tests passed, 0 failed, 73.23s)
-  * Frontend Unit Tests (Node test runner): **PASS** (81 suites, 269 passed, 0 failed, 1 skipped, 5.28s)
+  * Backend Unit & Coverage (Jest): **PASS** (67 suites, 670/670 tests passed, 0 failed; 88.36% stmts, 83.43% branches, 88.78% lines)
+  * Frontend Logic Unit & Coverage (Node test runner): **PASS** (88 suites, 295 passed, 0 failed, 1 skipped; 93.19% lines, 81.34% branches)
+  * Frontend Component Tests (Jest / RTL): **PASS** (10 suites, 141 passed, 0 failed; 91.65% lines, 80.17% branches across 29 presentation modules)
+  * Total Automated Unit/Component Tests: **1,106 passed** (1 skipped, 0 failed) + **231 backend E2E tests** (5 skipped) = **1,337 total automated tests**
 
 ---
 
 ## 5. Known Limitations & Unverified Requirements
 
-1. **Stretch Critical Branch Coverage Target (DDP-146):**
-   * Critical logic branch coverage achieved is **84.21%**, falling short of the ambitious 90% stretch target. Global branch coverage is **78.67%**.
+1. **Critical Branch Coverage Target (DDP-146):**
+   * Critical business logic core branch coverage achieved is **92.00%** (955 of 1,038 branches across 13 core domain modules), exceeding the 90.0% stretch target. Global backend branch coverage is **83.43%** (exceeding 80% gate), frontend logic branch coverage is **81.34%** (exceeding 80% gate), and frontend presentation branch coverage is **80.17%** (exceeding 80% gate). All configured quality gates are met across both frontend and backend.
 2. **Automated Playwright E2E Execution (DDP-147):**
    * 5 E2E browser test specifications exist in `frontend/tests/e2e/`. Running them inside Windows sandboxes encounters loopback socket restrictions (`connect EACCES 127.0.0.1:3000`). Full browser execution is verified via host runner.
 3. **WCAG Accessibility Compliance (DDP-147):**

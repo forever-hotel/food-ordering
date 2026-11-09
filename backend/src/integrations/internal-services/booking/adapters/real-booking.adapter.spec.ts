@@ -163,6 +163,38 @@ describe('RealBookingAdapter', () => {
       );
     });
 
+    it('handles non-Error exceptions in fetch and throws ServiceUnavailableException', async () => {
+      global.fetch = jest.fn(() =>
+        Promise.reject('non-error network rejection'),
+      ) as unknown as typeof fetch;
+
+      await expect(adapter.verifyBooking('b-101', '101')).rejects.toThrow(
+        ServiceUnavailableException,
+      );
+    });
+
+    it('performs HTTP requests without Authorization header when apiKey is omitted', async () => {
+      const noAuthAdapter = new RealBookingAdapter(baseUrl, undefined, 2000);
+      let capturedHeaders: Record<string, string> = {};
+      global.fetch = jest.fn(async (_url: any, opts: any) => {
+        capturedHeaders = opts.headers;
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            bookingId: 'b-101',
+            roomNumber: '101',
+            status: 'CHECKED_IN',
+            stayStart: '2026-10-27T10:00:00.000Z',
+            stayEnd: '2026-10-30T10:00:00.000Z',
+          }),
+        };
+      }) as unknown as typeof fetch;
+
+      await noAuthAdapter.verifyBooking('b-101', '101');
+      expect(capturedHeaders['Authorization']).toBeUndefined();
+    });
+
     it('AC3: throws ServiceUnavailableException on malformed payload', async () => {
       global.fetch = jest.fn(async () => ({
         ok: true,
@@ -187,6 +219,73 @@ describe('RealBookingAdapter', () => {
           status: 'CHECKED_IN',
           stayStart: 'not-a-valid-date',
           stayEnd: 'also-not-valid',
+        }),
+      })) as unknown as typeof fetch;
+
+      await expect(adapter.verifyBooking('b-101', '101')).rejects.toThrow(
+        /Invalid stay timestamps received from upstream provider/,
+      );
+    });
+
+    it('AC3: throws ServiceUnavailableException when stayStart or stayEnd is missing in payload', async () => {
+      global.fetch = jest.fn(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          bookingId: 'b-101',
+          roomNumber: '101',
+          status: 'CHECKED_IN',
+          stayStart: '',
+          stayEnd: '2026-10-30T10:00:00.000Z',
+        }),
+      })) as unknown as typeof fetch;
+
+      await expect(adapter.verifyBooking('b-101', '101')).rejects.toThrow(
+        /Invalid stay timestamps received from upstream provider/,
+      );
+
+      global.fetch = jest.fn(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          bookingId: 'b-101',
+          roomNumber: '101',
+          status: 'CHECKED_IN',
+          stayStart: '2026-10-27T10:00:00.000Z',
+        }),
+      })) as unknown as typeof fetch;
+
+      await expect(adapter.verifyBooking('b-101', '101')).rejects.toThrow(
+        /Invalid stay timestamps received from upstream provider/,
+      );
+    });
+
+    it('AC3: throws ServiceUnavailableException when stayEnd is earlier than or equal to stayStart', async () => {
+      global.fetch = jest.fn(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          bookingId: 'b-101',
+          roomNumber: '101',
+          status: 'CHECKED_IN',
+          stayStart: '2026-10-30T10:00:00.000Z',
+          stayEnd: '2026-10-27T10:00:00.000Z', // Inverted!
+        }),
+      })) as unknown as typeof fetch;
+
+      await expect(adapter.verifyBooking('b-101', '101')).rejects.toThrow(
+        /Invalid stay timestamps received from upstream provider/,
+      );
+
+      global.fetch = jest.fn(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          bookingId: 'b-101',
+          roomNumber: '101',
+          status: 'CHECKED_IN',
+          stayStart: '2026-10-27T10:00:00.000Z',
+          stayEnd: '2026-10-27T10:00:00.000Z', // Equal!
         }),
       })) as unknown as typeof fetch;
 

@@ -880,5 +880,320 @@ describe('FoodOrdersService', () => {
 
       expect(res.orderId).toBe('order-race-winner');
     });
+
+    it('enforces portionLimit if specified on catalog item', async () => {
+      mockOrderRepository.findByIdempotencyKey.mockResolvedValue(null);
+      jest.spyOn(mockKms, 'getMenuCatalog').mockResolvedValueOnce({
+        items: [
+          {
+            id: 'item-portion-limited',
+            name: 'Limited Wagyu Steak',
+            price: 50,
+            available: true,
+            mealPeriods: ['LUNCH' as any],
+            portionLimit: 2,
+          } as any,
+        ],
+      } as any);
+
+      await expect(
+        service.createFoodOrder(
+          sampleGuest,
+          { items: [{ menuItemId: 'item-portion-limited', quantity: 3 }] },
+          'idemp-portion-test',
+        ),
+      ).rejects.toThrow('Requested quantity exceeds the kitchen portion limit');
+    });
+
+    it('evaluates orderingWindow when defined on catalog item', async () => {
+      mockOrderRepository.findByIdempotencyKey.mockResolvedValue(null);
+      jest.spyOn(mockKms, 'getMenuCatalog').mockResolvedValueOnce({
+        items: [
+          {
+            id: 'item-windowed',
+            name: 'Late Night Ramen',
+            price: 15,
+            available: true,
+            orderingWindow: {
+              startTime: '22:00:00',
+              endTime: '02:00:00',
+              cutoffTime: '01:30:00',
+              enabled: true,
+            },
+          } as any,
+        ],
+      } as any);
+
+      // Current fixed time is 13:00 Colombo, so Late Night Ramen is closed
+      await expect(
+        service.createFoodOrder(
+          sampleGuest,
+          { items: [{ menuItemId: 'item-windowed', quantity: 1 }] },
+          'idemp-window-test',
+        ),
+      ).rejects.toThrow(
+        "Ordering for 'Late Night Ramen' is closed. The meal window cutoff has passed.",
+      );
+    });
+
+    it('validates idempotency replay consistency when SHARED_DATABASE_MODE=true', async () => {
+      mockConfigService.get.mockImplementation((key: string) => {
+        if (key === 'SHARED_DATABASE_MODE') return 'true';
+        if (key === 'DEMO_MODE') return 'true';
+        return undefined;
+      });
+
+      const existingOrder = new FossDemoOrder();
+      existingOrder.orderId = 'order-shared-db';
+      existingOrder.roomNumber = sampleGuest.roomNumber;
+      existingOrder.bookingId = sampleGuest.bookingId;
+      existingOrder.status = FoodOrderStatus.PLACED;
+      existingOrder.totalAmount = 36;
+      existingOrder.allergyNotes = 'No peanuts';
+      existingOrder.items = [
+        {
+          orderId: 'order-shared-db',
+          menuItemId: 'menu-item-001',
+          name: 'Item 1',
+          quantity: 2,
+          unitPrice: 18,
+          specialNotes: 'Extra spicy',
+        } as any,
+      ];
+      existingOrder.createdAt = clockService.now();
+      existingOrder.updatedAt = clockService.now();
+      mockOrderRepository.findByIdempotencyKey.mockResolvedValue(existingOrder);
+
+      // Replay with different items throws ConflictException
+      await expect(
+        service.createFoodOrder(
+          sampleGuest,
+          {
+            items: [{ menuItemId: 'menu-item-002', quantity: 1 }],
+            allergyNote: 'No peanuts',
+          },
+          'idemp-shared-db',
+        ),
+      ).rejects.toThrow('Idempotency key was used for a different order');
+
+      // Replay with identical items succeeds
+      const result = await service.createFoodOrder(
+        sampleGuest,
+        {
+          items: [
+            {
+              menuItemId: 'menu-item-001',
+              quantity: 2,
+              specialNotes: 'Extra spicy',
+            },
+          ],
+          allergyNote: 'No peanuts',
+        },
+        'idemp-shared-db',
+      );
+      expect(result.orderId).toBe('order-shared-db');
+    });
+
+    it('handles KMS cancel error containing preparation has already begun as ConflictException', async () => {
+      const order = new FossDemoOrder();
+      order.orderId = 'order-prep-conflict';
+      order.bookingId = sampleGuest.bookingId;
+      order.roomNumber = sampleGuest.roomNumber;
+      order.status = FoodOrderStatus.PLACED;
+      order.createdAt = clockService.now().toISOString() as any; // String createdAt
+      order.items = [];
+
+      mockOrderRepository.findById.mockResolvedValue(order);
+      jest
+        .spyOn(mockKms, 'cancelOrder')
+        .mockRejectedValueOnce(
+          new Error('KMS says preparation has already begun in kitchen'),
+        );
+
+      await expect(
+        service.cancelFoodOrder(sampleGuest, 'order-prep-conflict'),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('handles invalid date strings and missing dates in mapToResponse gracefully', async () => {
+      const order = new FossDemoOrder();
+      order.orderId = 'order-invalid-dates';
+      order.bookingId = sampleGuest.bookingId;
+      order.roomNumber = sampleGuest.roomNumber;
+      order.status = FoodOrderStatus.PLACED;
+      order.createdAt = 'not-a-valid-date' as any;
+      order.updatedAt = undefined as any;
+      order.items = [];
+
+      mockOrderRepository.findById.mockResolvedValue(order);
+
+      const res = await service.getGuestOrderById(
+        sampleGuest,
+        'order-invalid-dates',
+      );
+      expect(res.orderId).toBe('order-invalid-dates');
+      expect(res.createdAt).toBeDefined();
+      expect(res.updatedAt).toBeDefined();
+    });
+
+    it('handles KMS createOrder exceptions (BadRequest, Conflict, NotFound, non-Error)', async () => {
+      mockOrderRepository.findByIdempotencyKey.mockResolvedValue(null);
+      const dto: CreateFoodOrderDto = {
+        items: [{ menuItemId: 'menu-item-001', quantity: 1 }],
+        idempotencyKey: 'idemp-kms-exceptions',
+      };
+
+      jest
+        .spyOn(mockKms, 'createOrder')
+        .mockRejectedValueOnce(new BadRequestException('Invalid item'));
+      await expect(service.createFoodOrder(sampleGuest, dto)).rejects.toThrow(
+        BadRequestException,
+      );
+
+      jest
+        .spyOn(mockKms, 'createOrder')
+        .mockRejectedValueOnce(new ConflictException('Slot full'));
+      await expect(service.createFoodOrder(sampleGuest, dto)).rejects.toThrow(
+        ConflictException,
+      );
+
+      jest
+        .spyOn(mockKms, 'createOrder')
+        .mockRejectedValueOnce(new NotFoundException('Item missing'));
+      await expect(service.createFoodOrder(sampleGuest, dto)).rejects.toThrow(
+        NotFoundException,
+      );
+
+      jest
+        .spyOn(mockKms, 'createOrder')
+        .mockRejectedValueOnce('raw string error');
+      await expect(service.createFoodOrder(sampleGuest, dto)).rejects.toThrow(
+        UpstreamServiceUnavailableException,
+      );
+    });
+
+    it('handles race conditions on order save duplicate key', async () => {
+      mockOrderRepository.findByIdempotencyKey.mockResolvedValueOnce(null);
+      const existingOrder = new FossDemoOrder();
+      existingOrder.orderId = 'order-race-resolved';
+      existingOrder.bookingId = sampleGuest.bookingId;
+      existingOrder.roomNumber = sampleGuest.roomNumber;
+      existingOrder.status = FoodOrderStatus.PLACED;
+      existingOrder.createdAt = new Date();
+      existingOrder.updatedAt = new Date();
+      existingOrder.items = [];
+
+      mockOrderRepository.save.mockRejectedValueOnce({ code: '23505' });
+      mockOrderRepository.findByIdempotencyKey.mockResolvedValueOnce(
+        existingOrder,
+      );
+
+      const res1 = await service.createFoodOrder(sampleGuest, {
+        items: [{ menuItemId: 'menu-item-001', quantity: 1 }],
+        idempotencyKey: 'race-key-1',
+      });
+      expect(res1.orderId).toBe('order-race-resolved');
+
+      // duplicate key message
+      mockOrderRepository.findByIdempotencyKey.mockResolvedValueOnce(null);
+      mockOrderRepository.save.mockRejectedValueOnce({
+        message: 'duplicate key value violates unique constraint',
+      });
+      mockOrderRepository.findByIdempotencyKey.mockResolvedValueOnce(
+        existingOrder,
+      );
+
+      const res2 = await service.createFoodOrder(sampleGuest, {
+        items: [{ menuItemId: 'menu-item-001', quantity: 1 }],
+        idempotencyKey: 'race-key-2',
+      });
+      expect(res2.orderId).toBe('order-race-resolved');
+
+      // UNIQUE constraint failed with no existing found -> rethrows
+      mockOrderRepository.findByIdempotencyKey.mockResolvedValueOnce(null);
+      mockOrderRepository.save.mockRejectedValueOnce({
+        message: 'UNIQUE constraint failed',
+      });
+      mockOrderRepository.findByIdempotencyKey.mockResolvedValueOnce(null);
+
+      await expect(
+        service.createFoodOrder(sampleGuest, {
+          items: [{ menuItemId: 'menu-item-001', quantity: 1 }],
+          idempotencyKey: 'race-key-3',
+        }),
+      ).rejects.toEqual({ message: 'UNIQUE constraint failed' });
+
+      // Other generic error -> rethrows
+      mockOrderRepository.findByIdempotencyKey.mockResolvedValueOnce(null);
+      mockOrderRepository.save.mockRejectedValueOnce(new Error('DB disk full'));
+      await expect(
+        service.createFoodOrder(sampleGuest, {
+          items: [{ menuItemId: 'menu-item-001', quantity: 1 }],
+          idempotencyKey: 'race-key-4',
+        }),
+      ).rejects.toThrow('DB disk full');
+    });
+
+    it('handles KMS cancelOrder exceptions (BadRequest, NotFound, delivered, non-Error)', async () => {
+      const order = new FossDemoOrder();
+      order.orderId = 'order-cancel-branch';
+      order.bookingId = sampleGuest.bookingId;
+      order.roomNumber = sampleGuest.roomNumber;
+      order.status = FoodOrderStatus.PLACED;
+      order.createdAt = clockService.now();
+      order.items = [];
+
+      mockOrderRepository.findById.mockResolvedValue(order);
+
+      jest
+        .spyOn(mockKms, 'cancelOrder')
+        .mockRejectedValueOnce(new BadRequestException('Cannot cancel'));
+      await expect(
+        service.cancelFoodOrder(sampleGuest, 'order-cancel-branch'),
+      ).rejects.toThrow(BadRequestException);
+
+      jest
+        .spyOn(mockKms, 'cancelOrder')
+        .mockRejectedValueOnce(new NotFoundException('Order not in KMS'));
+      await expect(
+        service.cancelFoodOrder(sampleGuest, 'order-cancel-branch'),
+      ).rejects.toThrow(NotFoundException);
+
+      jest
+        .spyOn(mockKms, 'cancelOrder')
+        .mockRejectedValueOnce(
+          new Error('Order has already been delivered to room'),
+        );
+      await expect(
+        service.cancelFoodOrder(sampleGuest, 'order-cancel-branch'),
+      ).rejects.toThrow(ConflictException);
+
+      jest
+        .spyOn(mockKms, 'cancelOrder')
+        .mockRejectedValueOnce('raw cancel error');
+      await expect(
+        service.cancelFoodOrder(sampleGuest, 'order-cancel-branch'),
+      ).rejects.toThrow(UpstreamServiceUnavailableException);
+    });
+
+    it('exercises buildTimeline fallbacks with missing or unparsed date properties', async () => {
+      const order = new FossDemoOrder();
+      order.orderId = 'order-timeline-fallbacks';
+      order.bookingId = sampleGuest.bookingId;
+      order.roomNumber = sampleGuest.roomNumber;
+      order.status = FoodOrderStatus.PLACED;
+      order.createdAt = undefined as any;
+      order.updatedAt = '2026-10-28T07:30:00.000Z' as any;
+      order.items = null as any;
+
+      const timeline = (service as any).buildTimeline(order);
+      expect(timeline).toBeDefined();
+      expect(timeline.length).toBeGreaterThan(0);
+
+      order.createdAt = clockService.now();
+      order.updatedAt = undefined as any;
+      const timeline2 = (service as any).buildTimeline(order);
+      expect(timeline2).toBeDefined();
+    });
   });
 });

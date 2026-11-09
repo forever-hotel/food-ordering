@@ -129,5 +129,117 @@ describe('MealWindowService', () => {
       expect(result.activePeriod).toBeNull();
       expect(result.isCutoff).toBe(true);
     });
+
+    it('returns orderable false when no periods are provided or empty array', () => {
+      const result = service.isItemOrderable([]);
+      expect(result.isOrderable).toBe(false);
+      expect(result.activePeriod).toBeNull();
+    });
+  });
+
+  describe('evaluateKitchenWindow()', () => {
+    it('evaluates active and orderable kitchen window when within operating hours', () => {
+      // 13:00 Colombo (46,800s)
+      const date = new Date('2026-10-28T07:30:00.000Z');
+      const window = {
+        startTime: '12:00:00',
+        cutoffTime: '15:00:00',
+        enabled: true,
+      };
+
+      const result = service.evaluateKitchenWindow(window, date);
+      expect(result.isOrderable).toBe(true);
+      expect(result.isCutoff).toBe(false);
+      expect(result.secondsRemaining).toBe(7200); // 2 hours remaining until 15:00
+    });
+
+    it('rejects invalid or malformed time formats (non-time, out of bounds)', () => {
+      const date = new Date('2026-10-28T07:30:00.000Z');
+
+      const invalidRegex = service.evaluateKitchenWindow(
+        { startTime: 'invalid-time', cutoffTime: '15:00:00', enabled: true },
+        date,
+      );
+      expect(invalidRegex.isOrderable).toBe(false);
+      expect(invalidRegex.isCutoff).toBe(true);
+
+      const invalidHours = service.evaluateKitchenWindow(
+        { startTime: '25:00:00', cutoffTime: '15:00:00', enabled: true },
+        date,
+      );
+      expect(invalidHours.isOrderable).toBe(false);
+      expect(invalidHours.isCutoff).toBe(true);
+
+      const invalidMinutes = service.evaluateKitchenWindow(
+        { startTime: '12:65:00', cutoffTime: '15:00:00', enabled: true },
+        date,
+      );
+      expect(invalidMinutes.isOrderable).toBe(false);
+
+      const invalidSeconds = service.evaluateKitchenWindow(
+        { startTime: '12:00:99', cutoffTime: '15:00:00', enabled: true },
+        date,
+      );
+      expect(invalidSeconds.isOrderable).toBe(false);
+    });
+
+    it('flags cutoff reached when cutoff is before start or cutoff is passed', () => {
+      const date = new Date('2026-10-28T07:30:00.000Z'); // 13:00 Colombo
+
+      // cutoff before start
+      const inverted = service.evaluateKitchenWindow(
+        { startTime: '15:00:00', cutoffTime: '12:00:00', enabled: true },
+        date,
+      );
+      expect(inverted.isOrderable).toBe(false);
+      expect(inverted.isCutoff).toBe(true);
+
+      // past cutoff (cutoff was 12:00)
+      const pastCutoff = service.evaluateKitchenWindow(
+        { startTime: '06:00:00', cutoffTime: '12:00:00', enabled: true },
+        date,
+      );
+      expect(pastCutoff.isOrderable).toBe(false);
+      expect(pastCutoff.isCutoff).toBe(true);
+      expect(pastCutoff.secondsRemaining).toBe(0);
+
+      // before start (opens at 18:00)
+      const beforeStart = service.evaluateKitchenWindow(
+        { startTime: '18:00:00', cutoffTime: '22:00:00', enabled: true },
+        date,
+      );
+      expect(beforeStart.isOrderable).toBe(false);
+      expect(beforeStart.isCutoff).toBe(false);
+
+      // disabled window
+      const disabled = service.evaluateKitchenWindow(
+        { startTime: '12:00:00', cutoffTime: '15:00:00', enabled: false },
+        date,
+      );
+      expect(disabled.isOrderable).toBe(false);
+      expect(disabled.isCutoff).toBe(true);
+    });
+  });
+
+  describe('Unknown Meal Period Guard & Demo Mode', () => {
+    it('throws error when evaluating unknown meal period', () => {
+      expect(() =>
+        service.evaluateWindow('INVALID_PERIOD' as unknown as MealPeriod),
+      ).toThrow('Unknown meal period: INVALID_PERIOD');
+    });
+
+    it('evaluates all-day dining in demo mode when DEMO_MODE=true', () => {
+      const prevEnv = process.env.DEMO_MODE;
+      try {
+        process.env.DEMO_MODE = 'true';
+        clock.setFixedTime(new Date('2026-10-28T07:30:00.000Z'));
+
+        const status = service.evaluateWindow(MealPeriod.ALL_DAY);
+        expect(status.isActive).toBe(true);
+        expect(status.isCutoffReached).toBe(false);
+      } finally {
+        process.env.DEMO_MODE = prevEnv;
+      }
+    });
   });
 });

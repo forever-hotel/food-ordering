@@ -114,4 +114,36 @@ describe('HttpExceptionFilter', () => {
       }),
     );
   });
+
+  it('formats HttpException with plain string response', () => {
+    const exception = new HttpException(
+      'Plain string error',
+      HttpStatus.FORBIDDEN,
+    );
+    filter.catch(exception, mockHost);
+
+    expect(mockResponse.status).toHaveBeenCalledWith(HttpStatus.FORBIDDEN);
+    expect(mockResponse.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        statusCode: HttpStatus.FORBIDDEN,
+        error: 'Http',
+        message: 'Plain string error',
+      }),
+    );
+  });
+
+  it('handles non-Error thrown exceptions safely as 500', () => {
+    filter.catch('completely unknown string throw', mockHost);
+
+    expect(mockResponse.status).toHaveBeenCalledWith(
+      HttpStatus.INTERNAL_SERVER_ERROR,
+    );
+    expect(mockResponse.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+        error: 'Internal Server Error',
+        message: 'An unexpected error occurred.',
+      }),
+    );
+  });
 });

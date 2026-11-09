@@ -71,6 +71,14 @@ jobs:
       - name: Run backend unit tests with coverage
         run: npm run test:cov -- --runInBand
 
+      - name: Upload backend coverage report
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: foss-backend-coverage
+          path: backend/coverage/
+          if-no-files-found: ignore
+
       - name: Run backend E2E tests
         run: npm run test:e2e
 
@@ -78,7 +86,7 @@ jobs:
         run: npm run build
 
   frontend-quality:
-    name: Frontend - Lint, Format & Build
+    name: Frontend - Lint, Format, Test & Build
     runs-on: ubuntu-latest
 
     defaults:
@@ -99,6 +107,21 @@ jobs:
 
       - name: Install frontend dependencies
         run: npm ci --ignore-scripts --no-fund
+
+      - name: Run frontend unit tests with coverage
+        run: npm run test:coverage
+        env:
+          NODE_V8_COVERAGE: coverage
+
+      - name: Upload frontend coverage report
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: foss-frontend-coverage
+          path: |
+            frontend/coverage/
+            frontend/coverage-components/
+          if-no-files-found: ignore
 
       - name: Run frontend lint
         run: npm run lint
