@@ -10,6 +10,7 @@ import { ConfigService } from '@nestjs/config';
 import { BookingVerificationResultDto } from '../../../integrations/internal-services/booking/dto/booking-verification-result.dto.js';
 import { BookingVerificationService } from '../../../integrations/internal-services/booking/booking-verification.service.js';
 import { FossQrActivation } from '../entities/foss-qr-activation.entity.js';
+import { FossSession } from '../entities/foss-session.entity.js';
 import { FossQrActivationRepository } from '../repositories/foss-qr-activation.repository.js';
 import { FossSessionRepository } from '../repositories/foss-session.repository.js';
 import { QrActivationService } from './qr-activation.service.js';
@@ -615,6 +616,15 @@ describe('QrActivationService', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
+    it('throws BadRequestException when bookingReference alone is not a valid UUID format', async () => {
+      await expect(
+        service.issueActivationCredential({
+          bookingReference: 'invalid-non-uuid-reference',
+          roomNumber: '101',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
     it('throws BadRequestException when roomNumber is missing or whitespace', async () => {
       await expect(
         service.issueActivationCredential({
@@ -622,6 +632,106 @@ describe('QrActivationService', () => {
           roomNumber: '   ',
         }),
       ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('constructor initialization & transaction edge cases', () => {
+    it('supports 5th argument as clock function when dataSource is omitted', () => {
+      const fixedTime = new Date('2026-10-31T16:00:00.000Z');
+      const customService = new QrActivationService(
+        qrActivationRepo as any,
+        sessionRepo as any,
+        bookingVerificationService as any,
+        configService as any,
+        (() => fixedTime) as any,
+      );
+      expect(customService).toBeDefined();
+    });
+
+    it('defaults clock to system time when no clock is provided', () => {
+      const customService = new QrActivationService(
+        qrActivationRepo as any,
+        sessionRepo as any,
+        bookingVerificationService as any,
+        configService as any,
+        mockDataSource as any,
+        undefined,
+      );
+      expect(customService).toBeDefined();
+    });
+
+    it('throws UnauthorizedException when concurrent redemption causes atomicRedeemWithManager to return null', async () => {
+      const rawToken = 'race-token';
+      const tokenHash = service.hashToken(rawToken);
+
+      const existingActivation = new FossQrActivation();
+      existingActivation.activationId = 'act-race';
+      existingActivation.bookingId = '550e8400-e29b-41d4-a716-446655440000';
+      existingActivation.roomNumber = '101';
+      existingActivation.tokenHash = tokenHash;
+      existingActivation.expiresAt = new Date('2026-10-31T16:15:00.000Z');
+      existingActivation.redeemedAt = null;
+
+      qrActivationRepo.findByTokenHash.mockResolvedValue(existingActivation);
+      qrActivationRepo.atomicRedeemWithManager.mockResolvedValue(null);
+      bookingVerificationService.verifyStay.mockResolvedValueOnce({
+        valid: true,
+        bookingId: '550e8400-e29b-41d4-a716-446655440000',
+        roomNumber: '101',
+        status: 'CHECKED_IN',
+        stayStart: '2026-10-31T10:00:00.000Z',
+        stayEnd: '2026-11-01T10:00:00.000Z',
+      });
+
+      await expect(
+        service.redeemActivationCredential(rawToken),
+      ).rejects.toThrow(/already been redeemed/i);
+    });
+
+    it('updates existing session when redeeming activation credential for a known booking', async () => {
+      const rawToken = 'existing-session-token';
+      const tokenHash = service.hashToken(rawToken);
+
+      const existingActivation = new FossQrActivation();
+      existingActivation.activationId = 'act-existing';
+      existingActivation.bookingId = '550e8400-e29b-41d4-a716-446655440000';
+      existingActivation.roomNumber = '101';
+      existingActivation.tokenHash = tokenHash;
+      existingActivation.expiresAt = new Date('2026-10-31T16:15:00.000Z');
+      existingActivation.redeemedAt = null;
+
+      qrActivationRepo.findByTokenHash.mockResolvedValue(existingActivation);
+      qrActivationRepo.atomicRedeemWithManager.mockResolvedValue({
+        ...existingActivation,
+        redeemedAt: fixedNow,
+      } as FossQrActivation);
+      bookingVerificationService.verifyStay.mockResolvedValueOnce({
+        valid: true,
+        bookingId: '550e8400-e29b-41d4-a716-446655440000',
+        roomNumber: '101',
+        status: 'CHECKED_IN',
+        stayStart: '2026-10-31T10:00:00.000Z',
+        stayEnd: '2026-11-01T10:00:00.000Z',
+      });
+
+      const existingSession = new FossSession();
+      existingSession.sessionId = 'sess-old-uuid';
+      existingSession.bookingId = '550e8400-e29b-41d4-a716-446655440000';
+      existingSession.roomNumber = '101';
+      existingSession.isActive = false;
+
+      mockManager.findOne.mockResolvedValueOnce(existingSession);
+
+      const result = await service.redeemActivationCredential(rawToken);
+
+      expect(result).toBeDefined();
+      expect(result.sessionId).toBe('sess-old-uuid');
+      expect(mockManager.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sessionId: 'sess-old-uuid',
+          isActive: true,
+        }),
+      );
     });
   });
 

@@ -786,4 +786,53 @@ describe('GuestSessionsService', () => {
       expect(() => service.getProcessedEvent('')).toThrow(BadRequestException);
     });
   });
+
+  describe('constructor initialization & inactive checkout', () => {
+    it('supports 5th argument as a clock function when optional qrActivationService is omitted', () => {
+      const fixedTime = new Date('2026-10-28T12:00:00Z');
+      const customService = new GuestSessionsService(
+        mockSessionRepository as unknown as FossSessionRepository,
+        mockQrTokenService as unknown as QrTokenService,
+        mockBookingVerificationService as unknown as BookingVerificationService,
+        mockConfigService as unknown as ConfigService,
+        (() => fixedTime) as unknown as QrActivationService,
+      );
+      expect(customService).toBeDefined();
+    });
+
+    it('defaults clock to system time when no clock is injected', () => {
+      const customService = new GuestSessionsService(
+        mockSessionRepository as unknown as FossSessionRepository,
+        mockQrTokenService as unknown as QrTokenService,
+        mockBookingVerificationService as unknown as BookingVerificationService,
+        mockConfigService as unknown as ConfigService,
+        mockQrActivationService as unknown as QrActivationService,
+        undefined,
+      );
+      expect(customService).toBeDefined();
+    });
+
+    it('handles checkout event when session is already inactive without re-saving', async () => {
+      mockSessionRepository.findByBookingId.mockResolvedValueOnce({
+        sessionId: 'sess-already-inactive',
+        bookingId: 'b-101',
+        roomNumber: '101',
+        isActive: false,
+      } as FossSession);
+
+      const result = await service.handleFdsCheckoutEvent({
+        eventId: 'evt-checkout-inactive-test',
+        eventType: 'fds.guest.checkout' as const,
+        bookingId: 'b-101',
+        roomNumber: '101',
+        checkoutTime: '2026-10-28T12:00:00Z',
+      });
+
+      expect(result.sessionRevoked).toBe(false);
+      expect(mockSessionRepository.save).not.toHaveBeenCalled();
+      expect(
+        mockBookingVerificationService.simulateCheckout,
+      ).toHaveBeenCalledWith('b-101');
+    });
+  });
 });
