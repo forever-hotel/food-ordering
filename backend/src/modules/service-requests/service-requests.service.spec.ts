@@ -866,33 +866,47 @@ describe('ServiceRequestsService', () => {
       existing.updatedAt = new Date();
 
       mockRequestRepository.save.mockRejectedValueOnce({ code: '23505' });
-      mockRequestRepository.findByIdempotencyKey.mockResolvedValueOnce(existing);
+      mockRequestRepository.findByIdempotencyKey.mockResolvedValueOnce(
+        existing,
+      );
 
       const res = await service.createServiceRequest(sampleGuest, validDto);
       expect(res.requestId).toBe('req-race-match');
 
       // duplicate key message
       mockRequestRepository.findByIdempotencyKey.mockResolvedValueOnce(null);
-      mockRequestRepository.save.mockRejectedValueOnce({ message: 'duplicate key value violates' });
-      mockRequestRepository.findByIdempotencyKey.mockResolvedValueOnce(existing);
+      mockRequestRepository.save.mockRejectedValueOnce({
+        message: 'duplicate key value violates',
+      });
+      mockRequestRepository.findByIdempotencyKey.mockResolvedValueOnce(
+        existing,
+      );
 
       const res2 = await service.createServiceRequest(sampleGuest, validDto);
       expect(res2.requestId).toBe('req-race-match');
 
       // UNIQUE constraint when findByIdempotencyKey is null -> throws
       mockRequestRepository.findByIdempotencyKey.mockResolvedValueOnce(null);
-      mockRequestRepository.save.mockRejectedValueOnce({ message: 'UNIQUE constraint failed' });
+      mockRequestRepository.save.mockRejectedValueOnce({
+        message: 'UNIQUE constraint failed',
+      });
       mockRequestRepository.findByIdempotencyKey.mockResolvedValueOnce(null);
 
-      await expect(service.createServiceRequest(sampleGuest, validDto)).rejects.toEqual({
+      await expect(
+        service.createServiceRequest(sampleGuest, validDto),
+      ).rejects.toEqual({
         message: 'UNIQUE constraint failed',
       });
 
       // generic error -> throws
       mockRequestRepository.findByIdempotencyKey.mockResolvedValueOnce(null);
-      mockRequestRepository.save.mockRejectedValueOnce(new Error('Connection terminated'));
+      mockRequestRepository.save.mockRejectedValueOnce(
+        new Error('Connection terminated'),
+      );
 
-      await expect(service.createServiceRequest(sampleGuest, validDto)).rejects.toThrow('Connection terminated');
+      await expect(
+        service.createServiceRequest(sampleGuest, validDto),
+      ).rejects.toThrow('Connection terminated');
     });
 
     it('handles stale event when occurredAt is an invalid date string', async () => {

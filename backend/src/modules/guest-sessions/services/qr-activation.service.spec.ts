@@ -793,7 +793,9 @@ describe('QrActivationService', () => {
         undefined,
         () => new Date(),
       );
-      expect((fallbackService1 as any).frontendBaseUrl).toBe('http://foss-frontend.local');
+      expect((fallbackService1 as any).frontendBaseUrl).toBe(
+        'http://foss-frontend.local',
+      );
 
       const customConfigService2 = {
         get: jest.fn((key: string) => {
@@ -810,7 +812,9 @@ describe('QrActivationService', () => {
         undefined,
         () => new Date(),
       );
-      expect((fallbackService2 as any).frontendBaseUrl).toBe('http://app-base.local');
+      expect((fallbackService2 as any).frontendBaseUrl).toBe(
+        'http://app-base.local',
+      );
 
       const customConfigService3 = {
         get: jest.fn(() => undefined),
@@ -822,7 +826,9 @@ describe('QrActivationService', () => {
         bookingVerificationService as any,
         customConfigService3 as any,
       );
-      expect((fallbackService3 as any).frontendBaseUrl).toBe('http://localhost:3000');
+      expect((fallbackService3 as any).frontendBaseUrl).toBe(
+        'http://localhost:3000',
+      );
     });
   });
 });

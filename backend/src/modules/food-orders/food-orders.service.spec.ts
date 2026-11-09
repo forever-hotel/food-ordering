@@ -1043,17 +1043,33 @@ describe('FoodOrdersService', () => {
         idempotencyKey: 'idemp-kms-exceptions',
       };
 
-      jest.spyOn(mockKms, 'createOrder').mockRejectedValueOnce(new BadRequestException('Invalid item'));
-      await expect(service.createFoodOrder(sampleGuest, dto)).rejects.toThrow(BadRequestException);
+      jest
+        .spyOn(mockKms, 'createOrder')
+        .mockRejectedValueOnce(new BadRequestException('Invalid item'));
+      await expect(service.createFoodOrder(sampleGuest, dto)).rejects.toThrow(
+        BadRequestException,
+      );
 
-      jest.spyOn(mockKms, 'createOrder').mockRejectedValueOnce(new ConflictException('Slot full'));
-      await expect(service.createFoodOrder(sampleGuest, dto)).rejects.toThrow(ConflictException);
+      jest
+        .spyOn(mockKms, 'createOrder')
+        .mockRejectedValueOnce(new ConflictException('Slot full'));
+      await expect(service.createFoodOrder(sampleGuest, dto)).rejects.toThrow(
+        ConflictException,
+      );
 
-      jest.spyOn(mockKms, 'createOrder').mockRejectedValueOnce(new NotFoundException('Item missing'));
-      await expect(service.createFoodOrder(sampleGuest, dto)).rejects.toThrow(NotFoundException);
+      jest
+        .spyOn(mockKms, 'createOrder')
+        .mockRejectedValueOnce(new NotFoundException('Item missing'));
+      await expect(service.createFoodOrder(sampleGuest, dto)).rejects.toThrow(
+        NotFoundException,
+      );
 
-      jest.spyOn(mockKms, 'createOrder').mockRejectedValueOnce('raw string error');
-      await expect(service.createFoodOrder(sampleGuest, dto)).rejects.toThrow(UpstreamServiceUnavailableException);
+      jest
+        .spyOn(mockKms, 'createOrder')
+        .mockRejectedValueOnce('raw string error');
+      await expect(service.createFoodOrder(sampleGuest, dto)).rejects.toThrow(
+        UpstreamServiceUnavailableException,
+      );
     });
 
     it('handles race conditions on order save duplicate key', async () => {
@@ -1068,7 +1084,9 @@ describe('FoodOrdersService', () => {
       existingOrder.items = [];
 
       mockOrderRepository.save.mockRejectedValueOnce({ code: '23505' });
-      mockOrderRepository.findByIdempotencyKey.mockResolvedValueOnce(existingOrder);
+      mockOrderRepository.findByIdempotencyKey.mockResolvedValueOnce(
+        existingOrder,
+      );
 
       const res1 = await service.createFoodOrder(sampleGuest, {
         items: [{ menuItemId: 'menu-item-001', quantity: 1 }],
@@ -1078,8 +1096,12 @@ describe('FoodOrdersService', () => {
 
       // duplicate key message
       mockOrderRepository.findByIdempotencyKey.mockResolvedValueOnce(null);
-      mockOrderRepository.save.mockRejectedValueOnce({ message: 'duplicate key value violates unique constraint' });
-      mockOrderRepository.findByIdempotencyKey.mockResolvedValueOnce(existingOrder);
+      mockOrderRepository.save.mockRejectedValueOnce({
+        message: 'duplicate key value violates unique constraint',
+      });
+      mockOrderRepository.findByIdempotencyKey.mockResolvedValueOnce(
+        existingOrder,
+      );
 
       const res2 = await service.createFoodOrder(sampleGuest, {
         items: [{ menuItemId: 'menu-item-001', quantity: 1 }],
@@ -1089,7 +1111,9 @@ describe('FoodOrdersService', () => {
 
       // UNIQUE constraint failed with no existing found -> rethrows
       mockOrderRepository.findByIdempotencyKey.mockResolvedValueOnce(null);
-      mockOrderRepository.save.mockRejectedValueOnce({ message: 'UNIQUE constraint failed' });
+      mockOrderRepository.save.mockRejectedValueOnce({
+        message: 'UNIQUE constraint failed',
+      });
       mockOrderRepository.findByIdempotencyKey.mockResolvedValueOnce(null);
 
       await expect(
@@ -1121,17 +1145,35 @@ describe('FoodOrdersService', () => {
 
       mockOrderRepository.findById.mockResolvedValue(order);
 
-      jest.spyOn(mockKms, 'cancelOrder').mockRejectedValueOnce(new BadRequestException('Cannot cancel'));
-      await expect(service.cancelFoodOrder(sampleGuest, 'order-cancel-branch')).rejects.toThrow(BadRequestException);
+      jest
+        .spyOn(mockKms, 'cancelOrder')
+        .mockRejectedValueOnce(new BadRequestException('Cannot cancel'));
+      await expect(
+        service.cancelFoodOrder(sampleGuest, 'order-cancel-branch'),
+      ).rejects.toThrow(BadRequestException);
 
-      jest.spyOn(mockKms, 'cancelOrder').mockRejectedValueOnce(new NotFoundException('Order not in KMS'));
-      await expect(service.cancelFoodOrder(sampleGuest, 'order-cancel-branch')).rejects.toThrow(NotFoundException);
+      jest
+        .spyOn(mockKms, 'cancelOrder')
+        .mockRejectedValueOnce(new NotFoundException('Order not in KMS'));
+      await expect(
+        service.cancelFoodOrder(sampleGuest, 'order-cancel-branch'),
+      ).rejects.toThrow(NotFoundException);
 
-      jest.spyOn(mockKms, 'cancelOrder').mockRejectedValueOnce(new Error('Order has already been delivered to room'));
-      await expect(service.cancelFoodOrder(sampleGuest, 'order-cancel-branch')).rejects.toThrow(ConflictException);
+      jest
+        .spyOn(mockKms, 'cancelOrder')
+        .mockRejectedValueOnce(
+          new Error('Order has already been delivered to room'),
+        );
+      await expect(
+        service.cancelFoodOrder(sampleGuest, 'order-cancel-branch'),
+      ).rejects.toThrow(ConflictException);
 
-      jest.spyOn(mockKms, 'cancelOrder').mockRejectedValueOnce('raw cancel error');
-      await expect(service.cancelFoodOrder(sampleGuest, 'order-cancel-branch')).rejects.toThrow(UpstreamServiceUnavailableException);
+      jest
+        .spyOn(mockKms, 'cancelOrder')
+        .mockRejectedValueOnce('raw cancel error');
+      await expect(
+        service.cancelFoodOrder(sampleGuest, 'order-cancel-branch'),
+      ).rejects.toThrow(UpstreamServiceUnavailableException);
     });
 
     it('exercises buildTimeline fallbacks with missing or unparsed date properties', async () => {

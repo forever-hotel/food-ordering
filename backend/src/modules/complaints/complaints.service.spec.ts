@@ -1171,7 +1171,9 @@ describe('ComplaintsService', () => {
     it('handles KMS lookup errors that are not BadRequestException and throws if order not found', async () => {
       (orderRepo.findById as any).mockResolvedValueOnce(null);
       const mockKms = (service as any).kmsProvider;
-      mockKms.getOrder.mockRejectedValueOnce(new Error('KMS connection timeout'));
+      mockKms.getOrder.mockRejectedValueOnce(
+        new Error('KMS connection timeout'),
+      );
 
       await expect(
         service.fileComplaint(
@@ -1208,7 +1210,9 @@ describe('ComplaintsService', () => {
       expect(res1.status).toBe(ComplaintStatus.SUBMITTED);
 
       // MAD throws non-Error string
-      (madProvider.fileComplaint as any).mockRejectedValueOnce('MAD network dropped');
+      (madProvider.fileComplaint as any).mockRejectedValueOnce(
+        'MAD network dropped',
+      );
       const res2 = await service.fileComplaint(
         mockGuest,
         {
@@ -1228,7 +1232,9 @@ describe('ComplaintsService', () => {
         code: '23505',
         constraint: 'UQ_foss_complaints_idempotency_key',
       });
-      (complaintRepo.findByIdempotencyKey as any).mockResolvedValueOnce(existingComplaint);
+      (complaintRepo.findByIdempotencyKey as any).mockResolvedValueOnce(
+        existingComplaint,
+      );
 
       const res1 = await service.fileComplaint(
         mockGuest,
@@ -1268,7 +1274,9 @@ describe('ComplaintsService', () => {
 
       // Different error code -> rethrows
       (complaintRepo.findByIdempotencyKey as any).mockResolvedValueOnce(null);
-      (complaintRepo.save as any).mockRejectedValueOnce(new Error('Foreign key violation'));
+      (complaintRepo.save as any).mockRejectedValueOnce(
+        new Error('Foreign key violation'),
+      );
 
       await expect(
         service.fileComplaint(
