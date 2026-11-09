@@ -54,6 +54,7 @@ const config: Config = {
   },
 
   testEnvironment: 'node',
+  testPathIgnorePatterns: ['/node_modules/', '/dist/', '<rootDir>/test/perf/'],
 };
 
 export default config;
