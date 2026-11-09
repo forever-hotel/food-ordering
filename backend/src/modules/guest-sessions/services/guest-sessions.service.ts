@@ -1,6 +1,7 @@
 import * as crypto from 'node:crypto';
 import {
   BadRequestException,
+  ForbiddenException,
   Inject,
   Injectable,
   Logger,
@@ -80,7 +81,25 @@ export class GuestSessionsService {
 
     // 3. Compute session expiration: default TTL bounded by stay checkout time
     const now = this.clock();
+    const stayStartTime = new Date(stay.stayStart).getTime();
     const stayEndTime = new Date(stay.stayEnd).getTime();
+
+    if (
+      Number.isNaN(stayStartTime) ||
+      Number.isNaN(stayEndTime) ||
+      stayStartTime >= stayEndTime
+    ) {
+      throw new UnauthorizedException(
+        'Invalid authoritative stay window received from Front Desk.',
+      );
+    }
+
+    if (now.getTime() >= stayEndTime) {
+      throw new ForbiddenException(
+        'Stay window has expired. In-room ordering is no longer available.',
+      );
+    }
+
     const sessionTtlMs = this.sessionTtlHours * 60 * 60 * 1000;
     const computedExpiryTime = Math.min(
       now.getTime() + sessionTtlMs,
@@ -165,7 +184,7 @@ export class GuestSessionsService {
     }
 
     const now = this.clock();
-    if (now.getTime() > new Date(session.expiresAt).getTime()) {
+    if (now.getTime() >= new Date(session.expiresAt).getTime()) {
       this.logger.warn(`Session [${session.sessionId}] has expired.`);
       session.isActive = false;
       session.updatedAt = now;
@@ -192,6 +211,50 @@ export class GuestSessionsService {
       throw new UnauthorizedException(
         'Guest stay has concluded or is no longer checked in.',
       );
+    }
+
+    // Validate authoritative stay timestamps
+    const stayStartTime = new Date(stay.stayStart).getTime();
+    const stayEndTime = new Date(stay.stayEnd).getTime();
+
+    if (
+      Number.isNaN(stayStartTime) ||
+      Number.isNaN(stayEndTime) ||
+      stayStartTime >= stayEndTime
+    ) {
+      this.logger.error(
+        `Invalid authoritative stay window received for booking [${session.bookingId}]: start=[${stay.stayStart}], end=[${stay.stayEnd}]`,
+      );
+      throw new UnauthorizedException(
+        'Invalid authoritative stay window received from Front Desk.',
+      );
+    }
+
+    // Authoritative stay has concluded: reject access and revoke active session
+    if (now.getTime() >= stayEndTime) {
+      this.logger.warn(
+        `Session [${session.sessionId}] rejected: authoritative stay ended at [${stay.stayEnd}], current time is [${now.toISOString()}].`,
+      );
+      session.isActive = false;
+      session.updatedAt = now;
+      session.expiresAt = new Date(
+        Math.min(new Date(session.expiresAt).getTime(), stayEndTime),
+      );
+      await this.fossSessionRepository.save(session);
+      throw new UnauthorizedException(
+        'Guest stay has concluded or is no longer checked in.',
+      );
+    }
+
+    // Ensure a previously issued session cannot bypass a newly shortened stay expiry
+    const currentSessionExpiresAtTime = new Date(session.expiresAt).getTime();
+    if (stayEndTime < currentSessionExpiresAtTime) {
+      this.logger.log(
+        `Authoritative stay expiry shortened for session [${session.sessionId}]. Updating expiresAt to [${stay.stayEnd}].`,
+      );
+      session.expiresAt = new Date(stayEndTime);
+      session.updatedAt = now;
+      await this.fossSessionRepository.save(session);
     }
 
     return { session, stay };

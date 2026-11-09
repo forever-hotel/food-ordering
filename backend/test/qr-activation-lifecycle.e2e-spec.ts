@@ -257,6 +257,7 @@ describe('Secure FDS QR Activation Lifecycle (e2e)', () => {
         `https://guest.foreverhotel.com/activate?token=${response.body.qrToken}`,
       );
       expect(response.body.expiresAt).toBeDefined();
+      expect(response.body.validUntilDate).toBeDefined();
 
       // Ensure credential was stored only as SHA-256 hash
       const hash = crypto
@@ -282,6 +283,26 @@ describe('Secure FDS QR Activation Lifecycle (e2e)', () => {
 
       expect(response.body.status).toBe('ACTIVATED');
       expect(response.body.activationUrl).toBeDefined();
+    });
+
+    it('uses verified stay expiry in validUntilDate even when request contains a different legacy checkOutDate or stayExpiresAt', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/guest-sessions/internal/qr/issue')
+        .set('X-Internal-Service-Key', FDS_SECRET)
+        .send({
+          bookingId: 'b1010000-0000-4000-8000-000000000101',
+          roomNumber: '101',
+          checkOutDate: '2026-11-20T12:00:00.000Z',
+          stayExpiresAt: '2026-11-25T15:00:00.000Z',
+        })
+        .expect(200);
+
+      expect(response.body.status).toBe('ACTIVATED');
+      expect(response.body.validUntilDate).not.toBe('2026-11-20T12:00:00.000Z');
+      expect(response.body.validUntilDate).not.toBe('2026-11-25T15:00:00.000Z');
+      expect(new Date(response.body.validUntilDate).getTime()).toBeGreaterThan(
+        Date.now(),
+      );
     });
 
     it('rejects disparate bookingId UUID and human-readable bookingReference code with 400', async () => {

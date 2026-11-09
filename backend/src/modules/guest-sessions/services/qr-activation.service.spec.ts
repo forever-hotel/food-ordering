@@ -1,6 +1,7 @@
 import { jest } from '@jest/globals';
 import {
   BadRequestException,
+  ForbiddenException,
   ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -140,6 +141,7 @@ describe('QrActivationService', () => {
       );
       expect(response.expiresAt).toBe('2026-10-31T16:15:00.000Z'); // 15 mins after fixedNow
       expect(response.sessionReference).toBeDefined();
+      expect(response.validUntilDate).toBe('2026-11-02T11:00:00.000Z');
       expect(qrActivationRepo.save).toHaveBeenCalledTimes(1);
 
       // Verify that stored entity does NOT contain raw token, only 64-char sha256 hash
@@ -150,6 +152,65 @@ describe('QrActivationService', () => {
         'b1010000-0000-4000-8000-000000000101',
       );
       expect(savedEntity.roomNumber).toBe('101');
+    });
+
+    it('enforces verified stayEnd as validUntilDate even when request provides a conflicting legacy checkOutDate (Test 13)', async () => {
+      bookingVerificationService.verifyStay.mockResolvedValue(validStay);
+
+      const response = await service.issueActivationCredential({
+        bookingId: 'b1010000-0000-4000-8000-000000000101',
+        roomNumber: '101',
+        checkOutDate: '2026-11-20T12:00:00.000Z', // Legacy caller passes different date
+      });
+
+      expect(response.validUntilDate).toBe(validStay.stayEnd); // '2026-11-02T11:00:00.000Z'
+      expect(response.validUntilDate).not.toBe('2026-11-20T12:00:00.000Z');
+    });
+
+    it('accepts optional stayExpiresAt without allowing it to override authoritative stayEnd', async () => {
+      bookingVerificationService.verifyStay.mockResolvedValue(validStay);
+
+      const response = await service.issueActivationCredential({
+        bookingId: 'b1010000-0000-4000-8000-000000000101',
+        roomNumber: '101',
+        stayExpiresAt: '2026-11-25T15:00:00.000Z',
+      });
+
+      expect(response.validUntilDate).toBe(validStay.stayEnd);
+      expect(response.validUntilDate).not.toBe('2026-11-25T15:00:00.000Z');
+    });
+
+    it('rejects QR issuance with ForbiddenException when stay has already expired', async () => {
+      const expiredStay: BookingVerificationResultDto = {
+        ...validStay,
+        stayEnd: '2026-10-31T15:59:59.000Z', // Expired 1 second before fixedNow (16:00:00)
+      };
+      bookingVerificationService.verifyStay.mockResolvedValue(expiredStay);
+
+      await expect(
+        service.issueActivationCredential({
+          bookingId: 'b1010000-0000-4000-8000-000000000101',
+          roomNumber: '101',
+        }),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(qrActivationRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('rejects QR issuance with UnauthorizedException when authoritative timestamps are malformed or inverted', async () => {
+      const invertedStay: BookingVerificationResultDto = {
+        ...validStay,
+        stayStart: '2026-11-05T12:00:00.000Z',
+        stayEnd: '2026-11-02T12:00:00.000Z', // Inverted!
+      };
+      bookingVerificationService.verifyStay.mockResolvedValue(invertedStay);
+
+      await expect(
+        service.issueActivationCredential({
+          bookingId: 'b1010000-0000-4000-8000-000000000101',
+          roomNumber: '101',
+        }),
+      ).rejects.toThrow(UnauthorizedException);
     });
 
     it('accepts bookingReference as an alias for bookingId', async () => {
@@ -386,6 +447,57 @@ describe('QrActivationService', () => {
         fixedNow,
       );
       expect(mockManager.save).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects redemption with ForbiddenException if authoritative stay has expired', async () => {
+      const rawToken = 'expired-stay-token';
+      const tokenHash = service.hashToken(rawToken);
+
+      const matchedActivation = new FossQrActivation();
+      matchedActivation.activationId = 'act-stay-expired';
+      matchedActivation.bookingId = 'b1010000-0000-4000-8000-000000000101';
+      matchedActivation.roomNumber = '101';
+      matchedActivation.tokenHash = tokenHash;
+      matchedActivation.expiresAt = new Date('2026-10-31T16:15:00.000Z');
+      matchedActivation.redeemedAt = null;
+
+      qrActivationRepo.findByTokenHash.mockResolvedValue(matchedActivation);
+      bookingVerificationService.verifyStay.mockResolvedValue({
+        ...validStay,
+        stayEnd: '2026-10-31T16:00:00.000Z', // Exact expiry timestamp equals fixedNow
+      });
+
+      await expect(
+        service.redeemActivationCredential(rawToken),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(qrActivationRepo.atomicRedeemWithManager).not.toHaveBeenCalled();
+    });
+
+    it('rejects redemption with UnauthorizedException if authoritative stay timestamps are malformed or inverted', async () => {
+      const rawToken = 'inverted-stay-token';
+      const tokenHash = service.hashToken(rawToken);
+
+      const matchedActivation = new FossQrActivation();
+      matchedActivation.activationId = 'act-stay-inverted';
+      matchedActivation.bookingId = 'b1010000-0000-4000-8000-000000000101';
+      matchedActivation.roomNumber = '101';
+      matchedActivation.tokenHash = tokenHash;
+      matchedActivation.expiresAt = new Date('2026-10-31T16:15:00.000Z');
+      matchedActivation.redeemedAt = null;
+
+      qrActivationRepo.findByTokenHash.mockResolvedValue(matchedActivation);
+      bookingVerificationService.verifyStay.mockResolvedValue({
+        ...validStay,
+        stayStart: '2026-11-05T12:00:00.000Z',
+        stayEnd: '2026-11-02T12:00:00.000Z', // Inverted!
+      });
+
+      await expect(
+        service.redeemActivationCredential(rawToken),
+      ).rejects.toThrow(UnauthorizedException);
+
+      expect(qrActivationRepo.atomicRedeemWithManager).not.toHaveBeenCalled();
     });
 
     it('does not touch database or redeem token if FDS stay verification fails', async () => {

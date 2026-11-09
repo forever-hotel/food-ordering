@@ -2,6 +2,7 @@ import { jest } from '@jest/globals';
 import {
   BadRequestException,
   ForbiddenException,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -192,6 +193,96 @@ describe('GuestSessionsService', () => {
       ).rejects.toThrow(ForbiddenException);
       expect(mockSessionRepository.save).not.toHaveBeenCalled();
     });
+
+    it('enforces 24-hour expiry for 1-day booking checked in at 3 PM (Test 1)', async () => {
+      mockClock = new Date('2026-11-10T15:00:00.000Z');
+      const stay3pm: BookingVerificationResultDto = {
+        ...validStay,
+        stayStart: '2026-11-10T15:00:00.000Z',
+        stayEnd: '2026-11-11T15:00:00.000Z',
+      };
+      mockBookingVerificationService.verifyStay.mockResolvedValue(stay3pm);
+
+      const result = await service.authenticateWithQr('valid.qr.token');
+
+      expect(result.stayStart).toBe('2026-11-10T15:00:00.000Z');
+      expect(result.stayEnd).toBe('2026-11-11T15:00:00.000Z');
+      expect(result.expiresAt).toBe('2026-11-11T15:00:00.000Z');
+    });
+
+    it('enforces 24-hour expiry for 1-day booking checked in at 11 PM (Test 2)', async () => {
+      mockClock = new Date('2026-11-10T23:00:00.000Z');
+      const stay11pm: BookingVerificationResultDto = {
+        ...validStay,
+        stayStart: '2026-11-10T23:00:00.000Z',
+        stayEnd: '2026-11-11T23:00:00.000Z',
+      };
+      mockBookingVerificationService.verifyStay.mockResolvedValue(stay11pm);
+
+      const result = await service.authenticateWithQr('valid.qr.token');
+
+      expect(result.stayStart).toBe('2026-11-10T23:00:00.000Z');
+      expect(result.stayEnd).toBe('2026-11-11T23:00:00.000Z');
+      expect(result.expiresAt).toBe('2026-11-11T23:00:00.000Z');
+    });
+
+    it('bounds session for 2-day booking expiring 48h after check-in by configured session TTL (Test 3)', async () => {
+      mockClock = new Date('2026-11-10T15:00:00.000Z');
+      const stay2Days: BookingVerificationResultDto = {
+        ...validStay,
+        stayStart: '2026-11-10T15:00:00.000Z',
+        stayEnd: '2026-11-12T15:00:00.000Z', // 48h stay
+      };
+      mockBookingVerificationService.verifyStay.mockResolvedValue(stay2Days);
+
+      const result = await service.authenticateWithQr('valid.qr.token');
+
+      // Security TTL is 24 hours, so expiresAt is now + 24h, not now + 48h
+      expect(result.expiresAt).toBe('2026-11-11T15:00:00.000Z');
+      expect(result.stayEnd).toBe('2026-11-12T15:00:00.000Z');
+    });
+
+    it('bounds session expiry to stayEnd when stayEnd is shorter than session TTL (Test 9)', async () => {
+      mockClock = new Date('2026-11-10T15:00:00.000Z');
+      const shortStay: BookingVerificationResultDto = {
+        ...validStay,
+        stayStart: '2026-11-10T11:00:00.000Z',
+        stayEnd: '2026-11-10T19:00:00.000Z', // Only 4 hours remaining
+      };
+      mockBookingVerificationService.verifyStay.mockResolvedValue(shortStay);
+
+      const result = await service.authenticateWithQr('valid.qr.token');
+
+      expect(result.expiresAt).toBe('2026-11-10T19:00:00.000Z');
+    });
+
+    it('rejects session creation when stayEnd is earlier than or equal to stayStart (Test 8)', async () => {
+      mockClock = new Date('2026-11-10T15:00:00.000Z');
+      const invertedStay: BookingVerificationResultDto = {
+        ...validStay,
+        stayStart: '2026-11-11T15:00:00.000Z',
+        stayEnd: '2026-11-10T15:00:00.000Z', // Inverted!
+      };
+      mockBookingVerificationService.verifyStay.mockResolvedValue(invertedStay);
+
+      await expect(
+        service.authenticateWithQr('valid.qr.token'),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('rejects session creation with ForbiddenException when stay has already expired', async () => {
+      mockClock = new Date('2026-11-11T16:00:00.000Z');
+      const expiredStay: BookingVerificationResultDto = {
+        ...validStay,
+        stayStart: '2026-11-10T15:00:00.000Z',
+        stayEnd: '2026-11-11T15:00:00.000Z', // Expired 1 hour ago
+      };
+      mockBookingVerificationService.verifyStay.mockResolvedValue(expiredStay);
+
+      await expect(
+        service.authenticateWithQr('valid.qr.token'),
+      ).rejects.toThrow(ForbiddenException);
+    });
   });
 
   describe('validateSessionToken', () => {
@@ -298,6 +389,208 @@ describe('GuestSessionsService', () => {
       );
       expect(session.isActive).toBe(false);
       expect(mockSessionRepository.save).toHaveBeenCalledWith(session);
+    });
+
+    it('permits valid access immediately before stay expiry (Test 4)', async () => {
+      const stayEnd = '2026-11-11T15:00:00.000Z';
+      // 1 second before expiry
+      mockClock = new Date('2026-11-11T14:59:59.000Z');
+
+      const rawToken = 'active-token-before-expiry';
+      const hashedToken = service.hashToken(rawToken);
+
+      const session = new FossSession();
+      session.sessionId = 'sess-valid-before';
+      session.bookingId = 'b-101';
+      session.roomNumber = '101';
+      session.sessionToken = hashedToken;
+      session.isActive = true;
+      session.expiresAt = new Date(stayEnd);
+
+      mockSessionRepository.findActiveBySessionToken.mockResolvedValue(session);
+      mockBookingVerificationService.verifyStay.mockResolvedValue({
+        ...validStay,
+        stayStart: '2026-11-10T15:00:00.000Z',
+        stayEnd,
+      });
+
+      const result = await service.validateSessionToken(rawToken);
+      expect(result.session).toBe(session);
+      expect(result.stay.stayEnd).toBe(stayEnd);
+    });
+
+    it('rejects access at the exact expiry timestamp (Test 5)', async () => {
+      const stayEnd = '2026-11-11T15:00:00.000Z';
+      // Exactly at expiry
+      mockClock = new Date('2026-11-11T15:00:00.000Z');
+
+      const rawToken = 'token-at-exact-expiry';
+      const hashedToken = service.hashToken(rawToken);
+
+      const session = new FossSession();
+      session.sessionId = 'sess-exact-expiry';
+      session.bookingId = 'b-101';
+      session.roomNumber = '101';
+      session.sessionToken = hashedToken;
+      session.isActive = true;
+      session.expiresAt = new Date('2026-11-11T16:00:00.000Z'); // Session was issued with later expiry
+
+      mockSessionRepository.findActiveBySessionToken.mockResolvedValue(session);
+      mockBookingVerificationService.verifyStay.mockResolvedValue({
+        ...validStay,
+        stayStart: '2026-11-10T15:00:00.000Z',
+        stayEnd,
+      });
+
+      await expect(service.validateSessionToken(rawToken)).rejects.toThrow(
+        UnauthorizedException,
+      );
+      expect(session.isActive).toBe(false);
+      expect(mockSessionRepository.save).toHaveBeenCalledWith(session);
+    });
+
+    it('rejects access after stay expiry has passed (Test 6)', async () => {
+      const stayEnd = '2026-11-11T15:00:00.000Z';
+      // 10 minutes after expiry
+      mockClock = new Date('2026-11-11T15:10:00.000Z');
+
+      const rawToken = 'token-after-expiry';
+      const hashedToken = service.hashToken(rawToken);
+
+      const session = new FossSession();
+      session.sessionId = 'sess-after-expiry';
+      session.bookingId = 'b-101';
+      session.roomNumber = '101';
+      session.sessionToken = hashedToken;
+      session.isActive = true;
+      session.expiresAt = new Date('2026-11-11T16:00:00.000Z');
+
+      mockSessionRepository.findActiveBySessionToken.mockResolvedValue(session);
+      mockBookingVerificationService.verifyStay.mockResolvedValue({
+        ...validStay,
+        stayStart: '2026-11-10T15:00:00.000Z',
+        stayEnd,
+      });
+
+      await expect(service.validateSessionToken(rawToken)).rejects.toThrow(
+        UnauthorizedException,
+      );
+      expect(session.isActive).toBe(false);
+      expect(mockSessionRepository.save).toHaveBeenCalledWith(session);
+    });
+
+    it('rejects access when FDS returns malformed or invalid stay timestamps (Test 7)', async () => {
+      const rawToken = 'token-malformed-stay';
+      const hashedToken = service.hashToken(rawToken);
+
+      const session = new FossSession();
+      session.sessionId = 'sess-malformed';
+      session.bookingId = 'b-101';
+      session.roomNumber = '101';
+      session.sessionToken = hashedToken;
+      session.isActive = true;
+      session.expiresAt = new Date('2026-11-11T15:00:00.000Z');
+
+      mockSessionRepository.findActiveBySessionToken.mockResolvedValue(session);
+      mockBookingVerificationService.verifyStay.mockResolvedValue({
+        ...validStay,
+        stayStart: 'invalid-start-date',
+        stayEnd: 'invalid-end-date',
+      });
+
+      await expect(service.validateSessionToken(rawToken)).rejects.toThrow(
+        UnauthorizedException,
+      );
+    });
+
+    it('dynamically shortens session expiresAt when authoritative FDS stay is shortened (Test 10)', async () => {
+      mockClock = new Date('2026-11-10T16:00:00.000Z');
+
+      const rawToken = 'token-shortened-stay';
+      const hashedToken = service.hashToken(rawToken);
+
+      const session = new FossSession();
+      session.sessionId = 'sess-shortened';
+      session.bookingId = 'b-101';
+      session.roomNumber = '101';
+      session.sessionToken = hashedToken;
+      session.isActive = true;
+      // Originally expires in 24 hours (Nov 11, 15:00)
+      session.expiresAt = new Date('2026-11-11T15:00:00.000Z');
+
+      mockSessionRepository.findActiveBySessionToken.mockResolvedValue(session);
+
+      // FDS returns shortened stayEnd (today at 18:00)
+      const shortenedStayEnd = '2026-11-10T18:00:00.000Z';
+      mockBookingVerificationService.verifyStay.mockResolvedValue({
+        ...validStay,
+        stayStart: '2026-11-10T15:00:00.000Z',
+        stayEnd: shortenedStayEnd,
+      });
+
+      const result = await service.validateSessionToken(rawToken);
+
+      expect(result.session.expiresAt.toISOString()).toBe(shortenedStayEnd);
+      expect(mockSessionRepository.save).toHaveBeenCalledWith(session);
+    });
+
+    it('does not extend session beyond configured security TTL when stay is extended (Test 11)', async () => {
+      mockClock = new Date('2026-11-10T16:00:00.000Z');
+
+      const rawToken = 'token-extended-stay';
+      const hashedToken = service.hashToken(rawToken);
+
+      const session = new FossSession();
+      session.sessionId = 'sess-extended';
+      session.bookingId = 'b-101';
+      session.roomNumber = '101';
+      session.sessionToken = hashedToken;
+      session.isActive = true;
+      // Security TTL set expiresAt to Nov 11, 15:00 (24 hours from check-in)
+      const originalExpiresAt = new Date('2026-11-11T15:00:00.000Z');
+      session.expiresAt = originalExpiresAt;
+
+      mockSessionRepository.findActiveBySessionToken.mockResolvedValue(session);
+
+      // Stay is extended by 5 days
+      mockBookingVerificationService.verifyStay.mockResolvedValue({
+        ...validStay,
+        stayStart: '2026-11-10T15:00:00.000Z',
+        stayEnd: '2026-11-16T15:00:00.000Z', // 5 days later
+      });
+
+      const result = await service.validateSessionToken(rawToken);
+
+      // Session expiresAt must NOT be expanded to Nov 16; it remains bounded by configured TTL
+      expect(result.session.expiresAt).toEqual(originalExpiresAt);
+      // No unnecessary database write on valid request
+      expect(mockSessionRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('bubbles up ServiceUnavailableException on FDS outage without revoking session (Test 14)', async () => {
+      const rawToken = 'token-outage';
+      const hashedToken = service.hashToken(rawToken);
+
+      const session = new FossSession();
+      session.sessionId = 'sess-outage';
+      session.bookingId = 'b-101';
+      session.roomNumber = '101';
+      session.sessionToken = hashedToken;
+      session.isActive = true;
+      session.expiresAt = new Date('2026-11-11T15:00:00.000Z');
+
+      mockSessionRepository.findActiveBySessionToken.mockResolvedValue(session);
+      mockBookingVerificationService.verifyStay.mockRejectedValue(
+        new ServiceUnavailableException('FDS unavailable'),
+      );
+
+      await expect(service.validateSessionToken(rawToken)).rejects.toThrow(
+        ServiceUnavailableException,
+      );
+
+      // Crucial: session must NOT be permanently revoked!
+      expect(session.isActive).toBe(true);
+      expect(mockSessionRepository.save).not.toHaveBeenCalled();
     });
   });
 
