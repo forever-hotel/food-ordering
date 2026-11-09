@@ -76,11 +76,13 @@ export class MenuService {
           now,
         );
         const period = item.mealPeriods[0];
+        if (!period) continue;
         windows.set(period, {
           period,
           name: item.category,
           startTime: item.orderingWindow.startTime,
           cutoffTime: item.orderingWindow.cutoffTime,
+          enabled: item.orderingWindow.enabled,
           isActive: status.isOrderable,
           isCutoffReached: status.isCutoff,
           secondsRemaining: status.secondsRemaining,
@@ -172,6 +174,7 @@ export class MenuService {
       isCutoff: orderableInfo.isCutoff,
       secondsRemainingUntilCutoff: orderableInfo.secondsRemaining,
       estimatedPrepMinutes: item.estimatedPrepMinutes,
+      portionCap: item.portionLimit,
       imageUrl: item.imageUrl,
       dietaryFlags: item.dietaryFlags,
       allergens: item.allergens,

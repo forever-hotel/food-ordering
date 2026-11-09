@@ -3,6 +3,7 @@ export { MIN_ORDER_ITEM_QUANTITY, MAX_ORDER_ITEM_QUANTITY } from '../lib/constan
 export type MealPeriod = 'BREAKFAST' | 'LUNCH' | 'DINNER' | 'TEA_TIME' | 'ALL_DAY';
 
 export interface MealWindowStatus {
+  enabled?: boolean;
   period: MealPeriod;
   name: string;
   startTime: string;

@@ -165,6 +165,15 @@ export function evaluateMealWindowStatus(
 ): MealWindowEvaluation {
   const label = periodLabel || window?.name || 'Meal';
 
+  if (window?.enabled === false) {
+    return {
+      state: 'closed',
+      secondsRemaining: 0,
+      isOrderable: false,
+      message: `${label} ordering is temporarily paused by the kitchen. You can still browse the menu.`,
+    };
+  }
+
   if (!window || !window.startTime || !window.cutoffTime) {
     return {
       state: 'unavailable',
