@@ -57,10 +57,10 @@ export class MenuController {
     description: 'Meal window schedules returned successfully',
     type: [MealWindowStatusDto],
   })
-  public getMealWindows(
+  public async getMealWindows(
     @CurrentGuest() _guest: GuestContext,
-  ): MealWindowStatusDto[] {
-    return this.menuService.getMealWindows();
+  ): Promise<MealWindowStatusDto[]> {
+    return (await this.menuService.getGuestMenu()).mealWindows;
   }
 
   @Get('items/:id')

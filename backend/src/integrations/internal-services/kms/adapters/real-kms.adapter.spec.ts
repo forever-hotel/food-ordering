@@ -37,16 +37,16 @@ describe('RealKmsAdapter', () => {
 
     const adapter = new RealKmsAdapter(
       'https://kms.internal.foreverhotel.com',
-      'test-kms-key',
+      'test-kms-key-at-least-32-characters',
     );
     const result = await adapter.getMenuCatalog();
 
     expect(result).toEqual(mockResponseData);
     expect(global.fetch).toHaveBeenCalledWith(
-      'https://kms.internal.foreverhotel.com/api/v1/menu',
+      'https://kms.internal.foreverhotel.com/api/v1/guest/menu',
       expect.objectContaining({
         headers: expect.objectContaining({
-          'X-KMS-API-Key': 'test-kms-key',
+          Authorization: 'Bearer test-kms-key-at-least-32-characters',
         }),
       }),
     );
@@ -59,7 +59,10 @@ describe('RealKmsAdapter', () => {
       statusText: 'Bad Gateway',
     });
 
-    const adapter = new RealKmsAdapter('https://kms.internal.foreverhotel.com');
+    const adapter = new RealKmsAdapter(
+      'https://kms.internal.foreverhotel.com',
+      'test-kms-key-at-least-32-characters',
+    );
     await expect(adapter.getOrder('order-101')).rejects.toThrow(
       UpstreamServiceUnavailableException,
     );
@@ -68,7 +71,7 @@ describe('RealKmsAdapter', () => {
   it('rejects order status transition with ForbiddenException asserting KMS authoritative ownership', async () => {
     const adapter = new RealKmsAdapter(
       'https://kms.internal.foreverhotel.com',
-      'test-kms-key',
+      'test-kms-key-at-least-32-characters',
     );
 
     await expect(

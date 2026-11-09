@@ -366,7 +366,8 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
     if (currentStatus === 'READY' || currentStatus === 'DELIVERED') {
       return readyTime || 'Ready';
     }
-    const mins = order?.estimatedDeliveryMinutes || 25;
+    const mins = order?.estimatedDeliveryMinutes;
+    if (!mins || mins <= 0) return 'Awaiting kitchen estimate';
     if (order?.createdAt) {
       const createdMs = new Date(order.createdAt).getTime();
       if (!isNaN(createdMs)) {

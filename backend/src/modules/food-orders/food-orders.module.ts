@@ -7,6 +7,9 @@ import { MenuModule } from '../menu/menu.module.js';
 import { FoodOrdersController } from './food-orders.controller.js';
 import { FoodOrdersService } from './food-orders.service.js';
 import { FossDemoOrderRepository } from './repositories/foss-demo-order.repository.js';
+import { SharedFoodOrderRepository } from './repositories/shared-food-order.repository.js';
+import { ConfigService } from '@nestjs/config';
+import { DataSource } from 'typeorm';
 
 @Module({
   imports: [
@@ -17,7 +20,20 @@ import { FossDemoOrderRepository } from './repositories/foss-demo-order.reposito
     forwardRef(() => MessagingModule),
   ],
   controllers: [FoodOrdersController],
-  providers: [FossDemoOrderRepository, FoodOrdersService],
+  providers: [
+    {
+      provide: FossDemoOrderRepository,
+      inject: [ConfigService, { token: DataSource, optional: true }],
+      useFactory: (config: ConfigService, database?: DataSource) => {
+        if (config.get<string>('SHARED_DATABASE_MODE') !== 'true')
+          return new FossDemoOrderRepository();
+        if (!database)
+          throw new Error('Shared food orders require the shared database');
+        return new SharedFoodOrderRepository(database);
+      },
+    },
+    FoodOrdersService,
+  ],
   exports: [FoodOrdersService, FossDemoOrderRepository],
 })
 export class FoodOrdersModule {}

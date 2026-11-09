@@ -1,4 +1,11 @@
-import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { UpstreamServiceUnavailableException } from '../../../contracts/upstream-integration.exception.js';
 import { FoodOrderStatus } from '../../../../modules/food-orders/enums/food-order-status.enum.js';
 import { KmsMenuCatalogDto, MealPeriod } from '../dto/kms-menu.dto.js';
@@ -19,27 +26,51 @@ export class RealKmsAdapter implements KmsProvider {
     mealPeriod?: MealPeriod,
   ): Promise<KmsMenuCatalogDto> {
     this.assertConfigured();
-    // Real HTTP integration will be hooked up when KMS counterpart deployment is verified
-    return this.executeHttpCall<KmsMenuCatalogDto>('/api/v1/menu', 'GET', {
-      mealPeriod,
-    });
+    return this.executeHttpCall<KmsMenuCatalogDto>(
+      '/api/v1/guest/menu' +
+        (mealPeriod ? `?mealPeriod=${encodeURIComponent(mealPeriod)}` : ''),
+      'GET',
+    );
   }
 
   public async createOrder(
     order: KmsCreateOrderDto,
   ): Promise<KmsOrderResultDto> {
     this.assertConfigured();
+    const catalog = await this.getMenuCatalog();
+    const items = order.items.map((item) =>
+      catalog.items.find((menu) => menu.id === item.itemId),
+    );
+    const mealPeriod = items[0]?.mealPeriods[0];
+    if (
+      !mealPeriod ||
+      items.some((item) => !item || !item.mealPeriods.includes(mealPeriod))
+    )
+      throw new BadRequestException(
+        'Items must belong to one kitchen meal period',
+      );
     return this.executeHttpCall<KmsOrderResultDto>(
-      '/api/v1/orders',
+      '/api/v1/guest/orders',
       'POST',
-      order,
+      {
+        idempotencyKey: order.idempotencyKey,
+        bookingId: order.bookingId,
+        roomNumber: order.roomNumber,
+        mealPeriod,
+        allergyNote: order.allergyNotes ?? null,
+        items: order.items.map((item) => ({
+          menuItemId: item.itemId,
+          quantity: item.quantity,
+          specialNote: item.specialNotes ?? null,
+        })),
+      },
     );
   }
 
   public async getOrder(orderId: string): Promise<KmsOrderResultDto | null> {
     this.assertConfigured();
     return this.executeHttpCall<KmsOrderResultDto>(
-      `/api/v1/orders/${encodeURIComponent(orderId)}`,
+      `/api/v1/guest/orders/${encodeURIComponent(orderId)}`,
       'GET',
     );
   }
@@ -50,7 +81,7 @@ export class RealKmsAdapter implements KmsProvider {
   ): Promise<KmsOrderResultDto> {
     this.assertConfigured();
     return this.executeHttpCall<KmsOrderResultDto>(
-      `/api/v1/orders/${encodeURIComponent(orderId)}/cancel`,
+      `/api/v1/guest/orders/${encodeURIComponent(orderId)}/cancel`,
       'POST',
       { reason },
     );
@@ -76,7 +107,12 @@ export class RealKmsAdapter implements KmsProvider {
   }
 
   private assertConfigured(): void {
-    if (!this.baseUrl || this.baseUrl.trim() === '') {
+    if (
+      !this.baseUrl ||
+      this.baseUrl.trim() === '' ||
+      !this.apiKey ||
+      this.apiKey.length < 32
+    ) {
       this.logger.error(
         'KMS service URL is missing or unconfigured. Failing closed.',
       );
@@ -92,7 +128,7 @@ export class RealKmsAdapter implements KmsProvider {
     method: string,
     body?: any,
   ): Promise<T> {
-    const url = `${this.baseUrl}${endpoint}`;
+    const url = `${this.baseUrl!.replace(/\/$/, '')}${endpoint}`;
     this.logger.log(`Executing upstream KMS request: ${method} ${url}`);
 
     try {
@@ -101,12 +137,22 @@ export class RealKmsAdapter implements KmsProvider {
         headers: {
           'Content-Type': 'application/json',
           Accept: 'application/json',
-          ...(this.apiKey ? { 'X-KMS-API-Key': this.apiKey } : {}),
+          Authorization: `Bearer ${this.apiKey}`,
         },
         body: body && method !== 'GET' ? JSON.stringify(body) : undefined,
+        redirect: 'error',
+        signal: AbortSignal.timeout(8000),
       });
 
       if (!response.ok) {
+        if (response.status === 400)
+          throw new BadRequestException('Kitchen rejected invalid order data');
+        if (response.status === 404)
+          throw new NotFoundException('Kitchen item or order not found');
+        if (response.status === 409)
+          throw new ConflictException(
+            'Kitchen order state or availability changed',
+          );
         throw new Error(
           `Upstream KMS returned HTTP ${response.status}: ${response.statusText}`,
         );
@@ -114,6 +160,12 @@ export class RealKmsAdapter implements KmsProvider {
 
       return (await response.json()) as T;
     } catch (err: any) {
+      if (
+        err instanceof BadRequestException ||
+        err instanceof NotFoundException ||
+        err instanceof ConflictException
+      )
+        throw err;
       this.logger.error(`Upstream KMS request failed: ${err.message}`);
       throw new UpstreamServiceUnavailableException('KMS', err.message);
     }

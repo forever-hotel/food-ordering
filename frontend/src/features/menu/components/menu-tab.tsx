@@ -7,6 +7,8 @@ import { fetchGuestMenu, formatLkrPrice } from '../../../lib/api/menu.ts';
 import { useAuth } from '../../../lib/auth/auth-context.tsx';
 import { useNavigation } from '../../../lib/navigation/navigation-context.tsx';
 import { useCart } from '../../../lib/cart/cart-context.tsx';
+import API_URL from '../../../lib/api/config.ts';
+import { FossRealtimeClient } from '../../../lib/realtime/realtime-client.ts';
 import { LoadingSkeleton } from '../../../components/feedback/loading-skeleton.tsx';
 import { AlertNotice } from '../../../components/feedback/alert-notice.tsx';
 import { EmptyState } from '../../../components/feedback/empty-state.tsx';
@@ -52,6 +54,37 @@ export function MenuTab({ isDemoMode }: MenuTabProps = {}) {
   const [selectedCourse, setSelectedCourse] = useState<string>('All');
   const [selectedItem, setSelectedItem] = useState<GuestMenuItem | null>(null);
   const [currentTime, setCurrentTime] = useState<Date>(() => new Date());
+
+  useEffect(() => {
+    if (!sessionToken || !guest?.bookingId || !guest?.roomNumber || isDemoMode) return;
+    let stopped = false;
+    let refresh: ReturnType<typeof setTimeout> | undefined;
+    const client = new FossRealtimeClient({
+      apiUrl: API_URL,
+      sessionToken,
+      bookingId: guest.bookingId,
+      roomNumber: guest.roomNumber,
+      onRefresh: () => {
+        clearTimeout(refresh);
+        refresh = setTimeout(() => {
+          fetchGuestMenu(sessionToken)
+            .then((data) => {
+              if (!stopped) {
+                setCatalog(data);
+                setError(null);
+              }
+            })
+            .catch(() => undefined);
+        }, 150);
+      },
+    });
+    client.connect();
+    return () => {
+      stopped = true;
+      clearTimeout(refresh);
+      client.disconnect();
+    };
+  }, [sessionToken, guest?.bookingId, guest?.roomNumber, isDemoMode]);
 
   // Periodically refresh current time to update countdowns and trigger window cutoffs smoothly
   useEffect(() => {
@@ -222,14 +255,19 @@ export function MenuTab({ isDemoMode }: MenuTabProps = {}) {
 
   // If viewing item detail screen (Figure 33)
   if (selectedItem) {
+    const currentItem = catalog?.items.find((item) => item.id === selectedItem.id) || {
+      ...selectedItem,
+      available: false,
+      isOrderable: false,
+    };
     const availability = getItemAvailability(
-      selectedItem,
+      currentItem,
       catalog?.mealWindows,
       currentColomboSeconds,
       evaluationOptions,
     );
     const effectiveSelectedItem: GuestMenuItem = {
-      ...selectedItem,
+      ...currentItem,
       isOrderable: availability.isOrderable,
       isCutoff: availability.state === 'closed',
     };

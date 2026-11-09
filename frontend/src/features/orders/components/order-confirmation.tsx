@@ -48,8 +48,8 @@ export function OrderConfirmation({ order, onTrackStatus, onBackToMenu }: OrderC
       : `#ORD-${order.orderId.replace(/^[^\d]*/, '').slice(-3) || '291'}`;
 
   // Estimate range e.g. "25–35"
-  const minEta = order.estimatedDeliveryMinutes || 25;
-  const maxEta = minEta + 10;
+  const minEta = order.estimatedDeliveryMinutes > 0 ? order.estimatedDeliveryMinutes : null;
+  const maxEta = minEta === null ? null : minEta + 10;
 
   return (
     <div
@@ -84,7 +84,7 @@ export function OrderConfirmation({ order, onTrackStatus, onBackToMenu }: OrderC
           Order Confirmed!
         </Title>
         <Paragraph className="!text-xs !text-slate-500 !mb-0 max-w-[280px] mx-auto leading-relaxed">
-          Your order has been sent to the kitchen and a KOT has been printed.
+          Your order has been sent to the kitchen.
         </Paragraph>
       </div>
 
@@ -101,10 +101,10 @@ export function OrderConfirmation({ order, onTrackStatus, onBackToMenu }: OrderC
           ESTIMATED DELIVERY
         </Text>
         <div className="text-3xl sm:text-4xl font-extrabold text-[#F5A623] tracking-tight py-0.5">
-          {minEta}–{maxEta}
+          {minEta === null ? 'Pending' : `${minEta}-${maxEta}`}
         </div>
         <Text className="text-xs font-bold tracking-widest text-[#F5A623] uppercase block">
-          MINUTES
+          {minEta === null ? 'KITCHEN ESTIMATE' : 'MINUTES'}
         </Text>
       </div>
 
