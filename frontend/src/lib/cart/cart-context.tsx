@@ -28,44 +28,14 @@ interface CartContextType {
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
 
-const CART_STORAGE_PREFIX = 'foss_cart_session_';
+import {
+  CART_STORAGE_PREFIX,
+  getCartStorageKey,
+  loadInitialCart,
+  type StoredCartState,
+} from './cart-storage.ts';
 
-interface StoredCartState {
-  bookingId: string;
-  roomNumber: string;
-  items: CartItem[];
-  allergyNote: string;
-}
-
-function loadInitialCart(
-  bookingId?: string,
-  roomNumber?: string,
-): {
-  items: CartItem[];
-  allergyNote: string;
-} {
-  if (typeof window === 'undefined' || !bookingId || !roomNumber) {
-    return { items: [], allergyNote: '' };
-  }
-
-  try {
-    const key = `${CART_STORAGE_PREFIX}${bookingId}_${roomNumber}`;
-    const raw = window.sessionStorage.getItem(key);
-    if (raw) {
-      const parsed: StoredCartState = JSON.parse(raw);
-      if (parsed.bookingId === bookingId && parsed.roomNumber === roomNumber) {
-        return {
-          items: Array.isArray(parsed.items) ? parsed.items : [],
-          allergyNote:
-            typeof parsed.allergyNote === 'string' ? parsed.allergyNote.slice(0, 300) : '',
-        };
-      }
-    }
-  } catch {
-    // sessionStorage unavailable
-  }
-  return { items: [], allergyNote: '' };
-}
+export { CART_STORAGE_PREFIX, getCartStorageKey, loadInitialCart, type StoredCartState };
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const { guest, sessionToken } = useAuth();

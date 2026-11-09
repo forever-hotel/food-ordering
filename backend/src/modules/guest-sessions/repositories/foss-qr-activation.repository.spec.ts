@@ -114,4 +114,86 @@ describe('FossQrActivationRepository', () => {
     expect(mockManager.query).toHaveBeenCalledTimes(1);
     expect(mockTypeOrmRepo.query).not.toHaveBeenCalled();
   });
+
+  it('finds pending activations by booking ID', async () => {
+    const qb: any = {
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      getMany: jest.fn().mockResolvedValue([{ activationId: 'act-1' }]),
+    };
+    mockTypeOrmRepo.createQueryBuilder.mockReturnValue(qb);
+
+    const result = await repository.findPendingByBookingId('b-101');
+    expect(result).toHaveLength(1);
+    expect(qb.where).toHaveBeenCalledWith('qa.booking_id = :bookingId', {
+      bookingId: 'b-101',
+    });
+  });
+
+  it('saves activation entity', async () => {
+    const entity = new FossQrActivation();
+    mockTypeOrmRepo.save.mockResolvedValue(entity);
+
+    const result = await repository.save(entity);
+    expect(result).toBe(entity);
+    expect(mockTypeOrmRepo.save).toHaveBeenCalledWith(entity);
+  });
+
+  it('revokes unredeemed activations by booking ID', async () => {
+    const qb: any = {
+      update: jest.fn().mockReturnThis(),
+      set: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      execute: jest.fn().mockResolvedValue({ affected: 2 }),
+    };
+    mockTypeOrmRepo.createQueryBuilder.mockReturnValue(qb);
+
+    const affected = await repository.revokeUnredeemedByBookingId('b-101');
+    expect(affected).toBe(2);
+  });
+
+  it('returns 0 if revokeUnredeemedByBookingId affected is undefined', async () => {
+    const qb: any = {
+      update: jest.fn().mockReturnThis(),
+      set: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      execute: jest.fn().mockResolvedValue({}),
+    };
+    mockTypeOrmRepo.createQueryBuilder.mockReturnValue(qb);
+
+    const affected = await repository.revokeUnredeemedByBookingId('b-101');
+    expect(affected).toBe(0);
+  });
+
+  it('handles snake_case raw row mapping with revoked_at present in atomicRedeem', async () => {
+    const now = new Date('2026-10-31T16:00:00Z');
+    mockTypeOrmRepo.query.mockResolvedValue([
+      [
+        {
+          activation_id: 'act-nested-1',
+          booking_id: 'b-101',
+          room_number: '101',
+          token_hash: 'hash-nested-1',
+          expires_at: '2026-10-31T16:15:00Z',
+          redeemed_at: '2026-10-31T16:00:00Z',
+          revoked_at: '2026-10-31T15:59:00Z',
+          created_at: '2026-10-31T15:55:00Z',
+          issued_by: 'FDS_CHECK_IN',
+        },
+      ],
+    ]);
+
+    const result = await repository.atomicRedeem('hash-nested-1', now);
+    expect(result).not.toBeNull();
+    expect(result?.activationId).toBe('act-nested-1');
+    expect(result?.revokedAt).toBeInstanceOf(Date);
+  });
+
+  it('returns null if query returns array with empty or falsy row', async () => {
+    mockTypeOrmRepo.query.mockResolvedValue([null]);
+    const result = await repository.atomicRedeem('hash-empty', new Date());
+    expect(result).toBeNull();
+  });
 });

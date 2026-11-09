@@ -33,6 +33,7 @@ describe('Realtime Client Security & Fetch-Based SSE Authentication (CIT-04 Phas
               })}\n\n`,
             ),
           );
+          controller.close();
         },
       });
 
@@ -104,6 +105,7 @@ describe('Realtime Client Security & Fetch-Based SSE Authentication (CIT-04 Phas
           controller.enqueue(encoder.encode(part1));
           await new Promise((r) => setTimeout(r, 20));
           controller.enqueue(encoder.encode(part2));
+          controller.close();
         },
       });
       return new Response(stream, { status: 200 });
@@ -151,6 +153,7 @@ describe('Realtime Client Security & Fetch-Based SSE Authentication (CIT-04 Phas
               })}\n\n`,
             ),
           );
+          controller.close();
         },
       });
       return new Response(stream, { status: 200 });
@@ -195,6 +198,7 @@ describe('Realtime Client Security & Fetch-Based SSE Authentication (CIT-04 Phas
               })}\n\n`,
             ),
           );
+          controller.close();
         },
       });
       return new Response(stream, { status: 200 });
@@ -240,6 +244,7 @@ describe('Realtime Client Security & Fetch-Based SSE Authentication (CIT-04 Phas
           const encoder = new TextEncoder();
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(eventPayload)}\n\n`));
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(eventPayload)}\n\n`));
+          controller.close();
         },
       });
       return new Response(stream, { status: 200 });

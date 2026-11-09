@@ -1076,5 +1076,212 @@ describe('ComplaintsService', () => {
       expect(set.has('seen-mad-0')).toBe(false);
       expect(set.has('new-mad-event-1001')).toBe(true);
     });
+
+    it('resolves canonicalOrderId when demo order or relatedOrderId is UUID vs non-UUID', async () => {
+      // 1) demo order has non-UUID orderId, but relatedOrderId is a UUID
+      const uuidOrderId = '550e8400-e29b-41d4-a716-446655440099';
+      const nonUuidDemoOrder: any = {
+        orderId: 'order-simple-123',
+        bookingId: mockGuest.bookingId,
+        roomNumber: mockGuest.roomNumber,
+      };
+      (orderRepo.findById as any).mockResolvedValueOnce(nonUuidDemoOrder);
+      (complaintRepo.findByIdempotencyKey as any).mockResolvedValueOnce(null);
+      (complaintRepo.save as any).mockImplementationOnce(async (e: any) => e);
+
+      const res1 = await service.fileComplaint(
+        mockGuest,
+        {
+          category: ComplaintCategory.FOOD,
+          severity: ComplaintSeverity.LOW,
+          subject: 'Cold fries',
+          description: 'Fries were cold.',
+          relatedOrderId: uuidOrderId,
+        },
+        'idemp-canonical-1',
+      );
+      expect(res1.relatedOrderId).toBe(uuidOrderId);
+
+      // 2) demo order has non-UUID orderId, and relatedOrderId is non-UUID
+      (orderRepo.findById as any).mockResolvedValueOnce(nonUuidDemoOrder);
+      (complaintRepo.findByIdempotencyKey as any).mockResolvedValueOnce(null);
+      (complaintRepo.save as any).mockImplementationOnce(async (e: any) => e);
+
+      const res2 = await service.fileComplaint(
+        mockGuest,
+        {
+          category: ComplaintCategory.FOOD,
+          severity: ComplaintSeverity.LOW,
+          subject: 'Cold burger',
+          description: 'Burger was cold.',
+          relatedOrderId: 'order-simple-123',
+        },
+        'idemp-canonical-2',
+      );
+      expect(res2.relatedOrderId).toBe('order-simple-123');
+
+      // 3) KMS provider fallback with non-UUID KMS order and UUID relatedOrderId
+      (orderRepo.findById as any).mockResolvedValueOnce(null);
+      const mockKms = (service as any).kmsProvider;
+      mockKms.getOrder.mockResolvedValueOnce({
+        orderId: 'kms-order-simple',
+        bookingId: mockGuest.bookingId,
+        roomNumber: mockGuest.roomNumber,
+      });
+      (complaintRepo.findByIdempotencyKey as any).mockResolvedValueOnce(null);
+      (complaintRepo.save as any).mockImplementationOnce(async (e: any) => e);
+
+      const res3 = await service.fileComplaint(
+        mockGuest,
+        {
+          category: ComplaintCategory.FOOD,
+          severity: ComplaintSeverity.LOW,
+          subject: 'Cold drink',
+          description: 'Drink was lukewarm.',
+          relatedOrderId: uuidOrderId,
+        },
+        'idemp-canonical-3',
+      );
+      expect(res3.relatedOrderId).toBe(uuidOrderId);
+
+      // 4) KMS provider fallback with non-UUID KMS order and non-UUID relatedOrderId
+      (orderRepo.findById as any).mockResolvedValueOnce(null);
+      mockKms.getOrder.mockResolvedValueOnce({
+        orderId: 'kms-order-simple',
+        bookingId: mockGuest.bookingId,
+        roomNumber: mockGuest.roomNumber,
+      });
+      (complaintRepo.findByIdempotencyKey as any).mockResolvedValueOnce(null);
+      (complaintRepo.save as any).mockImplementationOnce(async (e: any) => e);
+
+      const res4 = await service.fileComplaint(
+        mockGuest,
+        {
+          category: ComplaintCategory.FOOD,
+          severity: ComplaintSeverity.LOW,
+          subject: 'Cold soup',
+          description: 'Soup was cold.',
+          relatedOrderId: 'kms-order-simple',
+        },
+        'idemp-canonical-4',
+      );
+      expect(res4.relatedOrderId).toBe('kms-order-simple');
+    });
+
+    it('handles KMS lookup errors that are not BadRequestException and throws if order not found', async () => {
+      (orderRepo.findById as any).mockResolvedValueOnce(null);
+      const mockKms = (service as any).kmsProvider;
+      mockKms.getOrder.mockRejectedValueOnce(new Error('KMS connection timeout'));
+
+      await expect(
+        service.fileComplaint(
+          mockGuest,
+          {
+            category: ComplaintCategory.FOOD,
+            severity: ComplaintSeverity.LOW,
+            subject: 'Missing cutlery',
+            description: 'No spoons.',
+            relatedOrderId: 'order-unreachable',
+          },
+          'idemp-kms-err-1',
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('handles MAD result variations and MAD error with non-Error string', async () => {
+      (complaintRepo.findByIdempotencyKey as any).mockResolvedValue(null);
+      (complaintRepo.save as any).mockImplementation(async (e: any) => e);
+
+      // MAD result without assignedManager or status
+      (madProvider.fileComplaint as any).mockResolvedValueOnce({} as any);
+
+      const res1 = await service.fileComplaint(
+        mockGuest,
+        {
+          category: ComplaintCategory.ROOM,
+          severity: ComplaintSeverity.LOW,
+          subject: 'Dusty shelf',
+          description: 'Shelf was dusty.',
+        },
+        'idemp-mad-empty',
+      );
+      expect(res1.status).toBe(ComplaintStatus.SUBMITTED);
+
+      // MAD throws non-Error string
+      (madProvider.fileComplaint as any).mockRejectedValueOnce('MAD network dropped');
+      const res2 = await service.fileComplaint(
+        mockGuest,
+        {
+          category: ComplaintCategory.ROOM,
+          severity: ComplaintSeverity.LOW,
+          subject: 'Noisy AC',
+          description: 'AC makes a buzzing noise.',
+        },
+        'idemp-mad-string-err',
+      );
+      expect(res2.status).toBe(ComplaintStatus.SUBMITTED);
+    });
+
+    it('handles race conditions during complaint save with detailed and constraint checks', async () => {
+      (complaintRepo.findByIdempotencyKey as any).mockResolvedValueOnce(null);
+      (complaintRepo.save as any).mockRejectedValueOnce({
+        code: '23505',
+        constraint: 'UQ_foss_complaints_idempotency_key',
+      });
+      (complaintRepo.findByIdempotencyKey as any).mockResolvedValueOnce(existingComplaint);
+
+      const res1 = await service.fileComplaint(
+        mockGuest,
+        {
+          category: ComplaintCategory.FOOD,
+          severity: ComplaintSeverity.MEDIUM,
+          subject: 'Cold soup delivered',
+          description: 'The mushroom soup was completely cold.',
+        },
+        'idemp-existing-001',
+      );
+      expect(res1.complaintId).toBe(existingComplaint.complaintId);
+
+      // Detail check with null existing found -> rethrows
+      (complaintRepo.findByIdempotencyKey as any).mockResolvedValueOnce(null);
+      (complaintRepo.save as any).mockRejectedValueOnce({
+        code: '23505',
+        detail: 'Key (idempotency_key)=(abc) already exists.',
+      });
+      (complaintRepo.findByIdempotencyKey as any).mockResolvedValueOnce(null);
+
+      await expect(
+        service.fileComplaint(
+          mockGuest,
+          {
+            category: ComplaintCategory.FOOD,
+            severity: ComplaintSeverity.MEDIUM,
+            subject: 'Cold soup delivered',
+            description: 'The mushroom soup was completely cold.',
+          },
+          'idemp-race-null',
+        ),
+      ).rejects.toEqual({
+        code: '23505',
+        detail: 'Key (idempotency_key)=(abc) already exists.',
+      });
+
+      // Different error code -> rethrows
+      (complaintRepo.findByIdempotencyKey as any).mockResolvedValueOnce(null);
+      (complaintRepo.save as any).mockRejectedValueOnce(new Error('Foreign key violation'));
+
+      await expect(
+        service.fileComplaint(
+          mockGuest,
+          {
+            category: ComplaintCategory.FOOD,
+            severity: ComplaintSeverity.MEDIUM,
+            subject: 'Cold soup delivered',
+            description: 'The mushroom soup was completely cold.',
+          },
+          'idemp-race-other',
+        ),
+      ).rejects.toThrow('Foreign key violation');
+    });
   });
 });

@@ -755,5 +755,74 @@ describe('QrActivationService', () => {
         fixedNow,
       );
     });
+
+    it('accepts identical bookingId and bookingReference when both are valid matching UUIDs', async () => {
+      const matchUuid = '550e8400-e29b-41d4-a716-446655440000';
+      bookingVerificationService.verifyStay.mockResolvedValueOnce({
+        valid: true,
+        bookingId: matchUuid,
+        roomNumber: '101',
+        status: 'CHECKED_IN',
+        stayStart: '2026-10-31T10:00:00.000Z',
+        stayEnd: '2026-11-01T10:00:00.000Z',
+      });
+
+      const res = await service.issueActivationCredential({
+        bookingId: matchUuid,
+        bookingReference: matchUuid,
+        roomNumber: '101',
+      });
+
+      expect(res).toBeDefined();
+      expect(res.activationUrl).toContain('token=');
+    });
+
+    it('initializes with fallback configuration when environment variables are omitted', () => {
+      const customConfigService = {
+        get: jest.fn((key: string) => {
+          if (key === 'FOSS_FRONTEND_URL') return 'http://foss-frontend.local';
+          return undefined;
+        }),
+      };
+
+      const fallbackService1 = new QrActivationService(
+        qrActivationRepo as any,
+        sessionRepo as any,
+        bookingVerificationService as any,
+        customConfigService as any,
+        undefined,
+        () => new Date(),
+      );
+      expect((fallbackService1 as any).frontendBaseUrl).toBe('http://foss-frontend.local');
+
+      const customConfigService2 = {
+        get: jest.fn((key: string) => {
+          if (key === 'APP_BASE_URL') return 'http://app-base.local/';
+          return undefined;
+        }),
+      };
+
+      const fallbackService2 = new QrActivationService(
+        qrActivationRepo as any,
+        sessionRepo as any,
+        bookingVerificationService as any,
+        customConfigService2 as any,
+        undefined,
+        () => new Date(),
+      );
+      expect((fallbackService2 as any).frontendBaseUrl).toBe('http://app-base.local');
+
+      const customConfigService3 = {
+        get: jest.fn(() => undefined),
+      };
+
+      const fallbackService3 = new QrActivationService(
+        qrActivationRepo as any,
+        sessionRepo as any,
+        bookingVerificationService as any,
+        customConfigService3 as any,
+      );
+      expect((fallbackService3 as any).frontendBaseUrl).toBe('http://localhost:3000');
+    });
   });
 });

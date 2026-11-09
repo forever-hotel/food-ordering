@@ -91,6 +91,70 @@ describe('HealthService', () => {
       expect((result.database as any).isolation).toBeUndefined();
       expect((result.database as any).sanitizedTarget).toBeUndefined();
     });
+
+    it('probes read-only tables when SHARED_DATABASE_MODE is true', async () => {
+      mockConfigService.get.mockImplementation((k: string) =>
+        k === 'SHARED_DATABASE_MODE' ? 'true' : undefined,
+      );
+      mockDataSource.query.mockResolvedValue([]);
+
+      const result = await service.checkReadiness();
+      expect(result.status).toBe('ok');
+      expect(mockDataSource.query).toHaveBeenCalledWith(
+        expect.stringContaining('SELECT activation_id,token_hash'),
+      );
+    });
+
+    it('reports messaging status as disabled when RabbitMQ is disabled', async () => {
+      const mockRabbit = {
+        isEnabled: jest.fn().mockReturnValue(false),
+        isConnected: jest.fn().mockReturnValue(false),
+      };
+      const healthWithRabbit = new HealthService(
+        mockDataSource as unknown as DataSource,
+        mockConfigService as unknown as any,
+        mockRabbit as any,
+      );
+
+      mockDataSource.query.mockResolvedValue([]);
+      const result = await healthWithRabbit.checkReadiness();
+      expect(result.messaging).toEqual({
+        status: 'disabled',
+        connected: false,
+      });
+    });
+
+    it('reports messaging status as up when RabbitMQ is connected', async () => {
+      const mockRabbit = {
+        isEnabled: jest.fn().mockReturnValue(true),
+        isConnected: jest.fn().mockReturnValue(true),
+      };
+      const healthWithRabbit = new HealthService(
+        mockDataSource as unknown as DataSource,
+        mockConfigService as unknown as any,
+        mockRabbit as any,
+      );
+
+      mockDataSource.query.mockResolvedValue([]);
+      const result = await healthWithRabbit.checkReadiness();
+      expect(result.messaging).toEqual({ status: 'up', connected: true });
+    });
+
+    it('reports messaging status as down when RabbitMQ is enabled but disconnected', async () => {
+      const mockRabbit = {
+        isEnabled: jest.fn().mockReturnValue(true),
+        isConnected: jest.fn().mockReturnValue(false),
+      };
+      const healthWithRabbit = new HealthService(
+        mockDataSource as unknown as DataSource,
+        mockConfigService as unknown as any,
+        mockRabbit as any,
+      );
+
+      mockDataSource.query.mockResolvedValue([]);
+      const result = await healthWithRabbit.checkReadiness();
+      expect(result.messaging).toEqual({ status: 'down', connected: false });
+    });
   });
 
   describe('getDatabaseIsolationInfo', () => {
@@ -235,6 +299,33 @@ describe('HealthService', () => {
       } finally {
         process.env.NODE_ENV = prevEnv;
       }
+    });
+
+    it('handles invalid database URL in options gracefully', async () => {
+      const invalidUrlService = new HealthService({
+        options: {
+          url: ':::invalid-url:::',
+        },
+        query: jest.fn().mockRejectedValue(new Error('Query failed')),
+      } as any);
+
+      const isolation = await invalidUrlService.getDatabaseIsolationInfo();
+      expect(isolation.classification).toBe('unknown');
+    });
+
+    it('detects cloud shared database from host containing neon.tech', async () => {
+      const cloudService = new HealthService({
+        options: {
+          host: 'ep-cool-fog-123.eu-central-1.aws.neon.tech',
+          database: 'production_foss',
+        },
+        query: jest
+          .fn()
+          .mockRejectedValue(new Error('pg_settings not accessible')),
+      } as any);
+
+      const isolation = await cloudService.getDatabaseIsolationInfo();
+      expect(isolation.isCloudShared).toBe(true);
     });
   });
 });

@@ -623,4 +623,55 @@ describe('TC-DDP-101-AC3: Fine-Grained Item Availability States & Guest Messages
     assert.equal(demoResult.isOrderable, true);
     assert.equal(demoResult.buttonLabel, 'Add to Cart');
   });
+
+  it('evaluateMealWindowStatus handles server-authorized active ALL_DAY window', () => {
+    const allDayWindow: MealWindowStatus = {
+      period: 'ALL_DAY',
+      name: 'All-Day Dining',
+      startTime: '06:00:00',
+      cutoffTime: '23:00:00',
+      isActive: true,
+      isCutoffReached: false,
+      secondsRemaining: 3600,
+    };
+
+    const state = evaluateMealWindowStatus(allDayWindow, 23 * 3600 + 30 * 60);
+    assert.equal(state.state, 'open');
+    assert.equal(state.isOrderable, true);
+    assert.equal(state.secondsRemaining, 3600);
+  });
+
+  it('handles empty meal windows array and empty item periods gracefully across evaluators', () => {
+    const item: GuestMenuItem = {
+      id: 'item-empty',
+      name: 'Item Empty',
+      price: 100,
+      category: 'MAINS',
+      available: true,
+      isOrderable: true,
+      isCutoff: false,
+      mealPeriods: [],
+    } as any;
+
+    // isItemCurrentlyOrderable
+    assert.equal(isItemCurrentlyOrderable(item, []), true);
+    assert.equal(isItemCurrentlyOrderable(item, MOCK_AUTHORITATIVE_MEAL_WINDOWS), true);
+
+    // isItemCutoff
+    assert.equal(isItemCutoff(item, []), false);
+    assert.equal(isItemCutoff(item, MOCK_AUTHORITATIVE_MEAL_WINDOWS), false);
+
+    // getItemAvailability with unorderable item and empty windows
+    const unorderableItem: GuestMenuItem = {
+      ...item,
+      isOrderable: false,
+    };
+    const avail1 = getItemAvailability(unorderableItem, []);
+    assert.equal(avail1.state, 'temporarily_unavailable');
+    assert.equal(avail1.isOrderable, false);
+
+    const avail2 = getItemAvailability(unorderableItem, MOCK_AUTHORITATIVE_MEAL_WINDOWS);
+    assert.equal(avail2.state, 'temporarily_unavailable');
+    assert.equal(avail2.isOrderable, false);
+  });
 });

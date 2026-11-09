@@ -65,4 +65,72 @@ describe('canonical shared kitchen orders', () => {
       ['booking', '101'],
     );
   });
+
+  it('returns null when order is not found by ID', async () => {
+    const query = jest
+      .fn<(...args: unknown[]) => Promise<unknown[]>>()
+      .mockResolvedValue([]);
+    const repo = new SharedFoodOrderRepository({
+      query,
+    } as unknown as DataSource);
+
+    const result = await repo.findById('non-existent-id');
+    expect(result).toBeNull();
+  });
+
+  it('returns null when order is not found by idempotency key', async () => {
+    const query = jest
+      .fn<(...args: unknown[]) => Promise<unknown[]>>()
+      .mockResolvedValue([]);
+    const repo = new SharedFoodOrderRepository({
+      query,
+    } as unknown as DataSource);
+
+    const result = await repo.findByIdempotencyKey('non-existent-key');
+    expect(result).toBeNull();
+  });
+
+  it('filters out null orders in findByBookingAndRoom', async () => {
+    const query = jest.fn<(...args: unknown[]) => Promise<unknown[]>>();
+    query.mockResolvedValueOnce([{ order_id: 'id-1' }, { order_id: 'id-2' }]);
+    // id-1 found
+    query.mockResolvedValueOnce([
+      {
+        order_id: 'id-1',
+        booking_id: 'booking',
+        room_number: '101',
+        status: 'PLACED',
+        total_amount: 50000,
+        placed_at: new Date(),
+        updated_at: new Date(),
+      },
+    ]);
+    query.mockResolvedValueOnce([]); // items for id-1
+    // id-2 not found
+    query.mockResolvedValueOnce([]);
+
+    const repo = new SharedFoodOrderRepository({
+      query,
+    } as unknown as DataSource);
+
+    const results = await repo.findByBookingAndRoom('booking', '101');
+    expect(results).toHaveLength(1);
+    expect(results[0].orderId).toBe('id-1');
+  });
+
+  it('throws NotFoundException when saving an uncommitted or nonexistent order', async () => {
+    const query = jest
+      .fn<(...args: unknown[]) => Promise<unknown[]>>()
+      .mockResolvedValue([]);
+    const repo = new SharedFoodOrderRepository({
+      query,
+    } as unknown as DataSource);
+
+    const order = new FossDemoOrder();
+    order.orderId = 'missing-id';
+
+    await expect(repo.save(order)).rejects.toThrow(
+      'Canonical kitchen order is unavailable',
+    );
+  });
 });
