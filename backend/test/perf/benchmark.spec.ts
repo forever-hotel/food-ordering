@@ -1040,9 +1040,7 @@ describe('FOSS Performance & Scalability Benchmarks (Issue #119 / DDP-274)', () 
           throw new Error(`Invalid cached menu response: status ${res.status}`);
         }
         if (res.status !== 200 || !res.body?.categories) {
-          throw new Error(
-            `Invalid cached menu response: status ${res.status}`,
-          );
+          throw new Error(`Invalid cached menu response: status ${res.status}`);
         }
         return res.status;
       },
