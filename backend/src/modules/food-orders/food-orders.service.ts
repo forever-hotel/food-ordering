@@ -91,6 +91,29 @@ export class FoodOrdersService {
       this.logger.log(
         `Idempotent order replay: returning existing order [${existingOrder.orderId}] for room [${guest.roomNumber}].`,
       );
+      if (this.configService.get<string>('SHARED_DATABASE_MODE') === 'true') {
+        const same =
+          dto.items?.length === existingOrder.items.length &&
+          new Set(dto.items.map((item) => item.menuItemId)).size ===
+            dto.items.length &&
+          dto.items.every((item) => {
+            const stored = existingOrder.items.find(
+              (value) => value.menuItemId === item.menuItemId,
+            );
+            return (
+              stored &&
+              stored.quantity === item.quantity &&
+              (stored.specialNotes?.trim() || '') ===
+                (item.specialNotes?.trim() || '')
+            );
+          }) &&
+          (existingOrder.allergyNotes?.trim() || '') ===
+            (dto.allergyNote?.trim() || '');
+        if (!same)
+          throw new ConflictException(
+            'Idempotency key was used for a different order',
+          );
+      }
       return this.mapToResponse(existingOrder);
     }
 
@@ -104,7 +127,12 @@ export class FoodOrdersService {
     try {
       catalog = await this.kmsProvider.getMenuCatalog();
     } catch (err: unknown) {
-      if (err instanceof UpstreamServiceUnavailableException) {
+      if (
+        err instanceof UpstreamServiceUnavailableException ||
+        err instanceof BadRequestException ||
+        err instanceof ConflictException ||
+        err instanceof NotFoundException
+      ) {
         throw err;
       }
       const msg = err instanceof Error ? err.message : String(err);
@@ -131,10 +159,12 @@ export class FoodOrdersService {
         );
       }
 
-      const orderableStatus = this.mealWindowService.isItemOrderable(
-        catalogItem.mealPeriods,
-        now,
-      );
+      const orderableStatus = catalogItem.orderingWindow
+        ? this.mealWindowService.evaluateKitchenWindow(
+            catalogItem.orderingWindow,
+            now,
+          )
+        : this.mealWindowService.isItemOrderable(catalogItem.mealPeriods, now);
       if (!orderableStatus.isOrderable) {
         throw new BadRequestException(
           `Ordering for '${catalogItem.name}' is closed. The meal window cutoff has passed.`,
@@ -146,6 +176,13 @@ export class FoodOrdersService {
           `Quantity for '${catalogItem.name}' must be between 1 and 20.`,
         );
       }
+      if (
+        catalogItem.portionLimit !== undefined &&
+        reqItem.quantity > catalogItem.portionLimit
+      )
+        throw new BadRequestException(
+          'Requested quantity exceeds the kitchen portion limit',
+        );
 
       // Server-authoritative price calculation
       const unitPrice = catalogItem.price;
@@ -180,7 +217,12 @@ export class FoodOrdersService {
     try {
       kmsResult = await this.kmsProvider.createOrder(kmsOrderPayload);
     } catch (err: unknown) {
-      if (err instanceof UpstreamServiceUnavailableException) {
+      if (
+        err instanceof UpstreamServiceUnavailableException ||
+        err instanceof BadRequestException ||
+        err instanceof ConflictException ||
+        err instanceof NotFoundException
+      ) {
         throw err;
       }
       const msg = err instanceof Error ? err.message : String(err);
@@ -213,7 +255,8 @@ export class FoodOrdersService {
     });
 
     try {
-      await this.orderRepository.save(demoOrder);
+      const canonical = await this.orderRepository.save(demoOrder);
+      if (canonical) Object.assign(demoOrder, canonical);
     } catch (err: unknown) {
       // Handle race condition on duplicate idempotency key
       const duplicateError = err as { code?: string; message?: string };
@@ -354,7 +397,12 @@ export class FoodOrdersService {
     try {
       await this.kmsProvider.cancelOrder(orderId, reason);
     } catch (err: unknown) {
-      if (err instanceof UpstreamServiceUnavailableException) {
+      if (
+        err instanceof UpstreamServiceUnavailableException ||
+        err instanceof BadRequestException ||
+        err instanceof ConflictException ||
+        err instanceof NotFoundException
+      ) {
         throw err;
       }
       const msg = err instanceof Error ? err.message : String(err);

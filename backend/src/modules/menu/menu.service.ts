@@ -5,6 +5,7 @@ import {
   NotFoundException,
   Optional,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import {
   KmsProvider,
   KMS_PROVIDER,
@@ -32,32 +33,64 @@ export class MenuService {
     private readonly clockService: HotelClockService,
     @Optional()
     private readonly redisService?: RedisService,
+    @Optional() private readonly config?: ConfigService,
   ) {}
+
+  private get catalogCache(): RedisService | undefined {
+    // Live KMS invalidations cause immediate REST reads, never five-minute stale stock.
+    return this.config?.get<string>('SHARED_DATABASE_MODE') === 'true'
+      ? undefined
+      : this.redisService;
+  }
 
   public async getGuestMenu(
     query?: GetMenuQueryDto,
   ): Promise<GuestMenuResponseDto> {
     const now = this.clockService.now();
     const { isoColombo } = this.clockService.getColomboTimeParts(now);
-    const activeMealPeriods = this.mealWindowService.getActiveMealPeriods(now);
-    const mealWindows = this.mealWindowService.getAllWindowStatuses(now);
+    let activeMealPeriods = this.mealWindowService.getActiveMealPeriods(now);
+    let mealWindows = this.mealWindowService.getAllWindowStatuses(now);
 
     this.logger.log(
       `Fetching menu catalog. Active meal periods in Colombo [${isoColombo}]: ${activeMealPeriods.join(', ') || 'None'}`,
     );
 
     const cacheKey = `foss:menu:catalog:v1:${query?.mealPeriod || 'ALL'}`;
-    let catalog = this.redisService
-      ? await this.redisService.get<KmsMenuCatalogDto>(cacheKey)
+    let catalog = this.catalogCache
+      ? await this.catalogCache.get<KmsMenuCatalogDto>(cacheKey)
       : null;
 
     if (!catalog) {
       catalog = await this.kmsProvider.getMenuCatalog(query?.mealPeriod);
-      if (this.redisService) {
-        await this.redisService.set(cacheKey, catalog);
+      if (this.catalogCache) {
+        await this.catalogCache.set(cacheKey, catalog);
       }
     }
 
+    if (catalog.items.some((item) => item.orderingWindow)) {
+      const windows = new Map<string, (typeof mealWindows)[number]>();
+      for (const item of catalog.items) {
+        if (!item.orderingWindow) continue;
+        const status = this.mealWindowService.evaluateKitchenWindow(
+          item.orderingWindow,
+          now,
+        );
+        const period = item.mealPeriods[0];
+        windows.set(period, {
+          period,
+          name: item.category,
+          startTime: item.orderingWindow.startTime,
+          cutoffTime: item.orderingWindow.cutoffTime,
+          isActive: status.isOrderable,
+          isCutoffReached: status.isCutoff,
+          secondsRemaining: status.secondsRemaining,
+        });
+      }
+      mealWindows = [...windows.values()];
+      activeMealPeriods = mealWindows
+        .filter((window) => window.isActive)
+        .map((window) => window.period);
+    }
     let mappedItems: GuestMenuItemDto[] = catalog.items.map((item) =>
       this.enrichMenuItem(item, now),
     );
@@ -87,14 +120,14 @@ export class MenuService {
 
   public async getItemById(id: string): Promise<GuestMenuItemDto> {
     const cacheKey = 'foss:menu:catalog:v1:ALL';
-    let catalog = this.redisService
-      ? await this.redisService.get<KmsMenuCatalogDto>(cacheKey)
+    let catalog = this.catalogCache
+      ? await this.catalogCache.get<KmsMenuCatalogDto>(cacheKey)
       : null;
 
     if (!catalog) {
       catalog = await this.kmsProvider.getMenuCatalog();
-      if (this.redisService) {
-        await this.redisService.set(cacheKey, catalog);
+      if (this.catalogCache) {
+        await this.catalogCache.set(cacheKey, catalog);
       }
     }
 
@@ -120,10 +153,9 @@ export class MenuService {
   }
 
   private enrichMenuItem(item: KmsMenuItemDto, date: Date): GuestMenuItemDto {
-    const orderableInfo = this.mealWindowService.isItemOrderable(
-      item.mealPeriods,
-      date,
-    );
+    const orderableInfo = item.orderingWindow
+      ? this.mealWindowService.evaluateKitchenWindow(item.orderingWindow, date)
+      : this.mealWindowService.isItemOrderable(item.mealPeriods, date);
 
     // Item must be in stock AND its meal window must be currently active to be orderable
     const isOrderable = item.available && orderableInfo.isOrderable;

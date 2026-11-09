@@ -16,10 +16,13 @@ export enum MealPeriod {
   BREAKFAST = 'BREAKFAST',
   LUNCH = 'LUNCH',
   DINNER = 'DINNER',
+  TEA_TIME = 'TEA_TIME',
   ALL_DAY = 'ALL_DAY',
 }
 
 export class KmsMenuItemDto {
+  orderingWindow?: { startTime: string; cutoffTime: string; enabled: boolean };
+  portionLimit?: number;
   @ApiProperty({ example: 'item-burger-01' })
   @IsString()
   @IsNotEmpty()
@@ -37,7 +40,7 @@ export class KmsMenuItemDto {
   @IsOptional()
   description!: string | null;
 
-  @ApiProperty({ example: 28.5, description: 'Price in USD' })
+  @ApiProperty({ example: 1250.5, description: 'Price in LKR rupees; KMS converts its integer cents at the contract boundary' })
   @IsNumber()
   @IsPositive()
   price!: number;

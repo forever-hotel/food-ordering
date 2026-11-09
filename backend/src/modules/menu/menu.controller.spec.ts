@@ -40,8 +40,8 @@ describe('MenuController', () => {
     expect(result.activeMealPeriods).toContain(MealPeriod.LUNCH);
   });
 
-  it('delegates getMealWindows call to MenuService', () => {
-    const windows = controller.getMealWindows(mockGuest);
+  it('delegates getMealWindows call to MenuService', async () => {
+    const windows = await controller.getMealWindows(mockGuest);
 
     expect(windows.length).toBe(4);
   });

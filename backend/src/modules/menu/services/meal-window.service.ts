@@ -23,6 +23,27 @@ export interface MealWindowStatus {
 
 @Injectable()
 export class MealWindowService {
+  public evaluateKitchenWindow(
+    window: { startTime: string; cutoffTime: string; enabled: boolean },
+    date: Date,
+  ) {
+    const seconds = (value: string) => {
+      if (!/^\d{2}:\d{2}(:\d{2})?$/.test(value)) return NaN;
+      const [h, m, s = 0] = value.split(':').map(Number);
+      return h < 24 && m < 60 && s < 60 ? h * 3600 + m * 60 + s : NaN;
+    };
+    const start = seconds(window.startTime),
+      cutoff = seconds(window.cutoffTime);
+    const now = this.clockService.getColomboTimeParts(date).totalSecondsOfDay;
+    const valid =
+      Number.isFinite(start) && Number.isFinite(cutoff) && cutoff > start;
+    return {
+      isOrderable: valid && window.enabled && now >= start && now < cutoff,
+      isCutoff: !valid || !window.enabled || now >= cutoff,
+      secondsRemaining:
+        valid && window.enabled && now < cutoff ? cutoff - now : 0,
+    };
+  }
   private readonly logger = new Logger(MealWindowService.name);
 
   // Authoritative operational meal schedules for Forever Hotel (Asia/Colombo)
