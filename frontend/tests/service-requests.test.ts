@@ -8,10 +8,100 @@ import {
   fetchGuestServiceRequests,
   fetchGuestServiceRequestById,
   advanceServiceRequestStatusDemo,
-  FALLBACK_SERVICE_REQUESTS,
 } from '../src/lib/api/services.ts';
 import { ApiError } from '../src/lib/api/guest-sessions.ts';
 import type { CreateServiceRequestPayload, ServiceRequestResponse } from '../src/types/services.ts';
+
+const TEST_SERVICE_REQUESTS_FIXTURE: ServiceRequestResponse[] = [
+  {
+    requestId: 'REQ-042',
+    roomNumber: '103',
+    bookingId: 'booking-101',
+    requestType: 'EXTRA_TOWELS',
+    description: 'Please bring 2 extra bath towels',
+    status: 'ASSIGNED',
+    priority: 'NORMAL',
+    assignedStaff: 'Worker en route',
+    estimatedCompletionMinutes: 15,
+    taskId: 'task-wkms-042',
+    idempotencyKey: 'idemp-demo-req-042',
+    createdAt: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
+    updatedAt: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+    timeline: [
+      {
+        status: 'SUBMITTED',
+        label: 'Request Submitted',
+        completed: true,
+        current: false,
+        timestamp: '13:30',
+      },
+      {
+        status: 'ASSIGNED',
+        label: 'Worker Assigned',
+        completed: true,
+        current: true,
+        timestamp: '13:45 · Now',
+      },
+      {
+        status: 'IN_PROGRESS',
+        label: 'In Progress',
+        completed: false,
+        current: false,
+      },
+      {
+        status: 'COMPLETED',
+        label: 'Completed',
+        completed: false,
+        current: false,
+      },
+    ],
+  },
+  {
+    requestId: 'REQ-041',
+    roomNumber: '103',
+    bookingId: 'booking-101',
+    requestType: 'ROOM_CLEANING',
+    description: 'Morning housekeeping please',
+    status: 'COMPLETED',
+    priority: 'NORMAL',
+    assignedStaff: 'Amali S.',
+    estimatedCompletionMinutes: 0,
+    taskId: 'task-wkms-041',
+    idempotencyKey: 'idemp-demo-req-041',
+    createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
+    updatedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+    timeline: [
+      {
+        status: 'SUBMITTED',
+        label: 'Request Submitted',
+        completed: true,
+        current: false,
+        timestamp: '09:45',
+      },
+      {
+        status: 'ASSIGNED',
+        label: 'Worker Assigned',
+        completed: true,
+        current: false,
+        timestamp: '10:00',
+      },
+      {
+        status: 'IN_PROGRESS',
+        label: 'In Progress',
+        completed: true,
+        current: false,
+        timestamp: '10:15',
+      },
+      {
+        status: 'COMPLETED',
+        label: 'Completed',
+        completed: true,
+        current: true,
+        timestamp: '10:30',
+      },
+    ],
+  },
+];
 
 describe('TC-DDP-142-AC1: Successful Workflow - Service Request Creation & Worker Progression', () => {
   it('submits service request with idempotency key and returns assigned status with timeline', async () => {
@@ -92,7 +182,7 @@ describe('TC-DDP-142-AC1: Successful Workflow - Service Request Creation & Worke
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async (url: string | URL | Request) => {
       assert.match(String(url), /\/service-requests$/);
-      return new Response(JSON.stringify(FALLBACK_SERVICE_REQUESTS), {
+      return new Response(JSON.stringify(TEST_SERVICE_REQUESTS_FIXTURE), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       });
@@ -421,7 +511,7 @@ describe('TC-DDP-142-AC4: Contract & Visual Layout Fidelity Audit (Figure 38)', 
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async (url: string | URL | Request) => {
       assert.match(String(url), /\/service-requests\/REQ-041$/);
-      return new Response(JSON.stringify(FALLBACK_SERVICE_REQUESTS[1]), {
+      return new Response(JSON.stringify(TEST_SERVICE_REQUESTS_FIXTURE[1]), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       });

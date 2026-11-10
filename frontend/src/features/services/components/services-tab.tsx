@@ -25,7 +25,6 @@ import {
   fetchGuestServiceRequests,
   generateServiceIdempotencyKey,
   advanceServiceRequestStatusDemo,
-  FALLBACK_SERVICE_REQUESTS,
 } from '../../../lib/api/services.ts';
 import { useAuth } from '../../../lib/auth/auth-context.tsx';
 import {
@@ -495,9 +494,18 @@ export function ServicesTab() {
           />
         )}
 
+        {/* Empty state */}
+        {!loading && !fetchError && requests.length === 0 && (
+          <EmptyState
+            title="No service requests yet"
+            description="Your service requests will appear here once submitted."
+          />
+        )}
+
         {/* Requests List */}
-        <div className="space-y-2.5">
-          {(requests.length > 0 ? requests : FALLBACK_SERVICE_REQUESTS).map((req) => {
+        {requests.length > 0 && (
+          <div className="space-y-2.5">
+            {requests.map((req) => {
             const isExpanded = expandedRequestId === req.requestId;
 
             return (
@@ -612,7 +620,8 @@ export function ServicesTab() {
               </Card>
             );
           })}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );
