@@ -309,7 +309,9 @@ describe('GuestSessionsController', () => {
     });
 
     it('4. regression test: valid QR activation credentials establish session via HttpOnly cookie with checkout-bound maxAge', async () => {
-      const futureStayEnd = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
+      const futureStayEnd = new Date(
+        Date.now() + 3 * 24 * 60 * 60 * 1000,
+      ).toISOString();
       const responseDto: GuestSessionResponseDto = {
         sessionId: 'sess-valid-stay',
         bookingId: 'book-1',
@@ -442,7 +444,8 @@ describe('GuestSessionsController', () => {
       } as any;
 
       mockConfigService.get.mockImplementation((key: string) => {
-        if (key === 'INTERNAL_SERVICE_KEY') return 'valid-configured-internal-key';
+        if (key === 'INTERNAL_SERVICE_KEY')
+          return 'valid-configured-internal-key';
         return null;
       });
 
@@ -776,7 +779,8 @@ describe('GuestSessionsController', () => {
         qrToken: 'header.payload.signature',
       });
 
-      const { sessionToken: _sessionToken, ...expectedSanitized } = mockResponse;
+      const { sessionToken: _sessionToken, ...expectedSanitized } =
+        mockResponse;
       expect(result).toEqual(expectedSanitized);
       expect((result as any).sessionToken).toBeUndefined();
       expect(mockGuestSessionsService.authenticateWithQr).toHaveBeenCalledWith(
