@@ -40,7 +40,7 @@ class MockStorage implements Storage {
   }
 }
 
-describe('FOSS Guest Session Persistence & Multi-Day Renewal (TC1 - TC20, AC1 - AC8)', () => {
+describe('FOSS Guest Session Persistence & Security Review (PR #137, Issue #136)', () => {
   beforeEach(() => {
     resetDataModeForTesting();
     (globalThis as any).window = {
@@ -52,64 +52,146 @@ describe('FOSS Guest Session Persistence & Multi-Day Renewal (TC1 - TC20, AC1 - 
     };
   });
 
-  it('TC1 & AC1: saves persistent session with stay-bounded metadata upon QR activation', () => {
-    const token = 'session-token-guest-101';
+  it('Requirement 1 & Regression 1: live API bearer tokens are NEVER persisted in browser storage (localStorage or sessionStorage)', () => {
+    const liveBearerToken = 'super-secret-live-api-bearer-token-123';
     const expiresAt = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
     const stayEnd = new Date(Date.now() + 72 * 3600 * 1000).toISOString();
 
-    savePersistentSession(token, 'api', expiresAt, stayEnd);
+    savePersistentSession(liveBearerToken, 'api', expiresAt, stayEnd);
 
-    // Verified written to both localStorage and sessionStorage
-    const loadedToken = loadPersistentSession('api');
-    assert.equal(loadedToken, token);
-
+    // 1. Verify live bearer token is NOT present in localStorage
     const rawStorage = (globalThis as any).window.localStorage.getItem(
       getPersistentStorageKey('api'),
     );
-    assert.ok(rawStorage);
+    assert.ok(rawStorage, 'Persistent session record must exist in localStorage');
     const parsed = JSON.parse(rawStorage);
-    assert.equal(parsed.token, token);
+    assert.equal(
+      parsed.token,
+      undefined,
+      'Live API bearer token MUST NOT be stored in localStorage',
+    );
+    assert.equal(parsed.hasSession, true);
     assert.equal(parsed.mode, 'api');
     assert.equal(parsed.stayEnd, stayEnd);
+
+    // 2. Verify live bearer token is NOT present in sessionStorage
+    const sessionTokenInSessionStorage = (globalThis as any).window.sessionStorage.getItem(
+      getSessionStorageKey('api'),
+    );
+    assert.equal(
+      sessionTokenInSessionStorage,
+      null,
+      'Live API bearer token MUST NOT be stored in sessionStorage',
+    );
+
+    // 3. Verify loadPersistentSession returns cookie session indicator sentinel, not live bearer token
+    const loaded = loadPersistentSession('api');
+    assert.equal(loaded, '__COOKIE_SESSION__');
+    assert.notEqual(loaded, liveBearerToken);
   });
 
-  it('TC2: preserves session across page refresh via sessionStorage cache', () => {
-    const token = 'refresh-preserved-token';
-    const expiresAt = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
-    const stayEnd = new Date(Date.now() + 48 * 3600 * 1000).toISOString();
-
-    savePersistentSession(token, 'api', expiresAt, stayEnd);
-
-    // Simulate page refresh: sessionStorage contains the current tab token
-    const tokenAfterRefresh = loadPersistentSession('api');
-    assert.equal(tokenAfterRefresh, token);
-  });
-
-  it('TC3 & AC2: restores session from persistent storage after tab closure / browser restart', () => {
-    const token = 'tab-closure-resilient-token';
+  it('Requirement 1: isolated demo-mode behavior is retained for offline fixtures', () => {
+    const demoToken = 'demo-token-room-101';
     const expiresAt = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
     const stayEnd = new Date(Date.now() + 72 * 3600 * 1000).toISOString();
 
-    savePersistentSession(token, 'api', expiresAt, stayEnd);
+    savePersistentSession(demoToken, 'demo', expiresAt, stayEnd);
 
-    // Simulate mobile browser tab closure: sessionStorage is completely wiped, localStorage remains
-    (globalThis as any).window.sessionStorage.clear();
+    // Demo tokens are stored in the demo partition
+    const demoRaw = (globalThis as any).window.localStorage.getItem(
+      getPersistentStorageKey('demo'),
+    );
+    assert.ok(demoRaw);
+    const parsed = JSON.parse(demoRaw);
+    assert.equal(parsed.token, demoToken);
+    assert.equal(parsed.mode, 'demo');
+
+    // Demo sessionStorage has the demo token
     assert.equal(
-      (globalThis as any).window.sessionStorage.getItem(getSessionStorageKey('api')),
-      null,
+      (globalThis as any).window.sessionStorage.getItem(getSessionStorageKey('demo')),
+      demoToken,
     );
 
-    // Reopen FOSS in a new tab: session is retrieved from persistent storage and re-synchronized
-    const restoredToken = loadPersistentSession('api');
-    assert.equal(restoredToken, token);
+    // API partition remains completely empty
     assert.equal(
-      (globalThis as any).window.sessionStorage.getItem(getSessionStorageKey('api')),
-      token,
-      'Restored session token must be synchronized back into sessionStorage',
+      (globalThis as any).window.localStorage.getItem(getPersistentStorageKey('api')),
+      null,
     );
   });
 
-  it('TC4 & AC3: supports multi-day stay renewal via ApiSessionsProvider and DemoSessionsProvider', async () => {
+  it('Requirement 3 & Regression 2: valid cookie sessions restore authentication after browser reopening', async () => {
+    const expiresAt = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
+    const stayEnd = new Date(Date.now() + 72 * 3600 * 1000).toISOString();
+
+    // 1. Establish persistent session record
+    savePersistentSession('arbitrary-token-not-stored', 'api', expiresAt, stayEnd);
+
+    // 2. Simulate mobile browser restart: sessionStorage is cleared, localStorage remains
+    (globalThis as any).window.sessionStorage.clear();
+
+    const indicator = loadPersistentSession('api');
+    assert.equal(indicator, '__COOKIE_SESSION__');
+
+    // 3. Mock backend /guest-sessions/me endpoint
+    const originalFetch = globalThis.fetch;
+    let meCalled = false;
+    let capturedHeaders: Record<string, string> = {};
+    let capturedCredentials = '';
+
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      const urlStr = String(url);
+      if (urlStr.includes('/guest-sessions/me')) {
+        meCalled = true;
+        capturedHeaders = (init?.headers as Record<string, string>) || {};
+        capturedCredentials = init?.credentials || '';
+        return new Response(
+          JSON.stringify({
+            sessionId: 'sess-restored-101',
+            bookingId: 'book-456',
+            roomNumber: '101',
+            sessionToken: 'fresh-memory-token',
+            guestName: 'Jane Restored',
+            stayStart: new Date(Date.now() - 24 * 3600 * 1000).toISOString(),
+            stayEnd: stayEnd,
+            expiresAt: expiresAt,
+            role: 'GUEST',
+            active: true,
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
+      return new Response('Not Found', { status: 404 });
+    }) as typeof fetch;
+
+    try {
+      const apiProvider = new ApiSessionsProvider();
+      // Restoration call uses sentinel or omitted token
+      const restored = await apiProvider.fetchCurrentSession(indicator || undefined);
+
+      assert.equal(meCalled, true);
+      assert.equal(
+        capturedCredentials,
+        'include',
+        'Must send credentials: include to transmit HttpOnly cookie',
+      );
+      assert.equal(
+        capturedHeaders['Authorization'],
+        undefined,
+        'Sentinel __COOKIE_SESSION__ must not be sent as a Bearer token',
+      );
+      assert.equal(
+        capturedHeaders['x-foss-client'],
+        'foss-web',
+        'Must send custom header for CSRF defense',
+      );
+      assert.equal(restored.guestName, 'Jane Restored');
+      assert.equal(restored.roomNumber, '101');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('Requirement 3: supports stay renewal via ApiSessionsProvider and DemoSessionsProvider', async () => {
     const originalFetch = globalThis.fetch;
     let renewCalled = false;
     let capturedHeaders: Record<string, string> = {};
@@ -146,6 +228,7 @@ describe('FOSS Guest Session Persistence & Multi-Day Renewal (TC1 - TC20, AC1 - 
       assert.equal(renewCalled, true);
       assert.equal(capturedCredentials, 'include');
       assert.equal(capturedHeaders['Authorization'], 'Bearer valid-multi-day-token');
+      assert.equal(capturedHeaders['x-foss-client'], 'foss-web');
       assert.equal(renewalResult.sessionToken, 'renewed-session-token');
       assert.equal(renewalResult.guest.guestName, 'Alex Explorer');
 
@@ -159,7 +242,66 @@ describe('FOSS Guest Session Persistence & Multi-Day Renewal (TC1 - TC20, AC1 - 
     }
   });
 
-  it('TC5 & TC19: purges client persistent storage when session restoration receives invalid or revoked status', async () => {
+  it('Regression 7: manual logout clears browser authentication and persistent records', async () => {
+    const originalFetch = globalThis.fetch;
+    let logoutCalled = false;
+    let logoutCredentials = '';
+
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      const urlStr = String(url);
+      if (urlStr.includes('/guest-sessions/logout')) {
+        logoutCalled = true;
+        logoutCredentials = init?.credentials || '';
+        return new Response(
+          JSON.stringify({ success: true, message: 'Logged out successfully.' }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
+      return new Response('Not Found', { status: 404 });
+    }) as typeof fetch;
+
+    try {
+      savePersistentSession('token-to-logout', 'api');
+      assert.equal(loadPersistentSession('api'), '__COOKIE_SESSION__');
+
+      const apiProvider = new ApiSessionsProvider();
+      const result = await apiProvider.logoutSession('token-to-logout');
+      assert.equal(logoutCalled, true);
+      assert.equal(logoutCredentials, 'include');
+      assert.equal(result.success, true);
+
+      clearPersistentSession('api');
+
+      assert.equal(loadPersistentSession('api'), null);
+      assert.equal(
+        (globalThis as any).window.localStorage.getItem(getPersistentStorageKey('api')),
+        null,
+      );
+      assert.equal(
+        (globalThis as any).window.sessionStorage.getItem(getSessionStorageKey('api')),
+        null,
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('Regression 8: client automatically purges persistent storage if stored stayEnd has expired', () => {
+    const pastStayEnd = new Date(Date.now() - 3600 * 1000).toISOString(); // 1 hour ago
+
+    savePersistentSession('token', 'api', pastStayEnd, pastStayEnd);
+    (globalThis as any).window.sessionStorage.clear();
+
+    // Loading expired session returns null and clears storage
+    const result = loadPersistentSession('api');
+    assert.equal(result, null);
+    assert.equal(
+      (globalThis as any).window.localStorage.getItem(getPersistentStorageKey('api')),
+      null,
+    );
+  });
+
+  it('Regression 8: purges client persistent storage when session restoration receives 401 Unauthorized', async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async () => {
       return new Response(
@@ -172,12 +314,12 @@ describe('FOSS Guest Session Persistence & Multi-Day Renewal (TC1 - TC20, AC1 - 
     }) as typeof fetch;
 
     try {
-      savePersistentSession('stale-revoked-token', 'api');
-      assert.equal(loadPersistentSession('api'), 'stale-revoked-token');
+      savePersistentSession('token', 'api');
+      assert.equal(loadPersistentSession('api'), '__COOKIE_SESSION__');
 
       const apiProvider = new ApiSessionsProvider();
       await assert.rejects(
-        () => apiProvider.fetchCurrentSession('stale-revoked-token'),
+        () => apiProvider.fetchCurrentSession(),
         (err: any) => err.statusCode === 401,
       );
 
@@ -187,39 +329,6 @@ describe('FOSS Guest Session Persistence & Multi-Day Renewal (TC1 - TC20, AC1 - 
     } finally {
       globalThis.fetch = originalFetch;
     }
-  });
-
-  it('TC7: client automatically purges persistent storage if stored stayEnd has expired', () => {
-    const token = 'expired-stay-token';
-    const pastStayEnd = new Date(Date.now() - 3600 * 1000).toISOString(); // 1 hour ago
-
-    savePersistentSession(token, 'api', pastStayEnd, pastStayEnd);
-    (globalThis as any).window.sessionStorage.clear();
-
-    // Loading expired session returns null and clears storage
-    const result = loadPersistentSession('api');
-    assert.equal(result, null);
-    assert.equal(
-      (globalThis as any).window.localStorage.getItem(getPersistentStorageKey('api')),
-      null,
-    );
-  });
-
-  it('TC11 & TC12 & AC6: manual logout clears both persistent storage and sessionStorage', () => {
-    savePersistentSession('token-to-logout', 'api');
-    assert.equal(loadPersistentSession('api'), 'token-to-logout');
-
-    clearPersistentSession('api');
-
-    assert.equal(loadPersistentSession('api'), null);
-    assert.equal(
-      (globalThis as any).window.localStorage.getItem(getPersistentStorageKey('api')),
-      null,
-    );
-    assert.equal(
-      (globalThis as any).window.sessionStorage.getItem(getSessionStorageKey('api')),
-      null,
-    );
   });
 
   it('TC13 & AC4: RealtimeClient dispatches FOSS_SESSION_EXPIRED_EVENT upon SESSION_REVOKED', async () => {
@@ -275,7 +384,7 @@ describe('FOSS Guest Session Persistence & Multi-Day Renewal (TC1 - TC20, AC1 - 
     }
   });
 
-  it('TC17: network interruption throws 503 without wiping persistent storage', async () => {
+  it('TC17: network interruption throws without wiping persistent storage', async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async () => {
       throw new Error('Network timeout (simulated connectivity disruption)');
@@ -286,12 +395,12 @@ describe('FOSS Guest Session Persistence & Multi-Day Renewal (TC1 - TC20, AC1 - 
 
       const apiProvider = new ApiSessionsProvider();
       await assert.rejects(
-        () => apiProvider.fetchCurrentSession('active-offline-token'),
+        () => apiProvider.fetchCurrentSession(),
         (err: any) => err.message.includes('Network') || err.statusCode === 503,
       );
 
-      // Persistent credentials are NOT destroyed on temporary network loss
-      assert.equal(loadPersistentSession('api'), 'active-offline-token');
+      // Persistent credentials sentinel remains available on temporary network loss
+      assert.equal(loadPersistentSession('api'), '__COOKIE_SESSION__');
     } finally {
       globalThis.fetch = originalFetch;
     }

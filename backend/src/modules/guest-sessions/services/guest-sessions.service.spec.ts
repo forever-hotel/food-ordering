@@ -837,9 +837,9 @@ describe('GuestSessionsService', () => {
   });
 
   describe('renewSession (TC4, TC7, TC8, AC3)', () => {
-    it('renews an active session for a multi-day stay when more than 24h passed since initial QR activation', async () => {
-      // 30 hours after check-in on a 5-day stay
-      mockClock = new Date('2026-10-29T16:00:00.000Z');
+    it('renews an active session for a multi-day stay during an active hotel stay', async () => {
+      // 22 hours after check-in on a 5-day stay, 2 hours of TTL remaining
+      mockClock = new Date('2026-10-29T08:00:00.000Z');
 
       const rawToken = 'multi-day-token-123';
       const hashedToken = service.hashToken(rawToken);
@@ -851,7 +851,7 @@ describe('GuestSessionsService', () => {
       session.roomNumber = '101';
       session.sessionToken = hashedToken;
       session.isActive = true;
-      // Previous 24h TTL expired 6 hours ago
+      // Expires at 10:00 (2 hours in future)
       session.expiresAt = new Date('2026-10-29T10:00:00.000Z');
 
       mockSessionRepository.findActiveBySessionToken.mockResolvedValue(session);
@@ -865,14 +865,74 @@ describe('GuestSessionsService', () => {
 
       expect(result.sessionId).toBe('sess-multi-day');
       expect(result.active).toBe(true);
-      // New expiry is now (Oct 29, 16:00) + 24 hours = Oct 30, 16:00, bounded by stayEnd (Nov 4)
-      const expectedExpiry = new Date('2026-10-30T16:00:00.000Z').toISOString();
+      // New expiry is now (Oct 29, 08:00) + 24 hours = Oct 30, 08:00, bounded by stayEnd (Nov 4)
+      const expectedExpiry = new Date('2026-10-30T08:00:00.000Z').toISOString();
       expect(result.expiresAt).toBe(expectedExpiry);
       expect(mockSessionRepository.save).toHaveBeenCalledWith(
         expect.objectContaining({
           sessionId: 'sess-multi-day',
           isActive: true,
           expiresAt: new Date(expectedExpiry),
+        }),
+      );
+    });
+
+    it('rejects renewal when session has already expired and marks session inactive', async () => {
+      // Current time is 6 hours past session expiresAt
+      mockClock = new Date('2026-10-29T16:00:00.000Z');
+
+      const rawToken = 'expired-token-123';
+      const hashedToken = service.hashToken(rawToken);
+
+      const session = new FossSession();
+      session.sessionId = 'sess-expired';
+      session.bookingId = 'b-101';
+      session.roomNumber = '101';
+      session.sessionToken = hashedToken;
+      session.isActive = true;
+      session.expiresAt = new Date('2026-10-29T10:00:00.000Z'); // Expired 6h ago
+
+      mockSessionRepository.findActiveBySessionToken.mockResolvedValue(session);
+
+      await expect(service.renewSession(rawToken)).rejects.toThrow(
+        UnauthorizedException,
+      );
+      expect(session.isActive).toBe(false);
+      expect(mockSessionRepository.save).toHaveBeenCalledWith(session);
+      expect(mockBookingVerificationService.verifyStay).not.toHaveBeenCalled();
+    });
+
+    it('bounds session renewal strictly by checkout when stayEnd is within the renewal TTL window', async () => {
+      // Current time is 10 hours before checkout
+      mockClock = new Date('2026-10-29T02:00:00.000Z');
+
+      const rawToken = 'near-checkout-token';
+      const hashedToken = service.hashToken(rawToken);
+
+      const checkoutTime = '2026-10-29T12:00:00.000Z'; // Checkout is in 10 hours
+      const session = new FossSession();
+      session.sessionId = 'sess-near-checkout';
+      session.bookingId = 'b-101';
+      session.roomNumber = '101';
+      session.sessionToken = hashedToken;
+      session.isActive = true;
+      session.expiresAt = new Date('2026-10-29T04:00:00.000Z');
+
+      mockSessionRepository.findActiveBySessionToken.mockResolvedValue(session);
+      mockBookingVerificationService.verifyStay.mockResolvedValue({
+        ...validStay,
+        stayStart: '2026-10-26T10:00:00.000Z',
+        stayEnd: checkoutTime,
+      });
+
+      const result = await service.renewSession(rawToken);
+
+      // Even though 24h would be Oct 30 02:00, renewal must be strictly capped by checkoutTime (Oct 29 12:00)
+      expect(result.expiresAt).toBe(new Date(checkoutTime).toISOString());
+      expect(mockSessionRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sessionId: 'sess-near-checkout',
+          expiresAt: new Date(checkoutTime),
         }),
       );
     });

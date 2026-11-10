@@ -78,9 +78,9 @@ export interface ComplaintsProvider {
 
 export interface SessionsProvider {
   redeemQrToken(qrToken: string): Promise<GuestSessionResponse>;
-  fetchCurrentSession(sessionToken: string): Promise<GuestContext>;
-  renewSession?(sessionToken: string): Promise<GuestSessionResponse>;
-  logoutSession(sessionToken: string): Promise<{ success: boolean; message: string }>;
+  fetchCurrentSession(sessionToken?: string): Promise<GuestContext>;
+  renewSession?(sessionToken?: string): Promise<GuestSessionResponse>;
+  logoutSession(sessionToken?: string): Promise<{ success: boolean; message: string }>;
   fetchDemoTokens(): Promise<Record<string, string>>;
   resetDemo?(): Promise<{ success: boolean; message: string }>;
 }

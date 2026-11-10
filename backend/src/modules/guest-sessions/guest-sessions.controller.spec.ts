@@ -305,18 +305,66 @@ describe('GuestSessionsController', () => {
   });
 
   describe('logout', () => {
-    it('logs out guest session successfully', async () => {
+    it('logs out guest session successfully and clears session cookie', async () => {
       mockGuestSessionsService.logout.mockResolvedValue({
         success: true,
         message: 'Logged out successfully.',
       });
 
       const req = { sessionToken: 'bearer-token-123' } as any;
-      const result = await controller.logout(req);
+      const res = {
+        clearCookie: jest.fn(),
+      } as any;
+      const result = await controller.logout(req, res);
       expect(mockGuestSessionsService.logout).toHaveBeenCalledWith(
         'bearer-token-123',
       );
+      expect(res.clearCookie).toHaveBeenCalledWith(
+        'foss_guest_session',
+        expect.objectContaining({
+          httpOnly: true,
+          path: '/',
+        }),
+      );
       expect(result.success).toBe(true);
+    });
+  });
+
+  describe('renewSession', () => {
+    it('renews active guest session and updates session cookie', async () => {
+      const renewedDto: GuestSessionResponseDto = {
+        sessionId: 'sess-renewed-123',
+        bookingId: 'b-101',
+        roomNumber: '101',
+        sessionToken: 'renewed-token-xyz',
+        guestName: 'Jane Smith',
+        active: true,
+        expiresAt: '2026-11-05T12:00:00.000Z',
+      };
+
+      mockGuestSessionsService.renewSession = jest
+        .fn<() => Promise<GuestSessionResponseDto>>()
+        .mockResolvedValue(renewedDto);
+
+      const req = { sessionToken: 'current-session-token' } as any;
+      const res = {
+        cookie: jest.fn(),
+      } as any;
+
+      const result = await controller.renewSession(req, res);
+
+      expect(mockGuestSessionsService.renewSession).toHaveBeenCalledWith(
+        'current-session-token',
+      );
+      expect(res.cookie).toHaveBeenCalledWith(
+        'foss_guest_session',
+        'renewed-token-xyz',
+        expect.objectContaining({
+          httpOnly: true,
+          path: '/',
+        }),
+      );
+      expect(result).toEqual(renewedDto);
     });
   });
 

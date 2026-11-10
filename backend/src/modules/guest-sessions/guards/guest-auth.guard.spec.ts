@@ -1,5 +1,9 @@
 import { jest } from '@jest/globals';
-import { ExecutionContext, UnauthorizedException } from '@nestjs/common';
+import {
+  ExecutionContext,
+  ForbiddenException,
+  UnauthorizedException,
+} from '@nestjs/common';
 
 import { BookingVerificationResultDto } from '../../../integrations/internal-services/booking/dto/booking-verification-result.dto.js';
 import { FossSession } from '../entities/foss-session.entity.js';
@@ -305,5 +309,104 @@ describe('GuestAuthGuard', () => {
     expect(mockGuestSessionsService.validateSessionToken).toHaveBeenCalledWith(
       'preferred-bearer-token',
     );
+  });
+
+  describe('CSRF Defenses for Cookie-Authenticated Mutating Requests', () => {
+    beforeEach(() => {
+      mockGuestSessionsService.validateSessionToken.mockResolvedValue({
+        session: mockSessionRecord as any,
+        stay: mockBookingVerification,
+      });
+    });
+
+    it('rejects cookie-authenticated POST request from untrusted origin with ForbiddenException', async () => {
+      const context = {
+        switchToHttp: () => ({
+          getRequest: () => ({
+            method: 'POST',
+            headers: {
+              cookie: 'foss_guest_session=valid-cookie-token',
+              origin: 'https://evil-attacker.com',
+            },
+            query: {},
+          }),
+        }),
+      } as ExecutionContext;
+
+      await expect(guard.canActivate(context)).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it('rejects cookie-authenticated POST request with missing origin and missing custom header', async () => {
+      const context = {
+        switchToHttp: () => ({
+          getRequest: () => ({
+            method: 'POST',
+            headers: {
+              cookie: 'foss_guest_session=valid-cookie-token',
+            },
+            query: {},
+          }),
+        }),
+      } as ExecutionContext;
+
+      await expect(guard.canActivate(context)).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it('allows cookie-authenticated POST request from trusted origin', async () => {
+      const context = {
+        switchToHttp: () => ({
+          getRequest: () => ({
+            method: 'POST',
+            headers: {
+              cookie: 'foss_guest_session=valid-cookie-token',
+              origin: 'http://localhost:3000',
+            },
+            query: {},
+          }),
+        }),
+      } as ExecutionContext;
+
+      const result = await guard.canActivate(context);
+      expect(result).toBe(true);
+    });
+
+    it('allows cookie-authenticated POST request with custom x-foss-client header', async () => {
+      const context = {
+        switchToHttp: () => ({
+          getRequest: () => ({
+            method: 'POST',
+            headers: {
+              cookie: 'foss_guest_session=valid-cookie-token',
+              'x-foss-client': 'foss-web',
+            },
+            query: {},
+          }),
+        }),
+      } as ExecutionContext;
+
+      const result = await guard.canActivate(context);
+      expect(result).toBe(true);
+    });
+
+    it('allows bearer-authenticated POST request even without origin header', async () => {
+      const context = {
+        switchToHttp: () => ({
+          getRequest: () => ({
+            method: 'POST',
+            headers: {
+              authorization: 'Bearer valid-bearer-token',
+            },
+            query: {},
+          }),
+        }),
+      } as ExecutionContext;
+
+      const result = await guard.canActivate(context);
+      expect(result).toBe(true);
+    });
   });
 });

@@ -56,22 +56,29 @@ export class ApiSessionsProvider implements SessionsProvider {
     };
   }
 
-  async fetchCurrentSession(sessionToken: string): Promise<GuestContext> {
-    if (!sessionToken || sessionToken.trim() === '') {
-      throw new ApiError('Guest session token is required to fetch session context.', 401);
-    }
-    if (sessionToken.startsWith('demo-token-')) {
+  async fetchCurrentSession(
+    sessionToken?: string,
+  ): Promise<GuestContext & { sessionToken?: string; expiresAt?: string }> {
+    const isSentinel = sessionToken === '__COOKIE_SESSION__';
+    const effectiveToken = isSentinel ? undefined : sessionToken?.trim();
+
+    if (effectiveToken && effectiveToken.startsWith('demo-token-')) {
       throw new ApiError(
         'Demonstration session tokens cannot be transmitted to real API endpoints.',
         401,
       );
     }
 
+    const headers: Record<string, string> = {
+      'x-foss-client': 'foss-web',
+    };
+    if (effectiveToken) {
+      headers.Authorization = `Bearer ${effectiveToken}`;
+    }
+
     const response = await fetch(`${API_URL}/guest-sessions/me`, {
       method: 'GET',
-      headers: {
-        Authorization: `Bearer ${sessionToken}`,
-      },
+      headers,
       credentials: 'include',
     });
 
@@ -82,25 +89,30 @@ export class ApiSessionsProvider implements SessionsProvider {
       throw new ApiError(errorMsg, response.status, body);
     }
 
-    return body as GuestContext;
+    return body;
   }
 
-  async renewSession(sessionToken: string): Promise<GuestSessionResponse> {
-    if (!sessionToken || sessionToken.trim() === '') {
-      throw new ApiError('Guest session token is required to renew session.', 401);
-    }
-    if (sessionToken.startsWith('demo-token-')) {
+  async renewSession(sessionToken?: string): Promise<GuestSessionResponse> {
+    const isSentinel = sessionToken === '__COOKIE_SESSION__';
+    const effectiveToken = isSentinel ? undefined : sessionToken?.trim();
+
+    if (effectiveToken && effectiveToken.startsWith('demo-token-')) {
       throw new ApiError(
         'Demonstration session tokens cannot be transmitted to real API endpoints.',
         401,
       );
     }
 
+    const headers: Record<string, string> = {
+      'x-foss-client': 'foss-web',
+    };
+    if (effectiveToken) {
+      headers.Authorization = `Bearer ${effectiveToken}`;
+    }
+
     const response = await fetch(`${API_URL}/guest-sessions/renew`, {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${sessionToken}`,
-      },
+      headers,
       credentials: 'include',
     });
 
@@ -130,12 +142,20 @@ export class ApiSessionsProvider implements SessionsProvider {
     };
   }
 
-  async logoutSession(sessionToken: string): Promise<{ success: boolean; message: string }> {
+  async logoutSession(sessionToken?: string): Promise<{ success: boolean; message: string }> {
+    const isSentinel = sessionToken === '__COOKIE_SESSION__';
+    const effectiveToken = isSentinel ? undefined : sessionToken?.trim();
+
+    const headers: Record<string, string> = {
+      'x-foss-client': 'foss-web',
+    };
+    if (effectiveToken) {
+      headers.Authorization = `Bearer ${effectiveToken}`;
+    }
+
     const response = await fetch(`${API_URL}/guest-sessions/logout`, {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${sessionToken}`,
-      },
+      headers,
       credentials: 'include',
     });
 

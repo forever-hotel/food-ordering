@@ -66,9 +66,6 @@ function safelySaveSession(
   try {
     savePersistentSession(token, mode, expiresAt, stayEnd);
   } catch {}
-  try {
-    window.sessionStorage?.setItem(getSessionStorageKey(mode), token);
-  } catch {}
 }
 
 function safelyClearSession(mode?: DataMode): void {
@@ -187,14 +184,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     let isSubscribed = true;
     const currentReqId = ++requestIdRef.current;
+    const effectiveToken = sessionToken === '__COOKIE_SESSION__' ? undefined : sessionToken;
 
     // Prefer stay-bounded renewal to support multi-day stays (> 24 hours) without re-scanning QR
     const restoreAction =
       typeof renewSession === 'function'
         ? Promise.resolve()
-            .then(() => renewSession(sessionToken))
-            .catch(() => fetchCurrentSession(sessionToken))
-        : fetchCurrentSession(sessionToken);
+            .then(() => renewSession(effectiveToken))
+            .catch(() => fetchCurrentSession(effectiveToken))
+        : fetchCurrentSession(effectiveToken);
 
     restoreAction
       .then((result) => {
@@ -202,11 +200,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const isRenewed = Boolean(
           result && typeof result === 'object' && 'sessionToken' in result && 'guest' in result,
         );
-        const guestData: GuestContext = isRenewed
-          ? (result as GuestSessionResponse).guest
-          : (result as GuestContext);
-        const token = isRenewed ? (result as GuestSessionResponse).sessionToken : sessionToken;
-        const expiry = isRenewed ? (result as GuestSessionResponse).expiresAt : null;
+        const resObj = result as GuestSessionResponse &
+          GuestContext & { sessionToken?: string; expiresAt?: string };
+        const guestData: GuestContext = isRenewed ? resObj.guest : resObj;
+        const token = resObj.sessionToken ?? effectiveToken ?? '';
+        const expiry = resObj.expiresAt ?? null;
 
         setExplicitToken(token);
         setExpiresAt(expiry);
@@ -214,9 +212,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           ...guestData,
           active: true,
         });
-        if (isRenewed) {
-          safelySaveSession(token, getDataMode(), expiry || undefined, guestData.stayEnd);
-        }
+        safelySaveSession(token, getDataMode(), expiry || undefined, guestData.stayEnd);
         setStatus('authenticated');
         setError(null);
       })
@@ -277,7 +273,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     ++requestIdRef.current;
     disconnectAllRealtimeClients?.();
 
-    const tokenToRevoke = sessionToken;
+    const tokenToRevoke = sessionToken === '__COOKIE_SESSION__' ? undefined : sessionToken;
 
     safelyClearSession();
 
@@ -287,12 +283,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setError(null);
     setStatus('idle');
 
-    if (tokenToRevoke) {
-      try {
-        await logoutSession(tokenToRevoke);
-      } catch {
-        // Safe fail-closed logout
-      }
+    try {
+      await logoutSession(tokenToRevoke || undefined);
+    } catch {
+      // Safe fail-closed logout
     }
   }, [sessionToken]);
 
@@ -306,12 +300,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const refreshSession = useCallback(async () => {
     if (!sessionToken) return;
     const currentReqId = ++requestIdRef.current;
+    const effectiveToken = sessionToken === '__COOKIE_SESSION__' ? undefined : sessionToken;
 
     try {
       const tryRenew =
         typeof renewSession === 'function'
           ? Promise.resolve()
-              .then(() => renewSession(sessionToken))
+              .then(() => renewSession(effectiveToken))
               .catch(() => null)
           : Promise.resolve(null);
       const renewed = await tryRenew;
@@ -332,8 +327,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setStatus('authenticated');
         return;
       }
-      const guestData = await fetchCurrentSession(sessionToken);
+      const guestData = await fetchCurrentSession(effectiveToken);
       if (currentReqId !== requestIdRef.current) return;
+      const token = (guestData as { sessionToken?: string }).sessionToken ?? effectiveToken;
+      if (token) setExplicitToken(token);
       setGuest(guestData);
       setStatus('authenticated');
     } catch {

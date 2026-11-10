@@ -156,7 +156,13 @@ export class FossRealtimeClient {
     try {
       const response = await fetch(`${this.config.apiUrl}/guest-sessions/realtime-ticket`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${this.config.sessionToken}` },
+        headers: {
+          ...(this.config.sessionToken
+            ? { Authorization: `Bearer ${this.config.sessionToken}` }
+            : {}),
+          'x-foss-client': 'foss-web',
+        },
+        credentials: 'include',
         signal: controller.signal,
       });
       if (response.status === 401) this.expireSession();
@@ -226,6 +232,7 @@ export class FossRealtimeClient {
           Accept: 'text/event-stream',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
+        credentials: 'include',
         signal: this.abortController.signal,
       });
 
@@ -344,8 +351,12 @@ export class FossRealtimeClient {
 
     const response = await fetch(url.toString(), {
       headers: {
-        Authorization: `Bearer ${this.config.sessionToken}`,
+        ...(this.config.sessionToken
+          ? { Authorization: `Bearer ${this.config.sessionToken}` }
+          : {}),
+        'x-foss-client': 'foss-web',
       },
+      credentials: 'include',
     });
 
     if (!response.ok) {

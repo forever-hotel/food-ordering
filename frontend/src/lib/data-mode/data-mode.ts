@@ -29,8 +29,9 @@ export const LOCAL_STORAGE_SESSION_KEY_API = 'foss_persistent_session_api';
 export const LOCAL_STORAGE_SESSION_KEY_DEMO = 'foss_persistent_session_demo';
 
 export interface PersistentSessionRecord {
-  token: string;
+  token?: string;
   mode: DataMode;
+  hasSession?: boolean;
   expiresAt?: string;
   stayEnd?: string;
   storedAt: string;
@@ -105,6 +106,13 @@ export function getPersistentStorageKey(mode?: DataMode): string {
 /**
  * Persists authenticated guest session securely across mobile browser tab closures and restarts.
  * Bounds persistent credentials with verified stay end and expiration timestamps.
+ *
+ * SECURITY REQUIREMENT:
+ * In API mode, live bearer tokens are NEVER persisted in localStorage or sessionStorage.
+ * Persistent API session authentication is backed solely by secure HttpOnly cookies.
+ * Only non-sensitive session metadata (hasSession, stayEnd, expiresAt) is stored in localStorage
+ * to coordinate client-side hydration without exposing bearer credentials to JavaScript or XSS vectors.
+ * Demo Mode mock tokens remain stored in localStorage/sessionStorage for isolated offline fixtures.
  */
 export function savePersistentSession(
   token: string,
@@ -114,16 +122,25 @@ export function savePersistentSession(
 ): void {
   if (typeof window === 'undefined') return;
   try {
+    const isDemo = mode === 'demo';
     const record: PersistentSessionRecord = {
-      token,
+      token: isDemo ? token : undefined,
       mode,
+      hasSession: true,
       expiresAt,
       stayEnd,
       storedAt: new Date().toISOString(),
     };
     const persistentKey = getPersistentStorageKey(mode);
     window.localStorage.setItem(persistentKey, JSON.stringify(record));
-    window.sessionStorage.setItem(getSessionStorageKey(mode), token);
+
+    if (isDemo) {
+      window.sessionStorage.setItem(getSessionStorageKey(mode), token);
+    } else {
+      // In API mode, never leave live bearer credentials in sessionStorage
+      window.sessionStorage.removeItem(getSessionStorageKey(mode));
+      window.sessionStorage.removeItem(LEGACY_SESSION_STORAGE_KEY);
+    }
   } catch {
     // Graceful fallback if storage quota exceeded or storage disabled
   }
@@ -132,51 +149,93 @@ export function savePersistentSession(
 /**
  * Loads and validates persistent guest session on browser reopening.
  * Fails closed if expired, corrupted, or scoped to a different data mode.
+ *
+ * In Demo Mode: Returns the stored demo token string.
+ * In API Mode: Validates that an active, unexpired session indicator exists;
+ * returns sentinel '__COOKIE_SESSION__' so that AuthContext can restore the session
+ * via HttpOnly cookie using GET /guest-sessions/me. Never returns or stores live bearer tokens.
  */
 export function loadPersistentSession(mode?: DataMode): string | null {
   if (typeof window === 'undefined') return null;
   const activeMode = mode || getDataMode();
   try {
-    // 1. Check current tab's sessionStorage first
+    // 1. Check current tab's sessionStorage (for backward compatibility / test isolation)
     const sessionToken = window.sessionStorage.getItem(getSessionStorageKey(activeMode));
     if (sessionToken) return sessionToken;
 
-    // 2. Next check localStorage for tab reopen / mobile browser restart
-    const persistentKey = getPersistentStorageKey(activeMode);
-    const raw = window.localStorage.getItem(persistentKey);
-    if (!raw) {
-      // Check legacy unpartitioned sessionStorage key
-      const legacy = window.sessionStorage.getItem(LEGACY_SESSION_STORAGE_KEY);
-      if (legacy) {
-        const isDemoToken = legacy.startsWith('demo-token-');
-        if ((activeMode === 'demo' && isDemoToken) || (activeMode === 'api' && !isDemoToken)) {
-          window.sessionStorage.setItem(getSessionStorageKey(activeMode), legacy);
-          window.sessionStorage.removeItem(LEGACY_SESSION_STORAGE_KEY);
-          return legacy;
-        }
+    // Check legacy unpartitioned sessionStorage key
+    const legacy = window.sessionStorage.getItem(LEGACY_SESSION_STORAGE_KEY);
+    if (legacy) {
+      const isDemoToken = legacy.startsWith('demo-token-');
+      if ((activeMode === 'demo' && isDemoToken) || (activeMode === 'api' && !isDemoToken)) {
+        window.sessionStorage.setItem(getSessionStorageKey(activeMode), legacy);
+        window.sessionStorage.removeItem(LEGACY_SESSION_STORAGE_KEY);
+        return legacy;
       }
-      return null;
     }
+
+    if (activeMode === 'demo') {
+      // Next check localStorage for demo mode
+      const persistentKey = getPersistentStorageKey('demo');
+      const raw = window.localStorage.getItem(persistentKey);
+      if (!raw) return null;
+
+      let record: PersistentSessionRecord;
+      try {
+        record = JSON.parse(raw);
+      } catch {
+        window.sessionStorage.setItem(getSessionStorageKey('demo'), raw);
+        return raw;
+      }
+
+      if (!record || typeof record !== 'object' || !record.token) {
+        clearPersistentSession('demo');
+        return null;
+      }
+
+      if (record.mode && record.mode !== 'demo') {
+        return null;
+      }
+
+      const now = Date.now();
+      const expiryTime = record.stayEnd
+        ? new Date(record.stayEnd).getTime()
+        : record.expiresAt
+          ? new Date(record.expiresAt).getTime()
+          : null;
+
+      if (expiryTime && now >= expiryTime) {
+        clearPersistentSession('demo');
+        return null;
+      }
+
+      window.sessionStorage.setItem(getSessionStorageKey('demo'), record.token);
+      return record.token;
+    }
+
+    // In API mode:
+    // Check persistent record in localStorage (no live bearer tokens are stored here)
+    const persistentKey = getPersistentStorageKey('api');
+    const raw = window.localStorage.getItem(persistentKey);
+    if (!raw) return null;
 
     let record: PersistentSessionRecord;
     try {
       record = JSON.parse(raw);
     } catch {
-      // Backward compatibility for raw token string
-      window.sessionStorage.setItem(getSessionStorageKey(activeMode), raw);
-      return raw;
-    }
-
-    if (!record || typeof record !== 'object' || !record.token) {
-      clearPersistentSession(activeMode);
+      clearPersistentSession('api');
       return null;
     }
 
-    if (record.mode && record.mode !== activeMode) {
+    if (!record || typeof record !== 'object' || !record.hasSession) {
+      clearPersistentSession('api');
       return null;
     }
 
-    // Verify stay end / expiry timestamp
+    if (record.mode && record.mode !== 'api') {
+      return null;
+    }
+
     const now = Date.now();
     const expiryTime = record.stayEnd
       ? new Date(record.stayEnd).getTime()
@@ -185,13 +244,13 @@ export function loadPersistentSession(mode?: DataMode): string | null {
         : null;
 
     if (expiryTime && now >= expiryTime) {
-      clearPersistentSession(activeMode);
+      clearPersistentSession('api');
       return null;
     }
 
-    // Synchronize to current tab's sessionStorage
-    window.sessionStorage.setItem(getSessionStorageKey(activeMode), record.token);
-    return record.token;
+    // Return sentinel '__COOKIE_SESSION__' indicating that an active, unexpired session exists
+    // and will be restored authoritatively from the backend via HttpOnly cookie credentials
+    return '__COOKIE_SESSION__';
   } catch {
     return null;
   }

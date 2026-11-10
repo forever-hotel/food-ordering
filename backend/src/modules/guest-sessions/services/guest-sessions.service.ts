@@ -307,6 +307,20 @@ export class GuestSessionsService {
 
     const now = this.clock();
 
+    // Reject renewal if session has already expired; expired sessions cannot be revived
+    const sessionExpiresAtTime = new Date(session.expiresAt).getTime();
+    if (now.getTime() >= sessionExpiresAtTime) {
+      this.logger.warn(
+        `Session renewal rejected: session [${session.sessionId}] has already expired at [${session.expiresAt}].`,
+      );
+      session.isActive = false;
+      session.updatedAt = now;
+      await this.fossSessionRepository.save(session);
+      throw new UnauthorizedException(
+        'Session has expired and cannot be renewed.',
+      );
+    }
+
     // Authoritatively re-verify stay status with FDS booking authority
     let stay: BookingVerificationResultDto;
     try {

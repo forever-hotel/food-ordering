@@ -24,7 +24,7 @@ export class DemoSessionsProvider implements SessionsProvider {
     };
   }
 
-  async fetchCurrentSession(sessionToken: string): Promise<GuestContext> {
+  async fetchCurrentSession(sessionToken?: string): Promise<GuestContext> {
     if (!sessionToken || sessionToken.trim() === '') {
       throw new ApiError('Guest session token is required to fetch session context.', 401);
     }
@@ -44,7 +44,7 @@ export class DemoSessionsProvider implements SessionsProvider {
     };
   }
 
-  async renewSession(sessionToken: string): Promise<GuestSessionResponse> {
+  async renewSession(sessionToken?: string): Promise<GuestSessionResponse> {
     if (!sessionToken || sessionToken.trim() === '') {
       throw new ApiError('Guest session token is required to renew session.', 401);
     }
@@ -67,7 +67,7 @@ export class DemoSessionsProvider implements SessionsProvider {
     };
   }
 
-  async logoutSession(_sessionToken: string): Promise<{ success: boolean; message: string }> {
+  async logoutSession(_sessionToken?: string): Promise<{ success: boolean; message: string }> {
     void _sessionToken;
     return {
       success: true,

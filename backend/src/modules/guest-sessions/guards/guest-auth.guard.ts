@@ -1,6 +1,7 @@
 import {
   CanActivate,
   ExecutionContext,
+  ForbiddenException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -46,6 +47,7 @@ export class GuestAuthGuard implements CanActivate {
     );
 
     let token: string | undefined;
+    let authSource: 'bearer' | 'cookie' | 'query' = 'bearer';
 
     if (authHeader && typeof authHeader === 'string') {
       const parts = authHeader.trim().split(' ');
@@ -55,22 +57,34 @@ export class GuestAuthGuard implements CanActivate {
         );
       }
       token = parts[1];
+      authSource = 'bearer';
     } else if (request.headers?.cookie) {
       token = extractTokenFromCookies(request.headers.cookie);
+      if (token) authSource = 'cookie';
     }
 
     if (!token && request.cookies?.foss_guest_session) {
       token = request.cookies.foss_guest_session;
+      authSource = 'cookie';
     }
 
     if (!token && isSseRequest && queryToken) {
       token = queryToken;
+      authSource = 'query';
     }
 
     if (!token) {
       throw new UnauthorizedException(
         'Authorization header with Bearer token is required.',
       );
+    }
+
+    // CSRF Protection: When authenticating via ambient cookie, protect state-changing HTTP methods
+    const method = (request.method || 'GET').toUpperCase();
+    const isStateChanging = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
+
+    if (authSource === 'cookie' && isStateChanging) {
+      this.validateCsrf(request);
     }
 
     const { session, stay } =
@@ -92,5 +106,64 @@ export class GuestAuthGuard implements CanActivate {
     request.sessionToken = token;
 
     return true;
+  }
+
+  private validateCsrf(request: any): void {
+    // 1. Safe custom header check: standard cross-origin form POSTs cannot attach custom headers
+    const customHeader =
+      request.headers?.['x-requested-with'] ||
+      request.headers?.['x-foss-client'];
+    if (customHeader) {
+      return;
+    }
+
+    // 2. Origin or Referer header validation
+    const origin = request.headers?.['origin'] || request.headers?.['referer'];
+    if (!origin || typeof origin !== 'string') {
+      throw new ForbiddenException(
+        'CSRF validation failed: Missing origin or custom request header.',
+      );
+    }
+
+    let originHostname: string;
+    let originPort: string;
+    try {
+      const parsed = new URL(origin);
+      originHostname = parsed.hostname.toLowerCase();
+      originPort = parsed.port;
+    } catch {
+      throw new ForbiddenException('CSRF validation failed: Malformed origin.');
+    }
+
+    const allowedOrigins = [
+      process.env.FRONTEND_URL,
+      'http://localhost:3000',
+      'http://127.0.0.1:3000',
+      'http://localhost:4200',
+      'http://localhost:4300',
+    ].filter(Boolean) as string[];
+
+    const hostHeader = request.headers?.['host'];
+    if (hostHeader) {
+      allowedOrigins.push(`http://${hostHeader}`, `https://${hostHeader}`);
+    }
+
+    const isMatch = allowedOrigins.some((allowed) => {
+      try {
+        const parsed = new URL(allowed);
+        return (
+          parsed.hostname.toLowerCase() === originHostname &&
+          (parsed.port === originPort || (!parsed.port && !originPort))
+        );
+      } catch {
+        return false;
+      }
+    });
+
+    if (!isMatch) {
+      throw new ForbiddenException(
+        `CSRF validation failed: Untrusted origin [${origin}].`,
+      );
+    }
   }
 }

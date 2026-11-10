@@ -39,22 +39,6 @@ interface AuthenticatedRequest extends Request {
   sessionToken: string;
 }
 
-function extractTokenFromCookies(cookieHeader?: string): string | undefined {
-  if (!cookieHeader || typeof cookieHeader !== 'string') return undefined;
-  const pairs = cookieHeader.split(';');
-  for (const pair of pairs) {
-    const idx = pair.indexOf('=');
-    if (idx > -1) {
-      const key = pair.slice(0, idx).trim();
-      if (key === 'foss_guest_session') {
-        const val = pair.slice(idx + 1).trim();
-        return decodeURIComponent(val);
-      }
-    }
-  }
-  return undefined;
-}
-
 function setSessionCookie(
   res?: Response,
   token?: string,
@@ -332,33 +316,14 @@ export class GuestSessionsController {
   @Post('renew')
   @HttpCode(HttpStatus.OK)
   @Header('Cache-Control', 'no-store')
+  @UseGuards(GuestAuthGuard)
   async renewSession(
-    @Req() req: Request,
+    @Req() req: AuthenticatedRequest,
     @Res({ passthrough: true }) res?: Response,
   ): Promise<GuestSessionResponseDto> {
-    const authHeader = req.headers?.authorization;
-    let token: string | undefined;
-
-    if (authHeader && typeof authHeader === 'string') {
-      const parts = authHeader.trim().split(' ');
-      if (parts.length === 2 && parts[0]?.toLowerCase() === 'bearer') {
-        token = parts[1];
-      }
-    }
-    if (!token && req.headers?.cookie) {
-      token = extractTokenFromCookies(req.headers.cookie);
-    }
-    if (!token && (req as Request & { sessionToken?: string }).sessionToken) {
-      token = (req as Request & { sessionToken?: string }).sessionToken;
-    }
-
-    if (!token) {
-      throw new UnauthorizedException(
-        'Session token is required in Authorization header or session cookie.',
-      );
-    }
-
-    const renewed = await this.guestSessionsService.renewSession(token);
+    const renewed = await this.guestSessionsService.renewSession(
+      req.sessionToken,
+    );
     setSessionCookie(res, renewed.sessionToken, renewed.expiresAt);
     return renewed;
   }
