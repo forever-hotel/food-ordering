@@ -218,4 +218,29 @@ describe('MenuService', () => {
       ]);
     });
   });
+
+  it('passes the kitchen ordering pause to the guest window and item', async () => {
+    const catalog = await mockKms.getMenuCatalog();
+    const item = {
+      ...catalog.items[0],
+      portionLimit: 3,
+      mealPeriods: [MealPeriod.LUNCH],
+      orderingWindow: {
+        startTime: '10:00:00',
+        cutoffTime: '15:00:00',
+        enabled: false,
+      },
+    };
+    jest
+      .spyOn(mockKms, 'getMenuCatalog')
+      .mockResolvedValueOnce({ ...catalog, items: [item] });
+    const result = await service.getGuestMenu();
+    expect(result.mealWindows[0]).toMatchObject({
+      period: MealPeriod.LUNCH,
+      enabled: false,
+      isActive: false,
+    });
+    expect(result.items[0].isOrderable).toBe(false);
+    expect(result.items[0].portionCap).toBe(3);
+  });
 });

@@ -675,3 +675,23 @@ describe('TC-DDP-101-AC3: Fine-Grained Item Availability States & Guest Messages
     assert.equal(avail2.isOrderable, false);
   });
 });
+
+it('keeps a kitchen-disabled lunch closed even inside its nominal hours', () => {
+  const result = evaluateMealWindowStatus(
+    {
+      period: 'LUNCH',
+      name: 'Demo Lunch',
+      startTime: '10:00:00',
+      cutoffTime: '15:00:00',
+      isActive: false,
+      isCutoffReached: true,
+      secondsRemaining: 0,
+      enabled: false,
+    },
+    12 * 3600,
+    'Lunch',
+  );
+  assert.equal(result.state, 'closed');
+  assert.equal(result.isOrderable, false);
+  assert.match(result.message, /paused by the kitchen/);
+});

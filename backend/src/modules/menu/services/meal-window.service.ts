@@ -12,6 +12,7 @@ export interface MealWindowDefinition {
 }
 
 export interface MealWindowStatus {
+  enabled?: boolean;
   period: MealPeriod;
   name: string;
   startTime: string;

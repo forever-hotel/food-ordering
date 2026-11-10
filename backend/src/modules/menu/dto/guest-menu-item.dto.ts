@@ -2,6 +2,10 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { MealPeriod } from '../../../integrations/internal-services/kms/dto/kms-menu.dto.js';
 
 export class GuestMenuItemDto {
+  @ApiPropertyOptional({
+    description: 'Maximum portions allowed by the kitchen per order',
+  })
+  portionCap?: number;
   @ApiProperty({ example: 'menu-item-001' })
   id!: string;
 
@@ -13,7 +17,7 @@ export class GuestMenuItemDto {
   })
   description!: string | null;
 
-  @ApiProperty({ example: 18.0, description: 'Price in USD' })
+  @ApiProperty({ example: 1500, description: 'Price in LKR rupees' })
   price!: number;
 
   @ApiProperty({ example: 'Starters' })

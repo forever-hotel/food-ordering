@@ -2,6 +2,11 @@ import { ApiProperty } from '@nestjs/swagger';
 import { MealPeriod } from '../../../integrations/internal-services/kms/dto/kms-menu.dto.js';
 
 export class MealWindowStatusDto {
+  @ApiProperty({
+    required: false,
+    description: 'Kitchen ordering enabled for this window',
+  })
+  enabled?: boolean;
   @ApiProperty({ enum: MealPeriod, example: MealPeriod.BREAKFAST })
   period!: MealPeriod;
 
