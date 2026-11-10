@@ -1,12 +1,38 @@
 import { describe, expect, it, jest } from '@jest/globals';
 import { DataSource } from 'typeorm';
 import { FossDemoOrder } from '../entities/foss-demo-order.entity.js';
+import { kitchenIdempotencyKey } from '../../../integrations/internal-services/kms/adapters/kms-idempotency.js';
 import {
   SharedFoodOrderRepository,
   kitchenOrderId,
 } from './shared-food-order.repository.js';
 
 describe('canonical shared kitchen orders', () => {
+  it('recovers the canonical order using the exact key sent to KMS', async () => {
+    const key = 'idemp-d0652c4a-607a-48f9-b12b-e052b198409f';
+    const query = jest
+      .fn<(...args: unknown[]) => Promise<unknown[]>>()
+      .mockResolvedValueOnce([
+        {
+          order_id: 'order',
+          booking_id: 'booking',
+          room_number: '101',
+          status: 'READY',
+          total_amount: 180000,
+          placed_at: new Date(),
+          updated_at: new Date(),
+        },
+      ])
+      .mockResolvedValueOnce([]);
+    const repo = new SharedFoodOrderRepository({
+      query,
+    } as unknown as DataSource);
+    const order = await repo.findByIdempotencyKey(key, 'booking');
+    expect(query.mock.calls[0]?.[1]).toEqual([
+      kitchenOrderId(kitchenIdempotencyKey('booking', key)),
+    ]);
+    expect(order).toMatchObject({ status: 'READY', idempotencyKey: key });
+  });
   it('uses the same stable UUIDv5 identity as KMS', () => {
     expect(kitchenOrderId('6d8e0fd2-168e-4d76-a1be-819eb45f8fc2')).toMatch(
       /^[\da-f]{8}-[\da-f]{4}-5[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/,

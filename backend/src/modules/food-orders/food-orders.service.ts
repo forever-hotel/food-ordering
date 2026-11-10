@@ -76,8 +76,10 @@ export class FoodOrdersService {
     }
 
     // 1. Idempotency Check: Return existing order if already processed
-    const existingOrder =
-      await this.orderRepository.findByIdempotencyKey(idempotencyKey);
+    const existingOrder = await this.orderRepository.findByIdempotencyKey(
+      idempotencyKey,
+      guest.bookingId,
+    );
     if (existingOrder) {
       if (
         existingOrder.roomNumber !== guest.roomNumber ||
@@ -265,8 +267,10 @@ export class FoodOrdersService {
         duplicateError?.message?.includes('duplicate key') ||
         duplicateError?.message?.includes('UNIQUE constraint')
       ) {
-        const existing =
-          await this.orderRepository.findByIdempotencyKey(idempotencyKey);
+        const existing = await this.orderRepository.findByIdempotencyKey(
+          idempotencyKey,
+          guest.bookingId,
+        );
         if (existing) {
           return this.mapToResponse(existing);
         }

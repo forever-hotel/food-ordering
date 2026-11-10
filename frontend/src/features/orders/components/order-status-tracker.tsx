@@ -211,19 +211,19 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
     return () => {
       client.disconnect();
     };
-  }, [sessionToken, guest, orderId, formattedOrderId, loadOrder]);
+  }, [sessionToken, guest?.bookingId, guest?.roomNumber, orderId, formattedOrderId, loadOrder]);
 
   // Secondary polling fallback when order is actively in preparation
+  const orderStatus = order?.status;
   useEffect(() => {
-    if (!order) return;
-    if (order.status === 'DELIVERED' || order.status === 'CANCELLED') return;
+    if (!orderStatus || orderStatus === 'DELIVERED' || orderStatus === 'CANCELLED') return;
 
     const interval = setInterval(() => {
       loadOrder(false);
     }, 6000);
 
     return () => clearInterval(interval);
-  }, [order, loadOrder]);
+  }, [orderStatus, loadOrder]);
 
   // Countdown timer for 10-minute cancellation boundary
   useEffect(() => {

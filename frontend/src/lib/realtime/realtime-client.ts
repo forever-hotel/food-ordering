@@ -1,5 +1,7 @@
 import { io, type Socket } from 'socket.io-client';
 
+export const FOSS_SESSION_EXPIRED_EVENT = 'foss:session-expired';
+
 export const RealtimeEventType = {
   FOOD_ORDER_STATUS_UPDATED: 'FOOD_ORDER_STATUS_UPDATED',
   SERVICE_REQUEST_STATUS_UPDATED: 'SERVICE_REQUEST_STATUS_UPDATED',
@@ -157,6 +159,7 @@ export class FossRealtimeClient {
         headers: { Authorization: `Bearer ${this.config.sessionToken}` },
         signal: controller.signal,
       });
+      if (response.status === 401) this.expireSession();
       if (!response.ok) throw new Error(`Realtime ticket failed: ${response.status}`);
       const body = await response.json();
       if (typeof body.ticket !== 'string' || !/^[\w-]{43}$/.test(body.ticket))
@@ -227,6 +230,7 @@ export class FossRealtimeClient {
       });
 
       if (!response.ok) {
+        if (response.status === 401) this.expireSession();
         throw new Error(`SSE connection error: HTTP ${response.status}`);
       }
 
@@ -345,6 +349,7 @@ export class FossRealtimeClient {
     });
 
     if (!response.ok) {
+      if (response.status === 401) this.expireSession();
       throw new Error(`Polling failed with status ${response.status}`);
     }
 
@@ -360,6 +365,20 @@ export class FossRealtimeClient {
       for (const event of body.events) {
         this.handleIncomingEvent(event);
       }
+    }
+    // Polling the event buffer alone cannot recover a missed kitchen invalidation.
+    // Refresh authorized owner snapshots even when no buffered events remain.
+    if (this.status !== 'DISCONNECTED') this.config.onRefresh?.();
+  }
+
+  private expireSession(): void {
+    this.disconnect();
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent(FOSS_SESSION_EXPIRED_EVENT, {
+          detail: { token: this.config.sessionToken },
+        }),
+      );
     }
   }
 

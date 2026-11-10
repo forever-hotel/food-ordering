@@ -23,7 +23,10 @@ import {
   DATA_MODE_CHANGE_EVENT,
   LEGACY_SESSION_STORAGE_KEY,
 } from '../data-mode/data-mode.ts';
-import { disconnectAllRealtimeClients } from '../realtime/realtime-client.ts';
+import {
+  disconnectAllRealtimeClients,
+  FOSS_SESSION_EXPIRED_EVENT,
+} from '../realtime/realtime-client.ts';
 
 function subscribeStorage(callback: () => void) {
   if (typeof window === 'undefined') return () => {};
@@ -91,6 +94,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const requestIdRef = useRef<number>(0);
 
   const sessionToken = explicitToken ?? initialToken;
+
+  useEffect(() => {
+    const expire = (event: Event) => {
+      const token = (event as CustomEvent<{ token?: unknown }>).detail?.token;
+      if (!sessionToken || token !== sessionToken) return;
+      ++requestIdRef.current;
+      disconnectAllRealtimeClients();
+      window.sessionStorage.removeItem(getSessionStorageKey(getDataMode()));
+      window.sessionStorage.removeItem(LEGACY_SESSION_STORAGE_KEY);
+      setExplicitToken(null);
+      setGuest(null);
+      setExpiresAt(null);
+      setStatus('expired');
+      setError('Your stay session has expired. Scan a fresh guest QR to continue.');
+    };
+    window.addEventListener(FOSS_SESSION_EXPIRED_EVENT, expire);
+    return () => window.removeEventListener(FOSS_SESSION_EXPIRED_EVENT, expire);
+  }, [sessionToken]);
 
   // Load demo tokens in background only in demo mode
   useEffect(() => {

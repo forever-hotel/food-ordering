@@ -25,6 +25,7 @@ export class FossDemoOrderRepository {
 
   public async findByIdempotencyKey(
     idempotencyKey: string,
+    _bookingId?: string,
   ): Promise<FossDemoOrder | null> {
     for (const order of this.orders.values()) {
       if (order.idempotencyKey === idempotencyKey) {
