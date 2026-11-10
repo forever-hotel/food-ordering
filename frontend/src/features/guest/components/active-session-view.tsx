@@ -133,7 +133,7 @@ export function ActiveSessionView() {
 
         <Popconfirm
           title="Log out of room session?"
-          description="You will need to scan your room QR code again to access guest services."
+          description="Because QR activation slips are single-use, logging out will revoke your active session and a fresh QR slip from the Front Desk may be required to log back in."
           onConfirm={logout}
           okText="Yes, Log Out"
           cancelText="Cancel"

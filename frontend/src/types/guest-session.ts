@@ -4,6 +4,10 @@ export interface GuestStayInfo {
   roomNumber: string;
   guestName: string;
   role: 'GUEST';
+  checkInDate?: string;
+  checkOutDate?: string;
+  stayStart?: string;
+  stayEnd?: string;
 }
 
 export interface GuestSessionResponse {

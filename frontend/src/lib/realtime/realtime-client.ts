@@ -401,7 +401,7 @@ export class FossRealtimeClient {
 
     // 4. Handle session revocation
     if (event.eventType === RealtimeEventType.SESSION_REVOKED) {
-      this.disconnect();
+      this.expireSession();
     }
 
     // 5. Notify listener

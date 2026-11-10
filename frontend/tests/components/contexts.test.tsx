@@ -33,12 +33,14 @@ const mockFetchCurrentSession = jest.fn().mockResolvedValue({
 const mockFetchDemoTokens = jest.fn().mockResolvedValue({});
 const mockLogoutSession = jest.fn().mockResolvedValue(undefined);
 const mockRedeemQrToken = jest.fn();
+const mockRenewSession = jest.fn().mockRejectedValue(new Error('renew disabled by default'));
 
 jest.mock('../../src/lib/api/guest-sessions', () => ({
   fetchCurrentSession: (...args: unknown[]) => mockFetchCurrentSession(...args),
   fetchDemoTokens: (...args: unknown[]) => mockFetchDemoTokens(...args),
   logoutSession: (...args: unknown[]) => mockLogoutSession(...args),
   redeemQrToken: (...args: unknown[]) => mockRedeemQrToken(...args),
+  renewSession: (...args: unknown[]) => mockRenewSession(...args),
 }));
 
 describe('NavigationProvider', () => {
@@ -345,6 +347,53 @@ describe('AuthProvider', () => {
       await result.current.refreshSession();
     });
     expect(result.current.status).toBe('expired');
+  });
+
+  it('supports stay-bounded renewal in refreshSession and session hydration', async () => {
+    const mockGuest = {
+      bookingId: 'BK-RENEW-1',
+      roomNumber: '202',
+      guestName: 'Renew Guest',
+      checkInDate: '2026-11-09T10:00:00Z',
+      checkOutDate: '2026-11-15T10:00:00Z',
+      stayEnd: '2026-11-15T10:00:00Z',
+    };
+
+    mockRedeemQrToken.mockResolvedValueOnce({
+      sessionToken: 'token-initial-202',
+      expiresAt: '2026-11-10T12:00:00Z',
+      guest: mockGuest,
+    });
+
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <AuthProvider>{children}</AuthProvider>
+    );
+
+    const { result, unmount } = renderHook(() => useAuth(), { wrapper });
+
+    await act(async () => {
+      await result.current.loginWithQr('qr-token-renew');
+    });
+
+    expect(result.current.sessionToken).toBe('token-initial-202');
+
+    // Test refreshSession with successful renewal
+    mockRenewSession.mockResolvedValueOnce({
+      sessionToken: 'token-initial-202',
+      expiresAt: '2026-11-12T12:00:00Z',
+      guest: mockGuest,
+    });
+    await act(async () => {
+      await result.current.refreshSession();
+    });
+
+    expect(result.current.status).toBe('authenticated');
+    expect(result.current.sessionToken).toBe('token-initial-202');
+    expect(result.current.expiresAt).toBe('2026-11-12T12:00:00Z');
+    unmount();
+
+    window.localStorage.clear();
+    window.sessionStorage.clear();
   });
 
   it('migrates legacy unpartitioned session tokens according to data mode', () => {

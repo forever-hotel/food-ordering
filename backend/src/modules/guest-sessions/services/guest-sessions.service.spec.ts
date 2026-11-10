@@ -835,4 +835,116 @@ describe('GuestSessionsService', () => {
       ).toHaveBeenCalledWith('b-101');
     });
   });
+
+  describe('renewSession (TC4, TC7, TC8, AC3)', () => {
+    it('renews an active session for a multi-day stay when more than 24h passed since initial QR activation', async () => {
+      // 30 hours after check-in on a 5-day stay
+      mockClock = new Date('2026-10-29T16:00:00.000Z');
+
+      const rawToken = 'multi-day-token-123';
+      const hashedToken = service.hashToken(rawToken);
+
+      const multiDayStayEnd = '2026-11-04T12:00:00.000Z'; // 6 days later
+      const session = new FossSession();
+      session.sessionId = 'sess-multi-day';
+      session.bookingId = 'b-101';
+      session.roomNumber = '101';
+      session.sessionToken = hashedToken;
+      session.isActive = true;
+      // Previous 24h TTL expired 6 hours ago
+      session.expiresAt = new Date('2026-10-29T10:00:00.000Z');
+
+      mockSessionRepository.findActiveBySessionToken.mockResolvedValue(session);
+      mockBookingVerificationService.verifyStay.mockResolvedValue({
+        ...validStay,
+        stayStart: '2026-10-28T10:00:00.000Z',
+        stayEnd: multiDayStayEnd,
+      });
+
+      const result = await service.renewSession(rawToken);
+
+      expect(result.sessionId).toBe('sess-multi-day');
+      expect(result.active).toBe(true);
+      // New expiry is now (Oct 29, 16:00) + 24 hours = Oct 30, 16:00, bounded by stayEnd (Nov 4)
+      const expectedExpiry = new Date('2026-10-30T16:00:00.000Z').toISOString();
+      expect(result.expiresAt).toBe(expectedExpiry);
+      expect(mockSessionRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sessionId: 'sess-multi-day',
+          isActive: true,
+          expiresAt: new Date(expectedExpiry),
+        }),
+      );
+    });
+
+    it('rejects renewal and revokes session when authoritative stay checkout has concluded (TC7, AC4)', async () => {
+      // Current time is after stay has ended
+      mockClock = new Date('2026-11-01T15:00:00.000Z');
+
+      const rawToken = 'stay-ended-token';
+      const hashedToken = service.hashToken(rawToken);
+
+      const session = new FossSession();
+      session.sessionId = 'sess-stay-ended';
+      session.bookingId = 'b-101';
+      session.roomNumber = '101';
+      session.sessionToken = hashedToken;
+      session.isActive = true;
+      session.expiresAt = new Date('2026-10-30T10:00:00.000Z');
+
+      mockSessionRepository.findActiveBySessionToken.mockResolvedValue(session);
+      mockBookingVerificationService.verifyStay.mockResolvedValue({
+        ...validStay,
+        stayStart: '2026-10-28T10:00:00.000Z',
+        stayEnd: '2026-10-31T12:00:00.000Z', // Ended yesterday
+      });
+
+      await expect(service.renewSession(rawToken)).rejects.toThrow(
+        UnauthorizedException,
+      );
+      expect(session.isActive).toBe(false);
+      expect(mockSessionRepository.save).toHaveBeenCalledWith(session);
+    });
+
+    it('rejects renewal when session is already inactive or revoked (TC8)', async () => {
+      mockSessionRepository.findActiveBySessionToken.mockResolvedValue(null);
+
+      await expect(service.renewSession('revoked-token')).rejects.toThrow(
+        UnauthorizedException,
+      );
+      expect(mockBookingVerificationService.verifyStay).not.toHaveBeenCalled();
+    });
+
+    it('rejects renewal when token is empty', async () => {
+      await expect(service.renewSession('')).rejects.toThrow(
+        UnauthorizedException,
+      );
+    });
+
+    it('bubbles up ServiceUnavailableException when FDS is down during renewal without revoking session', async () => {
+      mockClock = new Date('2026-10-29T16:00:00.000Z');
+
+      const rawToken = 'token-fds-down';
+      const hashedToken = service.hashToken(rawToken);
+
+      const session = new FossSession();
+      session.sessionId = 'sess-fds-down';
+      session.bookingId = 'b-101';
+      session.roomNumber = '101';
+      session.sessionToken = hashedToken;
+      session.isActive = true;
+      session.expiresAt = new Date('2026-10-30T10:00:00.000Z');
+
+      mockSessionRepository.findActiveBySessionToken.mockResolvedValue(session);
+      mockBookingVerificationService.verifyStay.mockRejectedValue(
+        new ServiceUnavailableException('FDS unavailable'),
+      );
+
+      await expect(service.renewSession(rawToken)).rejects.toThrow(
+        ServiceUnavailableException,
+      );
+      expect(session.isActive).toBe(true);
+      expect(mockSessionRepository.save).not.toHaveBeenCalled();
+    });
+  });
 });

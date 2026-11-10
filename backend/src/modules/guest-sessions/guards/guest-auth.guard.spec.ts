@@ -17,6 +17,35 @@ describe('GuestAuthGuard', () => {
     >;
   };
 
+  const mockSessionRecord = {
+    sessionId: 'sess-123',
+    bookingId: 'book-456',
+    roomNumber: '101',
+    expiresAt: new Date('2026-10-30T10:00:00Z'),
+  } as FossSession;
+
+  const mockBookingVerification: BookingVerificationResultDto = {
+    valid: true,
+    bookingId: 'book-456',
+    roomNumber: '101',
+    status: 'CHECKED_IN',
+    stayStart: '2026-10-27T10:00:00Z',
+    stayEnd: '2026-10-30T10:00:00Z',
+    guestName: 'John Smith',
+    verifiedAt: '2026-10-27T10:00:00Z',
+  };
+
+  const mockGuestContext = {
+    sessionId: 'sess-123',
+    guestId: 'sess-123',
+    bookingId: 'book-456',
+    roomNumber: '101',
+    role: 'GUEST',
+    stayStart: '2026-10-27T10:00:00Z',
+    stayEnd: '2026-10-30T10:00:00Z',
+    guestName: 'John Smith',
+  };
+
   const createMockContext = (
     headers: Record<string, string>,
     query?: Record<string, string>,
@@ -210,5 +239,71 @@ describe('GuestAuthGuard', () => {
     expect(
       mockGuestSessionsService.validateSessionToken,
     ).not.toHaveBeenCalled();
+  });
+
+  it('allows access and attaches guest context for valid foss_guest_session in Cookie header', async () => {
+    mockGuestSessionsService.validateSessionToken.mockResolvedValue({
+      session: mockSessionRecord as any,
+      stay: mockBookingVerification,
+    });
+
+    const context = createMockContext({
+      cookie:
+        'other_cookie=xyz; foss_guest_session=cookie-session-token; tracking=1',
+    });
+
+    const result = await guard.canActivate(context);
+
+    expect(result).toBe(true);
+    expect(mockGuestSessionsService.validateSessionToken).toHaveBeenCalledWith(
+      'cookie-session-token',
+    );
+    const request = context.switchToHttp().getRequest();
+    expect(request.sessionToken).toBe('cookie-session-token');
+    expect(request.guest).toEqual(mockGuestContext);
+  });
+
+  it('allows access for valid foss_guest_session in request.cookies', async () => {
+    mockGuestSessionsService.validateSessionToken.mockResolvedValue({
+      session: mockSessionRecord as any,
+      stay: mockBookingVerification,
+    });
+
+    const context = {
+      switchToHttp: () => ({
+        getRequest: () => ({
+          headers: {},
+          query: {},
+          cookies: { foss_guest_session: 'parsed-cookie-token' },
+          path: '/guest-sessions/me',
+        }),
+      }),
+    } as ExecutionContext;
+
+    const result = await guard.canActivate(context);
+
+    expect(result).toBe(true);
+    expect(mockGuestSessionsService.validateSessionToken).toHaveBeenCalledWith(
+      'parsed-cookie-token',
+    );
+  });
+
+  it('prefers Authorization Bearer header over cookie when both are present', async () => {
+    mockGuestSessionsService.validateSessionToken.mockResolvedValue({
+      session: mockSessionRecord as any,
+      stay: mockBookingVerification,
+    });
+
+    const context = createMockContext({
+      authorization: 'Bearer preferred-bearer-token',
+      cookie: 'foss_guest_session=ignored-cookie-token',
+    });
+
+    const result = await guard.canActivate(context);
+
+    expect(result).toBe(true);
+    expect(mockGuestSessionsService.validateSessionToken).toHaveBeenCalledWith(
+      'preferred-bearer-token',
+    );
   });
 });

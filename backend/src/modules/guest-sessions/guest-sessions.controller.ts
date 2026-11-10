@@ -10,11 +10,12 @@ import {
   Param,
   Post,
   Req,
+  Res,
   ServiceUnavailableException,
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 
 import { InternalServiceGuard } from '../../common/auth/internal-service.guard.js';
 import { RoomOwnershipGuard } from '../../common/auth/room-ownership.guard.js';
@@ -36,6 +37,56 @@ import { QrTokenService } from './services/qr-token.service.js';
 interface AuthenticatedRequest extends Request {
   guest: GuestContext;
   sessionToken: string;
+}
+
+function extractTokenFromCookies(cookieHeader?: string): string | undefined {
+  if (!cookieHeader || typeof cookieHeader !== 'string') return undefined;
+  const pairs = cookieHeader.split(';');
+  for (const pair of pairs) {
+    const idx = pair.indexOf('=');
+    if (idx > -1) {
+      const key = pair.slice(0, idx).trim();
+      if (key === 'foss_guest_session') {
+        const val = pair.slice(idx + 1).trim();
+        return decodeURIComponent(val);
+      }
+    }
+  }
+  return undefined;
+}
+
+function setSessionCookie(
+  res?: Response,
+  token?: string,
+  expiresAt?: string | Date,
+): void {
+  if (!res || !token || typeof res.cookie !== 'function') return;
+  const isSecure =
+    process.env.NODE_ENV === 'production' ||
+    process.env.COOKIE_SECURE === 'true';
+  const maxAge = expiresAt
+    ? Math.max(0, new Date(expiresAt).getTime() - Date.now())
+    : 24 * 60 * 60 * 1000;
+  res.cookie('foss_guest_session', token, {
+    httpOnly: true,
+    secure: isSecure,
+    sameSite: 'lax',
+    path: '/',
+    maxAge,
+  });
+}
+
+function clearSessionCookie(res?: Response): void {
+  if (!res || typeof res.clearCookie !== 'function') return;
+  const isSecure =
+    process.env.NODE_ENV === 'production' ||
+    process.env.COOKIE_SECURE === 'true';
+  res.clearCookie('foss_guest_session', {
+    httpOnly: true,
+    secure: isSecure,
+    sameSite: 'lax',
+    path: '/',
+  });
 }
 
 @Controller('guest-sessions')
@@ -101,12 +152,14 @@ export class GuestSessionsController {
   @Header('Cache-Control', 'no-store')
   async authenticateWithQr(
     @Body() body: VerifyQrDto,
+    @Res({ passthrough: true }) res?: Response,
   ): Promise<GuestSessionResponseDto> {
     if (!body || typeof body !== 'object' || !body.qrToken) {
       throw new BadRequestException('Request body with qrToken is required.');
     }
 
     const token = body.qrToken.trim();
+    let sessionResponse: GuestSessionResponseDto;
 
     // Differentiate between opaque single-use activation credentials and signed development tokens
     if (!token.includes('.')) {
@@ -115,17 +168,25 @@ export class GuestSessionsController {
           'QR activation service is unconfigured.',
         );
       }
-      return this.qrActivationService.redeemActivationCredential(token);
+      sessionResponse =
+        await this.qrActivationService.redeemActivationCredential(token);
+    } else {
+      // Signed tokens (strictly prohibited in production environments; overrides forbidden)
+      if (process.env.NODE_ENV === 'production') {
+        throw new UnauthorizedException(
+          'Legacy signed QR tokens are strictly disabled in production. Authoritative single-use FDS-issued QR activation credentials are required.',
+        );
+      }
+      sessionResponse =
+        await this.guestSessionsService.authenticateWithQr(token);
     }
 
-    // Signed tokens (strictly prohibited in production environments; overrides forbidden)
-    if (process.env.NODE_ENV === 'production') {
-      throw new UnauthorizedException(
-        'Legacy signed QR tokens are strictly disabled in production. Authoritative single-use FDS-issued QR activation credentials are required.',
-      );
-    }
-
-    return this.guestSessionsService.authenticateWithQr(token);
+    setSessionCookie(
+      res,
+      sessionResponse.sessionToken,
+      sessionResponse.expiresAt,
+    );
+    return sessionResponse;
   }
 
   /**
@@ -136,11 +197,36 @@ export class GuestSessionsController {
   @UseGuards(GuestAuthGuard)
   getMe(
     @CurrentGuest() guest: GuestContext,
-  ): GuestContext & { active: boolean } {
-    return {
+    @Req() req?: AuthenticatedRequest,
+    @Res({ passthrough: true }) res?: Response,
+  ): GuestContext & {
+    active: boolean;
+    expiresAt?: string;
+    sessionToken?: string;
+  } {
+    const record = (
+      req as AuthenticatedRequest & { sessionRecord?: { expiresAt: Date } }
+    )?.sessionRecord;
+    const result: GuestContext & {
+      active: boolean;
+      expiresAt?: string;
+      sessionToken?: string;
+    } = {
       ...guest,
       active: true,
     };
+    if (record?.expiresAt) {
+      result.expiresAt = new Date(record.expiresAt).toISOString();
+    }
+    if (req?.sessionToken) {
+      result.sessionToken = req.sessionToken;
+      setSessionCookie(
+        res,
+        req.sessionToken,
+        record?.expiresAt || guest?.stayEnd,
+      );
+    }
+    return result;
   }
 
   @Get('realtime-session')
@@ -234,8 +320,47 @@ export class GuestSessionsController {
   @UseGuards(GuestAuthGuard)
   async logout(
     @Req() req: AuthenticatedRequest,
+    @Res({ passthrough: true }) res?: Response,
   ): Promise<{ success: boolean; message: string }> {
+    clearSessionCookie(res);
     return this.guestSessionsService.logout(req.sessionToken);
+  }
+
+  /**
+   * Renews an active guest session for multi-day stays without requiring a new QR scan.
+   */
+  @Post('renew')
+  @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'no-store')
+  async renewSession(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res?: Response,
+  ): Promise<GuestSessionResponseDto> {
+    const authHeader = req.headers?.authorization;
+    let token: string | undefined;
+
+    if (authHeader && typeof authHeader === 'string') {
+      const parts = authHeader.trim().split(' ');
+      if (parts.length === 2 && parts[0]?.toLowerCase() === 'bearer') {
+        token = parts[1];
+      }
+    }
+    if (!token && req.headers?.cookie) {
+      token = extractTokenFromCookies(req.headers.cookie);
+    }
+    if (!token && (req as Request & { sessionToken?: string }).sessionToken) {
+      token = (req as Request & { sessionToken?: string }).sessionToken;
+    }
+
+    if (!token) {
+      throw new UnauthorizedException(
+        'Session token is required in Authorization header or session cookie.',
+      );
+    }
+
+    const renewed = await this.guestSessionsService.renewSession(token);
+    setSessionCookie(res, renewed.sessionToken, renewed.expiresAt);
+    return renewed;
   }
 
   /**

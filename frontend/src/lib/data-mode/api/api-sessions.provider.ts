@@ -17,6 +17,7 @@ export class ApiSessionsProvider implements SessionsProvider {
       headers: {
         'Content-Type': 'application/json',
       },
+      credentials: 'include',
       body: JSON.stringify({ qrToken: qrToken.trim() }),
     });
 
@@ -71,6 +72,7 @@ export class ApiSessionsProvider implements SessionsProvider {
       headers: {
         Authorization: `Bearer ${sessionToken}`,
       },
+      credentials: 'include',
     });
 
     const body = await response.json().catch(() => null);
@@ -83,12 +85,58 @@ export class ApiSessionsProvider implements SessionsProvider {
     return body as GuestContext;
   }
 
+  async renewSession(sessionToken: string): Promise<GuestSessionResponse> {
+    if (!sessionToken || sessionToken.trim() === '') {
+      throw new ApiError('Guest session token is required to renew session.', 401);
+    }
+    if (sessionToken.startsWith('demo-token-')) {
+      throw new ApiError(
+        'Demonstration session tokens cannot be transmitted to real API endpoints.',
+        401,
+      );
+    }
+
+    const response = await fetch(`${API_URL}/guest-sessions/renew`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${sessionToken}`,
+      },
+      credentials: 'include',
+    });
+
+    const body = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      const errorMsg = body?.message || 'Session renewal failed or stay concluded.';
+      throw new ApiError(errorMsg, response.status, body);
+    }
+
+    return {
+      sessionToken: body.sessionToken,
+      expiresAt: body.expiresAt,
+      guest: {
+        guestId:
+          body.sessionId ||
+          body.guestId ||
+          body.guest?.guestId ||
+          `guest-${body.roomNumber || body.guest?.roomNumber}`,
+        bookingId: body.bookingId || body.guest?.bookingId,
+        roomNumber: body.roomNumber || body.guest?.roomNumber,
+        guestName: body.guestName || body.guest?.guestName,
+        role: 'GUEST',
+        stayStart: body.stayStart,
+        stayEnd: body.stayEnd,
+      },
+    };
+  }
+
   async logoutSession(sessionToken: string): Promise<{ success: boolean; message: string }> {
     const response = await fetch(`${API_URL}/guest-sessions/logout`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${sessionToken}`,
       },
+      credentials: 'include',
     });
 
     const body = await response.json().catch(() => null);

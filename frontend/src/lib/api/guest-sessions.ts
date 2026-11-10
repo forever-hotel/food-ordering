@@ -19,6 +19,22 @@ export async function fetchCurrentSession(sessionToken: string): Promise<GuestCo
 }
 
 /**
+ * Authoritatively renews active session context against Front Desk for multi-day stays.
+ */
+export async function renewSession(sessionToken: string): Promise<GuestSessionResponse> {
+  const provider = getSessionsProvider();
+  if (provider.renewSession) {
+    return provider.renewSession(sessionToken);
+  }
+  const current = await provider.fetchCurrentSession(sessionToken);
+  return {
+    sessionToken,
+    guest: current,
+    expiresAt: current.stayEnd || new Date(Date.now() + 24 * 3600 * 1000).toISOString(),
+  };
+}
+
+/**
  * Logs out the active guest session.
  */
 export async function logoutSession(

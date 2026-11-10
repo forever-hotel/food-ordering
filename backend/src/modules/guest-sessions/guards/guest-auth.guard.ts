@@ -7,6 +7,22 @@ import {
 import type { GuestContext } from '../interfaces/guest-context.interface.js';
 import { GuestSessionsService } from '../services/guest-sessions.service.js';
 
+function extractTokenFromCookies(cookieHeader?: string): string | undefined {
+  if (!cookieHeader || typeof cookieHeader !== 'string') return undefined;
+  const pairs = cookieHeader.split(';');
+  for (const pair of pairs) {
+    const idx = pair.indexOf('=');
+    if (idx > -1) {
+      const key = pair.slice(0, idx).trim();
+      if (key === 'foss_guest_session') {
+        const val = pair.slice(idx + 1).trim();
+        return decodeURIComponent(val);
+      }
+    }
+  }
+  return undefined;
+}
+
 @Injectable()
 export class GuestAuthGuard implements CanActivate {
   constructor(private readonly guestSessionsService: GuestSessionsService) {}
@@ -39,7 +55,15 @@ export class GuestAuthGuard implements CanActivate {
         );
       }
       token = parts[1];
-    } else if (isSseRequest && queryToken) {
+    } else if (request.headers?.cookie) {
+      token = extractTokenFromCookies(request.headers.cookie);
+    }
+
+    if (!token && request.cookies?.foss_guest_session) {
+      token = request.cookies.foss_guest_session;
+    }
+
+    if (!token && isSseRequest && queryToken) {
       token = queryToken;
     }
 

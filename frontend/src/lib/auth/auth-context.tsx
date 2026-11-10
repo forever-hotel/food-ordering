@@ -15,6 +15,7 @@ import {
   fetchDemoTokens,
   logoutSession,
   redeemQrToken,
+  renewSession,
 } from '../api/guest-sessions.ts';
 import type { AuthStatus, GuestContext, GuestSessionResponse } from '../../types/guest-session.ts';
 import {
@@ -22,6 +23,10 @@ import {
   getSessionStorageKey,
   DATA_MODE_CHANGE_EVENT,
   LEGACY_SESSION_STORAGE_KEY,
+  loadPersistentSession,
+  savePersistentSession,
+  clearPersistentSession,
+  type DataMode,
 } from '../data-mode/data-mode.ts';
 import {
   disconnectAllRealtimeClients,
@@ -42,24 +47,39 @@ function getStoredToken(): string | null {
   try {
     if (typeof window === 'undefined') return null;
     const mode = getDataMode();
-    const partitionedKey = getSessionStorageKey(mode);
-    const token = window.sessionStorage.getItem(partitionedKey);
-    if (token) return token;
-
-    // Check legacy unpartitioned key only if valid for mode
-    const legacy = window.sessionStorage.getItem(LEGACY_SESSION_STORAGE_KEY);
-    if (legacy) {
-      const isDemoToken = legacy.startsWith('demo-token-');
-      if ((mode === 'demo' && isDemoToken) || (mode === 'api' && !isDemoToken)) {
-        window.sessionStorage.setItem(partitionedKey, legacy);
-        window.sessionStorage.removeItem(LEGACY_SESSION_STORAGE_KEY);
-        return legacy;
-      }
-    }
-    return null;
+    return (
+      loadPersistentSession(mode) ??
+      window.sessionStorage?.getItem(getSessionStorageKey(mode)) ??
+      null
+    );
   } catch {
     return null;
   }
+}
+
+function safelySaveSession(
+  token: string,
+  mode: DataMode,
+  expiresAt?: string,
+  stayEnd?: string,
+): void {
+  try {
+    savePersistentSession(token, mode, expiresAt, stayEnd);
+  } catch {}
+  try {
+    window.sessionStorage?.setItem(getSessionStorageKey(mode), token);
+  } catch {}
+}
+
+function safelyClearSession(mode?: DataMode): void {
+  const targetMode = mode ?? getDataMode();
+  try {
+    clearPersistentSession(targetMode);
+  } catch {}
+  try {
+    window.sessionStorage?.removeItem(getSessionStorageKey(targetMode));
+    window.sessionStorage?.removeItem(LEGACY_SESSION_STORAGE_KEY);
+  } catch {}
 }
 
 function getServerStoredToken(): string | null {
@@ -101,8 +121,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!sessionToken || token !== sessionToken) return;
       ++requestIdRef.current;
       disconnectAllRealtimeClients();
-      window.sessionStorage.removeItem(getSessionStorageKey(getDataMode()));
-      window.sessionStorage.removeItem(LEGACY_SESSION_STORAGE_KEY);
+      safelyClearSession();
       setExplicitToken(null);
       setGuest(null);
       setExpiresAt(null);
@@ -166,30 +185,53 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    let isSubscribed = true;
     const currentReqId = ++requestIdRef.current;
 
-    fetchCurrentSession(sessionToken)
-      .then((guestData) => {
-        if (currentReqId !== requestIdRef.current) {
-          // Stale hydration cancelled by subsequent user action
-          return;
+    // Prefer stay-bounded renewal to support multi-day stays (> 24 hours) without re-scanning QR
+    const restoreAction =
+      typeof renewSession === 'function'
+        ? Promise.resolve()
+            .then(() => renewSession(sessionToken))
+            .catch(() => fetchCurrentSession(sessionToken))
+        : fetchCurrentSession(sessionToken);
+
+    restoreAction
+      .then((result) => {
+        if (!isSubscribed || currentReqId !== requestIdRef.current) return;
+        const isRenewed = Boolean(
+          result && typeof result === 'object' && 'sessionToken' in result && 'guest' in result,
+        );
+        const guestData: GuestContext = isRenewed
+          ? (result as GuestSessionResponse).guest
+          : (result as GuestContext);
+        const token = isRenewed ? (result as GuestSessionResponse).sessionToken : sessionToken;
+        const expiry = isRenewed ? (result as GuestSessionResponse).expiresAt : null;
+
+        setExplicitToken(token);
+        setExpiresAt(expiry);
+        setGuest({
+          ...guestData,
+          active: true,
+        });
+        if (isRenewed) {
+          safelySaveSession(token, getDataMode(), expiry || undefined, guestData.stayEnd);
         }
-        setGuest(guestData);
         setStatus('authenticated');
         setError(null);
       })
       .catch((err) => {
-        if (currentReqId !== requestIdRef.current) {
-          return;
-        }
-        if (typeof window !== 'undefined') {
-          window.sessionStorage.removeItem(getSessionStorageKey(getDataMode()));
-        }
+        if (!isSubscribed || currentReqId !== requestIdRef.current) return;
+        safelyClearSession();
         setExplicitToken(null);
         setGuest(null);
         setStatus('expired');
         setError(err instanceof Error ? err.message : 'Session expired or invalidated.');
       });
+
+    return () => {
+      isSubscribed = false;
+    };
   }, [sessionToken]);
 
   const loginWithQr = useCallback(async (qrToken: string): Promise<boolean> => {
@@ -210,9 +252,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         active: true,
       });
 
-      if (typeof window !== 'undefined') {
-        window.sessionStorage.setItem(getSessionStorageKey(getDataMode()), response.sessionToken);
-      }
+      safelySaveSession(
+        response.sessionToken,
+        getDataMode(),
+        response.expiresAt,
+        response.guest?.stayEnd,
+      );
 
       setStatus('authenticated');
       return true;
@@ -230,14 +275,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = useCallback(async () => {
     ++requestIdRef.current;
-    disconnectAllRealtimeClients();
+    disconnectAllRealtimeClients?.();
 
     const tokenToRevoke = sessionToken;
 
-    if (typeof window !== 'undefined') {
-      window.sessionStorage.removeItem(getSessionStorageKey(getDataMode()));
-      window.sessionStorage.removeItem(LEGACY_SESSION_STORAGE_KEY);
-    }
+    safelyClearSession();
 
     setExplicitToken(null);
     setGuest(null);
@@ -266,15 +308,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const currentReqId = ++requestIdRef.current;
 
     try {
+      const tryRenew =
+        typeof renewSession === 'function'
+          ? Promise.resolve()
+              .then(() => renewSession(sessionToken))
+              .catch(() => null)
+          : Promise.resolve(null);
+      const renewed = await tryRenew;
+      if (currentReqId !== requestIdRef.current) return;
+      if (renewed) {
+        setExplicitToken(renewed.sessionToken);
+        setExpiresAt(renewed.expiresAt);
+        setGuest({
+          ...renewed.guest,
+          active: true,
+        });
+        safelySaveSession(
+          renewed.sessionToken,
+          getDataMode(),
+          renewed.expiresAt,
+          renewed.guest?.stayEnd,
+        );
+        setStatus('authenticated');
+        return;
+      }
       const guestData = await fetchCurrentSession(sessionToken);
       if (currentReqId !== requestIdRef.current) return;
       setGuest(guestData);
       setStatus('authenticated');
     } catch {
       if (currentReqId !== requestIdRef.current) return;
-      if (typeof window !== 'undefined') {
-        window.sessionStorage.removeItem(getSessionStorageKey(getDataMode()));
-      }
+      safelyClearSession();
       setExplicitToken(null);
       setGuest(null);
       setStatus('expired');
@@ -282,12 +346,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [sessionToken]);
 
-  const computedStatus = sessionToken && !guest && status === 'idle' ? 'loading' : status;
-
   return (
     <AuthContext.Provider
       value={{
-        status: computedStatus,
+        status,
         sessionToken,
         guest,
         expiresAt,
