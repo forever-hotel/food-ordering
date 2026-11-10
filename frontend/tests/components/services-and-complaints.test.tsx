@@ -238,6 +238,11 @@ describe('ServicesTab Component', () => {
       expect(screen.getByText(/Failed to load services/i)).toBeDefined();
     });
 
+    // Ensure neither empty state nor fallback requests are rendered on failure
+    expect(screen.queryByText('No service requests yet')).toBeNull();
+    expect(screen.queryByText(/REQ-041/i)).toBeNull();
+    expect(screen.queryByText(/REQ-042/i)).toBeNull();
+
     mockFetchGuestServiceRequests.mockResolvedValue([mockServiceRequest]);
     const refreshBtn = screen.getByRole('button', { name: /Refresh/i });
     fireEvent.click(refreshBtn);
@@ -247,7 +252,7 @@ describe('ServicesTab Component', () => {
     });
   });
 
-  it('renders active requests list and falls back to demo requests when empty', async () => {
+  it('displays empty state and no fallback requests when guest has zero requests', async () => {
     mockFetchGuestServiceRequests.mockResolvedValue([]);
 
     render(
@@ -258,7 +263,62 @@ describe('ServicesTab Component', () => {
 
     await waitFor(() => {
       expect(screen.getByText('ACTIVE REQUESTS')).toBeDefined();
+      expect(screen.getByText('No service requests yet')).toBeDefined();
+      expect(
+        screen.getByText('Your service requests will appear here once submitted.'),
+      ).toBeDefined();
     });
+
+    // Verify hardcoded REQ-041 and REQ-042 never appear
+    expect(screen.queryByText(/REQ-041/i)).toBeNull();
+    expect(screen.queryByText(/REQ-042/i)).toBeNull();
+    expect(screen.queryByText(/Please bring 2 extra bath towels/i)).toBeNull();
+    expect(screen.queryByText(/Morning housekeeping please/i)).toBeNull();
+  });
+
+  it('displays only genuine requests when guest has one request', async () => {
+    mockFetchGuestServiceRequests.mockResolvedValue([mockServiceRequest]);
+
+    render(
+      <Wrapper>
+        <ServicesTab />
+      </Wrapper>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('ACTIVE REQUESTS')).toBeDefined();
+      expect(screen.getByText(/Air conditioning not cooling enough/i)).toBeDefined();
+    });
+
+    // Ensure empty state is not displayed
+    expect(screen.queryByText('No service requests yet')).toBeNull();
+    expect(screen.queryByText(/REQ-041/i)).toBeNull();
+    expect(screen.queryByText(/REQ-042/i)).toBeNull();
+  });
+
+  it('displays Guest Session Required and no requests when guest has no active stay', async () => {
+    mockAuth = {
+      ...initialMockAuth,
+      sessionToken: null,
+      guest: null,
+    };
+
+    render(
+      <Wrapper>
+        <ServicesTab />
+      </Wrapper>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Guest Session Required')).toBeDefined();
+      expect(
+        screen.getByText(/Please scan your room QR code to access hotel service requests/i),
+      ).toBeDefined();
+    });
+
+    expect(screen.queryByText('ACTIVE REQUESTS')).toBeNull();
+    expect(screen.queryByText(/REQ-041/i)).toBeNull();
+    expect(screen.queryByText(/REQ-042/i)).toBeNull();
   });
 
   it('handles submission error gracefully and toggles card expansion', async () => {
