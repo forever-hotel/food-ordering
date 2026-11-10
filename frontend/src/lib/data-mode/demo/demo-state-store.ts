@@ -1054,6 +1054,25 @@ export class DemoStateStore {
   }
 
   public createComplaint(stay: DemoStay, payload: CreateComplaintPayload): ComplaintResponse {
+    if (payload.relatedOrderId) {
+      const ord = this.orders.get(payload.relatedOrderId);
+      if (!ord || ord.bookingId !== stay.bookingId || ord.roomNumber !== stay.roomNumber) {
+        throw new ApiError(
+          `Referenced food order [${payload.relatedOrderId}] does not belong to the current guest stay.`,
+          400,
+        );
+      }
+    }
+    if (payload.relatedRequestId) {
+      const req = this.serviceRequests.get(payload.relatedRequestId);
+      if (!req || req.bookingId !== stay.bookingId || req.roomNumber !== stay.roomNumber) {
+        throw new ApiError(
+          `Referenced service request [${payload.relatedRequestId}] does not belong to the current guest stay.`,
+          400,
+        );
+      }
+    }
+
     const complaintId = `CMP-DEMO-${Math.floor(100 + Math.random() * 900)}`;
     const now = DemoScenarioClock.now();
 
@@ -1066,6 +1085,10 @@ export class DemoStateStore {
       subject: payload.subject,
       description: payload.description,
       status: 'SUBMITTED',
+      relatedOrderId: payload.relatedOrderId || null,
+      relatedRequestId: payload.relatedRequestId || null,
+      assignedManager: null,
+      resolutionNotes: null,
       createdAt: now.toISOString(),
       updatedAt: now.toISOString(),
       timeline: [

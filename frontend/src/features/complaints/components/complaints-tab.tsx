@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { App, Button, Card, Input, Radio, Select, Tag, Typography } from 'antd';
 function CheckIcon({ className }: { className?: string }) {
   return (
@@ -131,6 +131,8 @@ import type {
   CreateComplaintPayload,
   SourceReferenceOption,
 } from '../../../types/complaints.ts';
+import type { FoodOrderResponse } from '../../../types/orders.ts';
+import type { ServiceRequestResponse } from '../../../types/services.ts';
 import {
   COMPLAINT_CATEGORY_OPTIONS,
   COMPLAINT_SEVERITY_OPTIONS,
@@ -138,8 +140,10 @@ import {
   fetchGuestComplaints,
   generateComplaintIdempotencyKey,
   advanceComplaintStatusDemo,
-  FALLBACK_COMPLAINTS,
 } from '../../../lib/api/complaints.ts';
+import { fetchGuestOrders } from '../../../lib/api/orders.ts';
+import { fetchGuestServiceRequests, SERVICE_TYPE_OPTIONS } from '../../../lib/api/services.ts';
+import { getDataMode } from '../../../lib/data-mode/data-mode.ts';
 import { useAuth } from '../../../lib/auth/auth-context.tsx';
 import {
   FossRealtimeClient,
@@ -158,16 +162,19 @@ export function ComplaintsTab() {
   const { message } = App.useApp();
   const { sessionToken, guest } = useAuth();
 
-  // Form State (matching Figure 39 default values)
+  // Form State: initialized without hard-coded guest data
   const [category, setCategory] = useState<ComplaintCategory>('FOOD');
-  const [severity, setSeverity] = useState<ComplaintSeverity>('HIGH');
-  const [reference, setReference] = useState<string>('order-291');
-  const [subject, setSubject] = useState<string>('Undercooked chicken in food delivery');
-  const [description, setDescription] = useState<string>(
-    'The chicken in order #ORD-291 was undercooked and cold on arrival.',
-  );
+  const [severity, setSeverity] = useState<ComplaintSeverity>('LOW');
+  const [reference, setReference] = useState<string>('none');
+  const [subject, setSubject] = useState<string>('');
+  const [description, setDescription] = useState<string>('');
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+
+  // Dynamic Stay References (Orders & Service Requests)
+  const [guestOrders, setGuestOrders] = useState<FoodOrderResponse[]>([]);
+  const [guestRequests, setGuestRequests] = useState<ServiceRequestResponse[]>([]);
+  const [referencesLoading, setReferencesLoading] = useState<boolean>(false);
 
   // Complaints History & Realtime State
   const [complaints, setComplaints] = useState<ComplaintResponse[]>([]);
@@ -176,29 +183,183 @@ export function ComplaintsTab() {
   const [expandedComplaintId, setExpandedComplaintId] = useState<string | null>(null);
   const [advancingId, setAdvancingId] = useState<string | null>(null);
 
+  // Active session and request sequence tracking to prevent session-switching race conditions
+  const activeSessionTokenRef = useRef<string | null>(sessionToken);
+  const activeBookingIdRef = useRef<string | null>(guest?.bookingId || null);
+  const complaintSeqRef = useRef<number>(0);
+  const referenceSeqRef = useRef<number>(0);
+
+  // Synchronize session references when guest or session token changes
+  useEffect(() => {
+    activeSessionTokenRef.current = sessionToken;
+    activeBookingIdRef.current = guest?.bookingId || null;
+    complaintSeqRef.current += 1;
+    referenceSeqRef.current += 1;
+
+    // Immediately clear guest data when session is revoked or switched
+    if (!sessionToken || !guest) {
+      Promise.resolve().then(() => {
+        setComplaints([]);
+        setGuestOrders([]);
+        setGuestRequests([]);
+        setReference('none');
+        setSubject('');
+        setDescription('');
+        setFetchError(null);
+        setLoading(false);
+      });
+    }
+  }, [sessionToken, guest]);
+
   // Single client-generated idempotency key retained across retry attempts
   const idempotencyKeyRef = useRef<string>(generateComplaintIdempotencyKey());
 
-  // Source options matching Figure 39
-  const sourceOptions: SourceReferenceOption[] = [
-    {
-      id: 'order-291',
-      type: 'order',
-      referenceId: 'order-291',
-      label: 'Order #ORD-291 — Lunch, LKR 1,500',
-    },
-    {
-      id: 'req-041',
-      type: 'request',
-      referenceId: 'req-041',
-      label: 'Request #REQ-041 — Extra Towels',
-    },
-    {
+  // Dynamically mapped source options strictly scoped to the active guest booking
+  const sourceOptions: SourceReferenceOption[] = useMemo(() => {
+    const options: SourceReferenceOption[] = [];
+
+    // Map genuine guest orders belonging to active booking
+    guestOrders.forEach((o) => {
+      // Robustly strip any existing prefixes ('order-', 'ord-', '#') to extract the core identifier
+      const bareOrderId = o.orderId.replace(/^order-/i, '').replace(/^#/, '');
+      const cleanOrderNum = bareOrderId.toUpperCase().startsWith('ORD-')
+        ? bareOrderId.slice(4)
+        : bareOrderId;
+      const orderNum = `#ORD-${cleanOrderNum}`;
+      const itemsDesc =
+        o.items && o.items.length > 0
+          ? o.items
+              .map((i) => i.name)
+              .slice(0, 2)
+              .join(', ') + (o.items.length > 2 ? '...' : '')
+          : 'Food Order';
+      const amountStr =
+        typeof o.totalAmount === 'number' ? `, LKR ${o.totalAmount.toLocaleString()}` : '';
+
+      const optionId = o.orderId.startsWith('order-') ? o.orderId : `order-${o.orderId}`;
+      options.push({
+        id: optionId,
+        type: 'order',
+        referenceId: o.orderId,
+        label: `Order ${orderNum} — ${itemsDesc}${amountStr}`,
+      });
+    });
+
+    // Map genuine guest service requests belonging to active booking
+    guestRequests.forEach((r) => {
+      // Robustly strip any existing prefixes ('req-', 'request-', '#') to extract the core identifier
+      const bareReqId = r.requestId.replace(/^req(uest)?-/i, '').replace(/^#/, '');
+      const cleanReqNum = bareReqId.toUpperCase().startsWith('REQ-')
+        ? bareReqId.slice(4)
+        : bareReqId;
+      const reqNum = `#REQ-${cleanReqNum}`;
+      const typeOption = SERVICE_TYPE_OPTIONS.find(
+        (opt) => opt.backendType === r.requestType || opt.key === r.requestType,
+      );
+      const typeLabel = typeOption?.label || r.requestType || 'Service Request';
+      const descSnippet = r.description?.trim()
+        ? ` (${r.description.trim().slice(0, 24)}${r.description.trim().length > 24 ? '...' : ''})`
+        : '';
+
+      const optionId = r.requestId.startsWith('req-') ? r.requestId : `req-${r.requestId}`;
+      options.push({
+        id: optionId,
+        type: 'request',
+        referenceId: r.requestId,
+        label: `Request ${reqNum} — ${typeLabel}${descSnippet}`,
+      });
+    });
+
+    // Always provide No reference option
+    options.push({
       id: 'none',
       type: 'none',
       label: 'No reference',
-    },
-  ];
+    });
+
+    return options;
+  }, [guestOrders, guestRequests]);
+
+  // Reset selected reference if it is no longer valid for the active booking
+  useEffect(() => {
+    if (
+      reference !== 'none' &&
+      !sourceOptions.some((o) => o.id === reference || o.referenceId === reference)
+    ) {
+      Promise.resolve().then(() => {
+        setReference('none');
+      });
+    }
+  }, [reference, sourceOptions]);
+
+  const loadReferences = useCallback(async () => {
+    if (!sessionToken || !guest?.bookingId) {
+      setGuestOrders([]);
+      setGuestRequests([]);
+      return;
+    }
+
+    const currentSeq = ++referenceSeqRef.current;
+    const currentToken = sessionToken;
+    const currentBookingId = guest.bookingId;
+    const currentRoomNumber = guest.roomNumber;
+
+    setReferencesLoading(true);
+    try {
+      const [ordersRes, requestsRes] = await Promise.allSettled([
+        fetchGuestOrders(currentToken),
+        fetchGuestServiceRequests(currentToken),
+      ]);
+
+      // Guard against stale response if session switched during request
+      if (
+        referenceSeqRef.current !== currentSeq ||
+        activeSessionTokenRef.current !== currentToken ||
+        activeBookingIdRef.current !== currentBookingId
+      ) {
+        return;
+      }
+
+      if (ordersRes.status === 'fulfilled' && Array.isArray(ordersRes.value)) {
+        setGuestOrders(
+          ordersRes.value.filter(
+            (o) =>
+              o.bookingId === currentBookingId &&
+              (!currentRoomNumber || o.roomNumber === currentRoomNumber),
+          ),
+        );
+      } else {
+        setGuestOrders([]);
+      }
+
+      if (requestsRes.status === 'fulfilled' && Array.isArray(requestsRes.value)) {
+        setGuestRequests(
+          requestsRes.value.filter(
+            (r) =>
+              r.bookingId === currentBookingId &&
+              (!currentRoomNumber || r.roomNumber === currentRoomNumber),
+          ),
+        );
+      } else {
+        setGuestRequests([]);
+      }
+    } catch {
+      if (
+        referenceSeqRef.current === currentSeq &&
+        activeSessionTokenRef.current === currentToken
+      ) {
+        setGuestOrders([]);
+        setGuestRequests([]);
+      }
+    } finally {
+      if (
+        referenceSeqRef.current === currentSeq &&
+        activeSessionTokenRef.current === currentToken
+      ) {
+        setReferencesLoading(false);
+      }
+    }
+  }, [sessionToken, guest]);
 
   const loadComplaints = useCallback(
     async (showLoading = false) => {
@@ -206,17 +367,40 @@ export function ComplaintsTab() {
         if (showLoading) setLoading(false);
         return;
       }
+
+      const currentSeq = ++complaintSeqRef.current;
+      const currentToken = sessionToken;
+
       if (showLoading) setLoading(true);
       setFetchError(null);
 
       try {
-        const data = await fetchGuestComplaints(sessionToken);
+        const data = await fetchGuestComplaints(currentToken);
+        // Guard against stale response if session switched during request
+        if (
+          complaintSeqRef.current !== currentSeq ||
+          activeSessionTokenRef.current !== currentToken
+        ) {
+          return;
+        }
         setComplaints(data);
       } catch (err: unknown) {
+        if (
+          complaintSeqRef.current !== currentSeq ||
+          activeSessionTokenRef.current !== currentToken
+        ) {
+          return;
+        }
         const msg = err instanceof Error ? err.message : 'Unable to retrieve complaints.';
         setFetchError(msg);
       } finally {
-        if (showLoading) setLoading(false);
+        if (
+          showLoading &&
+          complaintSeqRef.current === currentSeq &&
+          activeSessionTokenRef.current === currentToken
+        ) {
+          setLoading(false);
+        }
       }
     },
     [sessionToken, guest],
@@ -237,15 +421,32 @@ export function ComplaintsTab() {
       };
     }
 
-    fetchGuestComplaints(sessionToken)
+    const currentToken = sessionToken;
+    const currentSeq = ++complaintSeqRef.current;
+
+    Promise.resolve().then(() => {
+      if (!isCancelled) {
+        void loadReferences();
+      }
+    });
+
+    fetchGuestComplaints(currentToken)
       .then((data) => {
-        if (!isCancelled) {
+        if (
+          !isCancelled &&
+          complaintSeqRef.current === currentSeq &&
+          activeSessionTokenRef.current === currentToken
+        ) {
           setComplaints(data);
           setLoading(false);
         }
       })
       .catch((err: unknown) => {
-        if (!isCancelled) {
+        if (
+          !isCancelled &&
+          complaintSeqRef.current === currentSeq &&
+          activeSessionTokenRef.current === currentToken
+        ) {
           const msg = err instanceof Error ? err.message : 'Unable to retrieve complaints.';
           setFetchError(msg);
           setLoading(false);
@@ -255,7 +456,7 @@ export function ComplaintsTab() {
     return () => {
       isCancelled = true;
     };
-  }, [sessionToken, guest]);
+  }, [sessionToken, guest, loadReferences]);
 
   // Real-time events & polling fallback
   const realtimeClientRef = useRef<FossRealtimeClient | null>(null);
@@ -337,7 +538,9 @@ export function ComplaintsTab() {
       return;
     }
 
-    const trimmedSubject = subject.trim() || `${category} complaint`;
+    const opt = COMPLAINT_CATEGORY_OPTIONS.find((c) => c.value === category);
+    const defaultSubject = opt ? `${opt.label} concern` : `${category} concern`;
+    const trimmedSubject = subject.trim() || defaultSubject;
     if (trimmedSubject.length < 3 || trimmedSubject.length > 150) {
       setSubmitError('Subject must be between 3 and 150 characters.');
       message.error('Subject must be between 3 and 150 characters.');
@@ -346,7 +549,9 @@ export function ComplaintsTab() {
 
     setSubmitting(true);
 
-    const selectedRef = sourceOptions.find((o) => o.id === reference);
+    const selectedRef = sourceOptions.find(
+      (o) => o.id === reference || o.referenceId === reference,
+    );
     const relatedOrderId = selectedRef?.type === 'order' ? selectedRef.referenceId : undefined;
     const relatedRequestId = selectedRef?.type === 'request' ? selectedRef.referenceId : undefined;
 
@@ -379,6 +584,8 @@ export function ComplaintsTab() {
       // Reset form and regenerate idempotency key for subsequent complaint
       setDescription('');
       setSubject('');
+      setReference('none');
+      setSeverity('LOW');
       idempotencyKeyRef.current = generateComplaintIdempotencyKey();
 
       message.success(`Complaint [${result.complaintId}] submitted. Escalated to Duty Manager.`, 4);
@@ -391,8 +598,12 @@ export function ComplaintsTab() {
     }
   };
 
-  // Demo Status Advancement Stepper for Evaluators
+  // Demo Status Advancement Stepper for Evaluators (strictly demo mode only)
   const handleAdvanceStatus = async (complaintId: string, currentStatus: ComplaintStatus) => {
+    if (getDataMode() !== 'demo') {
+      message.error('Complaint status updates can only be performed by hotel staff/management.');
+      return;
+    }
     if (!sessionToken) return;
 
     let nextStatus: ComplaintStatus = 'UNDER_INVESTIGATION';
@@ -524,16 +735,16 @@ export function ComplaintsTab() {
           <Select
             value={category}
             onChange={(val) => {
-              setCategory(val as ComplaintCategory);
-              // Auto-adjust default subject if empty
+              const newCategory = val as ComplaintCategory;
+              setCategory(newCategory);
+              // Auto-adjust default subject if empty or default pattern
               if (
                 !subject ||
-                subject.startsWith('Food') ||
-                subject.startsWith('Staff') ||
-                subject.startsWith('Room') ||
-                subject.startsWith('Noise')
+                COMPLAINT_CATEGORY_OPTIONS.some(
+                  (c) => subject === `${c.label} concern` || subject === `${c.value} concern`,
+                )
               ) {
-                const opt = COMPLAINT_CATEGORY_OPTIONS.find((c) => c.value === val);
+                const opt = COMPLAINT_CATEGORY_OPTIONS.find((c) => c.value === newCategory);
                 if (opt) setSubject(`${opt.label} concern`);
               }
             }}
@@ -647,8 +858,11 @@ export function ComplaintsTab() {
           <Button
             type="text"
             size="small"
-            icon={<RefreshIcon className={loading ? 'animate-spin' : ''} />}
-            onClick={() => loadComplaints(true)}
+            icon={<RefreshIcon className={loading || referencesLoading ? 'animate-spin' : ''} />}
+            onClick={() => {
+              void loadComplaints(true);
+              void loadReferences();
+            }}
             className="!text-slate-500 text-xs"
           >
             Refresh
@@ -662,11 +876,19 @@ export function ComplaintsTab() {
             type="warning"
             title="Offline Mode"
             message={fetchError}
-            onRetry={() => loadComplaints(true)}
+            onRetry={() => {
+              void loadComplaints(true);
+              void loadReferences();
+            }}
+          />
+        ) : complaints.length === 0 ? (
+          <EmptyState
+            title="No complaints submitted yet."
+            description="Your complaints and their progress will appear here once submitted."
           />
         ) : (
           <div className="space-y-3">
-            {(complaints.length > 0 ? complaints : FALLBACK_COMPLAINTS).map((item) => {
+            {complaints.map((item) => {
               const isExpanded = expandedComplaintId === item.complaintId;
 
               return (
@@ -753,8 +975,8 @@ export function ComplaintsTab() {
                       )}
                     </button>
 
-                    {/* Evaluator Status Advance Button (Demo Mode) */}
-                    {item.status !== 'RESOLVED' && (
+                    {/* Evaluator Status Advance Button (Demo Mode Only) */}
+                    {getDataMode() === 'demo' && item.status !== 'RESOLVED' && (
                       <Button
                         size="small"
                         type="dashed"
