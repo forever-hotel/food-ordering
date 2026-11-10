@@ -547,6 +547,69 @@ describe('ServicesTab Component', () => {
 
     mockAuth = savedAuth;
   });
+
+  it('renders task progression timeline milestones and handles missing timestamps with Time unavailable', async () => {
+    const progressionReq: ServiceRequestResponse = {
+      ...mockServiceRequest,
+      requestId: 'REQ-PROG-1',
+      status: 'IN_PROGRESS',
+      timeline: [
+        {
+          status: 'SUBMITTED',
+          label: 'Request Submitted',
+          completed: true,
+          current: false,
+          timestamp: '2026-11-10T08:00:00.000Z',
+        },
+        {
+          status: 'ASSIGNED',
+          label: 'Worker Assigned',
+          completed: true,
+          current: false,
+          // Missing timestamp: should render "Time unavailable"
+        },
+        {
+          status: 'IN_PROGRESS',
+          label: 'Service In Progress',
+          completed: true,
+          current: true,
+          timestamp: '2026-11-10T08:15:00.000Z',
+        },
+        {
+          status: 'COMPLETED',
+          label: 'Service Completed',
+          completed: false,
+          current: false,
+        },
+      ],
+    };
+
+    mockFetchGuestServiceRequests.mockResolvedValue([progressionReq]);
+
+    render(
+      <Wrapper>
+        <ServicesTab />
+      </Wrapper>,
+    );
+
+    // Wait for real request card to appear
+    await waitFor(() => {
+      expect(screen.getByText(/Air conditioning not cooling/i)).toBeDefined();
+    });
+
+    // Click request card to expand the Task Progression section
+    const card = screen.getByText(/Air conditioning not cooling/i);
+    fireEvent.click(card);
+
+    await waitFor(() => {
+      expect(screen.getByText(/TASK PROGRESSION/i)).toBeDefined();
+      expect(screen.getByText('Request Submitted')).toBeDefined();
+      expect(screen.getByText('Worker Assigned')).toBeDefined();
+      expect(screen.getByText('Time unavailable')).toBeDefined();
+      expect(screen.getByText('Service In Progress')).toBeDefined();
+      expect(screen.getByText('Service Completed')).toBeDefined();
+    });
+  });
 });
 
 describe('ComplaintsTab Component', () => {

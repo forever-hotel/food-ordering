@@ -50,6 +50,32 @@ const SERVICE_ICON_MAP: Record<ServiceIconKey, React.ComponentType<{ className?:
   other: AppstoreOutlined,
 };
 
+/**
+ * Formats a progression timeline milestone timestamp for display.
+ * Returns 'Time unavailable' for completed milestones whose historical timestamp is absent.
+ */
+function formatTimelineTimestamp(timestamp?: string, completed?: boolean): string | undefined {
+  if (!timestamp) {
+    return completed ? 'Time unavailable' : undefined;
+  }
+  if (
+    timestamp === 'Time unavailable' ||
+    /^\d{1,2}:\d{2}\s?(AM|PM)?$/i.test(timestamp.trim()) ||
+    timestamp.includes('·')
+  ) {
+    return timestamp;
+  }
+  try {
+    const d = new Date(timestamp);
+    if (!isNaN(d.getTime())) {
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+  } catch {
+    // Retain original string on parsing error
+  }
+  return timestamp;
+}
+
 export function ServicesTab() {
   const { message } = App.useApp();
   const { sessionToken, guest } = useAuth();
@@ -69,6 +95,7 @@ export function ServicesTab() {
 
   // Single client-generated idempotency key retained across retry attempts
   const idempotencyKeyRef = useRef<string>(generateServiceIdempotencyKey());
+  const isFetchingRef = useRef<boolean>(false);
 
   const loadRequests = useCallback(
     async (showLoading = false) => {
@@ -76,6 +103,9 @@ export function ServicesTab() {
         if (showLoading) setLoading(false);
         return;
       }
+      if (isFetchingRef.current) return;
+      isFetchingRef.current = true;
+
       if (showLoading) setLoading(true);
       setFetchError(null);
 
@@ -86,6 +116,7 @@ export function ServicesTab() {
         const msg = err instanceof Error ? err.message : 'Unable to retrieve service requests.';
         setFetchError(msg);
       } finally {
+        isFetchingRef.current = false;
         if (showLoading) setLoading(false);
       }
     },
@@ -145,10 +176,27 @@ export function ServicesTab() {
       onEvent: (event: FossRealtimeEvent) => {
         if (event.eventType === RealtimeEventType.SERVICE_REQUEST_STATUS_UPDATED) {
           const updated = event.data as ServiceRequestResponse;
-          if (updated && updated.requestId) {
+          if (
+            updated &&
+            updated.requestId &&
+            Array.isArray(updated.timeline) &&
+            updated.timeline.length > 0
+          ) {
             setRequests((prev) => {
               const idx = prev.findIndex((r) => r.requestId === updated.requestId);
               if (idx > -1) {
+                const current = prev[idx];
+                const statusOrder: ServiceRequestStatus[] = [
+                  'SUBMITTED',
+                  'ASSIGNED',
+                  'IN_PROGRESS',
+                  'COMPLETED',
+                ];
+                if (statusOrder.indexOf(current.status) > statusOrder.indexOf(updated.status)) {
+                  // Regressive event: ignore and reload authoritative state
+                  void loadRequests(false);
+                  return prev;
+                }
                 const next = [...prev];
                 next[idx] = updated;
                 return next;
@@ -156,7 +204,7 @@ export function ServicesTab() {
               return [updated, ...prev];
             });
           } else {
-            loadRequests(false);
+            void loadRequests(false);
           }
         }
       },
@@ -170,7 +218,7 @@ export function ServicesTab() {
     };
   }, [sessionToken, guest, loadRequests]);
 
-  // Secondary polling fallback when there are in-flight (uncompleted) service requests
+  // Polling fallback when there are in-flight (uncompleted) service requests
   useEffect(() => {
     const hasActiveRequests = requests.some(
       (r) => r.status === 'SUBMITTED' || r.status === 'ASSIGNED' || r.status === 'IN_PROGRESS',
@@ -179,7 +227,7 @@ export function ServicesTab() {
 
     const interval = setInterval(() => {
       loadRequests(false);
-    }, 8000);
+    }, 5000);
 
     return () => clearInterval(interval);
   }, [requests, loadRequests]);
@@ -577,8 +625,10 @@ export function ServicesTab() {
                               </span>
                               {step.label}
                             </span>
-                            {step.timestamp && (
-                              <span className="text-[11px] text-slate-400">{step.timestamp}</span>
+                            {formatTimelineTimestamp(step.timestamp, step.completed) && (
+                              <span className="text-[11px] text-slate-400">
+                                {formatTimelineTimestamp(step.timestamp, step.completed)}
+                              </span>
                             )}
                           </div>
                         ))}

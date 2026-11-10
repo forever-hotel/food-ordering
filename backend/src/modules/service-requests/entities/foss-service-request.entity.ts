@@ -98,4 +98,15 @@ export class FossServiceRequest {
     select: false,
   })
   completedAt?: Date | null;
+
+  /**
+   * Transient in-memory transition timestamps populated from authoritative
+   * wkms_tasks and audit_logs (never persisted to foss_service_requests).
+   */
+  timelineTimestamps?: {
+    submittedAt?: Date | string | null;
+    assignedAt?: Date | string | null;
+    inProgressAt?: Date | string | null;
+    completedAt?: Date | string | null;
+  };
 }

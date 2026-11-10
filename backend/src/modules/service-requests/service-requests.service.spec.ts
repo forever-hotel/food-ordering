@@ -952,5 +952,80 @@ describe('ServiceRequestsService', () => {
       expect(res.createdAt).toBeDefined();
       expect(res.updatedAt).toBeDefined();
     });
+
+    it('populates authoritative timeline milestone timestamps from timelineTimestamps when available', async () => {
+      const existing = new FossServiceRequest();
+      existing.requestId = 'req-timeline-1';
+      existing.publicReference = 'SR-1001';
+      existing.bookingId = sampleGuest.bookingId;
+      existing.roomNumber = sampleGuest.roomNumber;
+      existing.status = ServiceRequestStatus.IN_PROGRESS;
+      existing.category = FossServiceCategory.EXTRA_TOWELS;
+      existing.priority = TaskPriority.NORMAL;
+      existing.createdAt = new Date('2026-11-01T10:00:00.000Z');
+      existing.updatedAt = new Date('2026-11-01T10:15:00.000Z');
+      existing.timelineTimestamps = {
+        assignedAt: new Date('2026-11-01T10:05:00.000Z'),
+        inProgressAt: new Date('2026-11-01T10:15:00.000Z'),
+      };
+
+      const res = (service as any).mapToResponse(existing);
+      expect(res.timeline).toBeDefined();
+      expect(res.timeline).toHaveLength(4);
+
+      // SUBMITTED step
+      expect(res.timeline[0].status).toBe(ServiceRequestStatus.SUBMITTED);
+      expect(res.timeline[0].completed).toBe(true);
+      expect(res.timeline[0].timestamp).toBe('2026-11-01T10:00:00.000Z');
+
+      // ASSIGNED step
+      expect(res.timeline[1].status).toBe(ServiceRequestStatus.ASSIGNED);
+      expect(res.timeline[1].completed).toBe(true);
+      expect(res.timeline[1].timestamp).toBe('2026-11-01T10:05:00.000Z');
+
+      // IN_PROGRESS step
+      expect(res.timeline[2].status).toBe(ServiceRequestStatus.IN_PROGRESS);
+      expect(res.timeline[2].completed).toBe(true);
+      expect(res.timeline[2].current).toBe(true);
+      expect(res.timeline[2].timestamp).toBe('2026-11-01T10:15:00.000Z');
+
+      // COMPLETED step (not yet reached)
+      expect(res.timeline[3].status).toBe(ServiceRequestStatus.COMPLETED);
+      expect(res.timeline[3].completed).toBe(false);
+      expect(res.timeline[3].timestamp).toBeUndefined();
+    });
+
+    it('leaves missing milestone timestamps undefined instead of fabricating them', async () => {
+      const existing = new FossServiceRequest();
+      existing.requestId = 'req-timeline-no-audit';
+      existing.publicReference = 'SR-1002';
+      existing.bookingId = sampleGuest.bookingId;
+      existing.roomNumber = sampleGuest.roomNumber;
+      existing.status = ServiceRequestStatus.IN_PROGRESS;
+      existing.category = FossServiceCategory.ROOM_CLEANING;
+      existing.priority = TaskPriority.NORMAL;
+      existing.createdAt = new Date('2026-11-01T11:00:00.000Z');
+      existing.updatedAt = new Date('2026-11-01T11:20:00.000Z');
+      // No timelineTimestamps provided
+
+      const res = (service as any).mapToResponse(existing);
+      expect(res.timeline).toBeDefined();
+      expect(res.timeline).toHaveLength(4);
+
+      // SUBMITTED has createdAt
+      expect(res.timeline[0].timestamp).toBe('2026-11-01T11:00:00.000Z');
+
+      // ASSIGNED is completed because current status is IN_PROGRESS, but has no audit timestamp
+      expect(res.timeline[1].completed).toBe(true);
+      expect(res.timeline[1].timestamp).toBeUndefined();
+
+      // IN_PROGRESS is completed/current, but has no audit timestamp
+      expect(res.timeline[2].completed).toBe(true);
+      expect(res.timeline[2].timestamp).toBeUndefined();
+
+      // COMPLETED is not reached
+      expect(res.timeline[3].completed).toBe(false);
+      expect(res.timeline[3].timestamp).toBeUndefined();
+    });
   });
 });

@@ -486,10 +486,9 @@ export class ServiceRequestsService {
   private buildTimeline(
     request: FossServiceRequest,
     createdAtDate: Date,
-    updatedAtDate: Date,
+    _updatedAtDate: Date,
   ): ServiceRequestTimelineStepDto[] {
     const createdAtIso = createdAtDate.toISOString();
-    const updatedAtIso = updatedAtDate.toISOString();
 
     const steps = [
       {
@@ -519,18 +518,49 @@ export class ServiceRequestsService {
 
     const currentIndex = statusHierarchy.indexOf(request.status);
 
-    return steps.map((step, idx) => ({
-      status: step.status,
-      label: step.label,
-      completed: idx <= currentIndex,
-      current: idx === currentIndex,
-      timestamp:
-        idx === 0
-          ? createdAtIso
-          : idx === currentIndex
-            ? updatedAtIso
-            : undefined,
-    }));
+    const parseIso = (val?: Date | string | null): string | undefined => {
+      if (!val) return undefined;
+      const d = val instanceof Date ? val : new Date(val);
+      return !isNaN(d.getTime()) ? d.toISOString() : undefined;
+    };
+
+    const submittedIso =
+      parseIso(request.timelineTimestamps?.submittedAt) || createdAtIso;
+    const assignedIso = parseIso(request.timelineTimestamps?.assignedAt);
+    const inProgressIso = parseIso(request.timelineTimestamps?.inProgressAt);
+    const completedIso =
+      parseIso(request.timelineTimestamps?.completedAt) ||
+      parseIso(request.completedAt);
+
+    return steps.map((step, idx) => {
+      const completed = idx <= currentIndex;
+      const current = idx === currentIndex;
+      let timestamp: string | undefined;
+
+      if (idx === 0) {
+        timestamp = submittedIso;
+      } else if (idx === 1) {
+        if (completed) {
+          timestamp = assignedIso;
+        }
+      } else if (idx === 2) {
+        if (completed) {
+          timestamp = inProgressIso;
+        }
+      } else if (idx === 3) {
+        if (completed) {
+          timestamp = completedIso;
+        }
+      }
+
+      return {
+        status: step.status,
+        label: step.label,
+        completed,
+        current,
+        timestamp,
+      };
+    });
   }
 
   /**
