@@ -50,7 +50,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
-          node-version: "24"
+          node-version: '24'
           package-manager-cache: false
 
       - name: Install backend dependencies
@@ -102,7 +102,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
-          node-version: "24"
+          node-version: '24'
           package-manager-cache: false
 
       - name: Install frontend dependencies
@@ -136,7 +136,6 @@ jobs:
     name: Dependency Security Scan
     runs-on: ubuntu-latest
 
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -146,7 +145,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
-          node-version: "24"
+          node-version: '24'
           package-manager-cache: false
 
       - name: Audit backend dependencies
@@ -274,7 +273,41 @@ jobs:
           name: release-images
           path: release-images.json
           if-no-files-found: error
+          overwrite: true
       - name: Remove temporary registry login
         if: always()
         run: |
           if test -n "${DOCKER_CONFIG:-}"; then docker logout ghcr.io || true; fi
+
+  deploy-staging:
+    name: Deploy food-ordering to staging
+    needs: publish-images
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop' && vars.SERVICE_STAGING_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: staging
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    concurrency:
+      group: foss-staging-release
+      cancel-in-progress: false
+    steps:
+      - name: Deploy this run's reviewed immutable images
+        uses: forever-hotel/infra/.github/actions/deploy-service@ec9d483c73910945b224bd66682b69b2a15eb10c
+        with:
+          service: foss
+          artifact: release-images
+          host: ${{ vars.STAGING_HOST }}
+          user: ${{ vars.STAGING_USER }}
+          ssh-key: ${{ secrets.STAGING_SSH_KEY }}
+          known-hosts: ${{ secrets.STAGING_KNOWN_HOSTS }}
+      - name: Retain service deployment receipt
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: foss-staging-receipt
+          path: ${{ runner.temp }}/service-release/receipt.json
+          if-no-files-found: warn
+          overwrite: true
