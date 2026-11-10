@@ -181,15 +181,9 @@ export class GuestSessionsService {
     }
 
     const now = this.clock();
-    if (now.getTime() >= new Date(session.expiresAt).getTime()) {
-      this.logger.warn(`Session [${session.sessionId}] has expired.`);
-      session.isActive = false;
-      session.updatedAt = now;
-      await this.fossSessionRepository.save(session);
-      throw new UnauthorizedException('Session has expired.');
-    }
 
-    // Re-verify stay status with FDS booking authority to catch mid-stay checkouts
+    // Re-verify stay status with FDS booking authority before enforcing expiration
+    // to correctly support legitimate front-desk stay extensions.
     let stay: BookingVerificationResultDto;
     try {
       stay = await this.bookingVerificationService.verifyStay(
@@ -197,8 +191,19 @@ export class GuestSessionsService {
         session.roomNumber,
       );
     } catch (error) {
-      // An unavailable booking authority must not permanently revoke a valid stay.
-      if (error instanceof ServiceUnavailableException) throw error;
+      // An unavailable booking authority must not permanently revoke a valid stay if within cached validity
+      if (error instanceof ServiceUnavailableException) {
+        if (now.getTime() < new Date(session.expiresAt).getTime()) {
+          throw error;
+        }
+        this.logger.warn(
+          `FDS unavailable and cached session [${session.sessionId}] has expired.`,
+        );
+        session.isActive = false;
+        session.updatedAt = now;
+        await this.fossSessionRepository.save(session);
+        throw new UnauthorizedException('Session has expired.');
+      }
       this.logger.warn(
         `Stay verification failed for session [${session.sessionId}]: ${error instanceof Error ? error.message : String(error)}`,
       );

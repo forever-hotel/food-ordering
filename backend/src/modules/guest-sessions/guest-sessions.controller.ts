@@ -140,6 +140,7 @@ export class GuestSessionsController {
   @Header('Cache-Control', 'no-store')
   async authenticateWithQr(
     @Body() body: VerifyQrDto,
+    @Req() req?: Request,
     @Res({ passthrough: true }) res?: Response,
   ): Promise<GuestSessionResponseDto> {
     if (!body || typeof body !== 'object' || !body.qrToken) {
@@ -174,6 +175,21 @@ export class GuestSessionsController {
       sessionResponse.sessionToken,
       sessionResponse.expiresAt,
     );
+
+    // Security Hardening: Never expose live bearer tokens to browser JavaScript in JSON response.
+    // When cookie session is established, omit sessionToken unless explicitly requested via internal header.
+    const allowRawToken =
+      Boolean(req?.headers?.['x-preserve-bearer-token']) ||
+      Boolean(req?.headers?.['x-internal-service-key']) ||
+      !res ||
+      typeof res.cookie !== 'function';
+
+    if (!allowRawToken) {
+      const sanitized: GuestSessionResponseDto = { ...sessionResponse };
+      delete (sanitized as any).sessionToken;
+      return sanitized;
+    }
+
     return sessionResponse;
   }
 
@@ -332,6 +348,20 @@ export class GuestSessionsController {
       req.sessionToken,
     );
     setSessionCookie(res, renewed.sessionToken, renewed.expiresAt);
+
+    const allowRawToken =
+      (req as any)?.authSource === 'bearer' ||
+      Boolean(req?.headers?.['x-preserve-bearer-token']) ||
+      Boolean(req?.headers?.['x-internal-service-key']) ||
+      !res ||
+      typeof res.cookie !== 'function';
+
+    if (!allowRawToken) {
+      const sanitized: GuestSessionResponseDto = { ...renewed };
+      delete (sanitized as any).sessionToken;
+      return sanitized;
+    }
+
     return renewed;
   }
 

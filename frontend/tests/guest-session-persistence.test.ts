@@ -494,4 +494,61 @@ describe('FOSS Guest Session Persistence & Security Review (PR #137, Issue #136)
       globalThis.fetch = originalFetch;
     }
   });
+
+  it('Correction A: redeemQrToken succeeds when backend omits sessionToken, hydrating __COOKIE_SESSION__', async () => {
+    const originalFetch = globalThis.fetch;
+    const interceptedRequests: { url: string; credentials: any }[] = [];
+
+    // Backend responds without sessionToken, setting HttpOnly cookie in response headers
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      interceptedRequests.push({
+        url: String(url),
+        credentials: init?.credentials,
+      });
+
+      return new Response(
+        JSON.stringify({
+          sessionId: 'sess-cookie-101',
+          bookingId: 'book-101',
+          roomNumber: '101',
+          guestName: 'Valued Guest',
+          stayStart: '2026-11-09T14:00:00.000Z',
+          stayEnd: '2026-11-13T11:00:00.000Z',
+          expiresAt: '2026-11-13T11:00:00.000Z',
+          active: true,
+          // sessionToken is strictly omitted by backend
+        }),
+        {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json',
+            'Set-Cookie': 'foss_guest_session=secret-cookie-val; HttpOnly; Path=/',
+          },
+        },
+      );
+    }) as typeof fetch;
+
+    try {
+      const apiSessionsProvider = new ApiSessionsProvider();
+      const result = await apiSessionsProvider.redeemQrToken('opaque-qr-activation-token');
+
+      assert.equal(result.sessionToken, '__COOKIE_SESSION__');
+      assert.equal(result.guest.roomNumber, '101');
+      assert.equal(result.guest.bookingId, 'book-101');
+      assert.equal(interceptedRequests[0].credentials, 'include');
+
+      // Now save session using returned token and verify zero live bearer tokens in storage
+      savePersistentSession(result.sessionToken, 'api', result.expiresAt, result.guest.stayEnd);
+
+      const persistentRaw = (globalThis as any).window.localStorage.getItem(
+        getPersistentStorageKey('api'),
+      );
+      const parsed = JSON.parse(persistentRaw);
+      assert.equal(parsed.token, undefined);
+      assert.equal(parsed.hasSession, true);
+      assert.equal(loadPersistentSession('api'), '__COOKIE_SESSION__');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });

@@ -30,7 +30,7 @@ export class ApiSessionsProvider implements SessionsProvider {
     }
 
     return {
-      sessionToken: body.sessionToken,
+      sessionToken: body.sessionToken || '__COOKIE_SESSION__',
       expiresAt: body.expiresAt,
       guest: {
         guestId:
@@ -124,7 +124,7 @@ export class ApiSessionsProvider implements SessionsProvider {
     }
 
     return {
-      sessionToken: body.sessionToken,
+      sessionToken: body.sessionToken || '__COOKIE_SESSION__',
       expiresAt: body.expiresAt,
       guest: {
         guestId:

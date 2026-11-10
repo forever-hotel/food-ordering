@@ -359,12 +359,105 @@ describe('GuestSessionsService', () => {
       mockSessionRepository.findActiveBySessionToken.mockResolvedValue(
         expiredSession,
       );
+      mockBookingVerificationService.verifyStay.mockResolvedValue({
+        ...validStay,
+        stayEnd: '2026-10-27T12:00:00Z',
+      });
 
       await expect(service.validateSessionToken(rawToken)).rejects.toThrow(
         UnauthorizedException,
       );
       expect(expiredSession.isActive).toBe(false);
       expect(mockSessionRepository.save).toHaveBeenCalledWith(expiredSession);
+    });
+
+    it('safely synchronizes session expiresAt when FDS extends the stay past the original session expiration (TC10)', async () => {
+      // Guest was originally scheduled to check out on Wednesday at 11:00
+      const originalExpiresAt = new Date('2026-11-11T11:00:00.000Z');
+      // Guest visits FOSS on Wednesday at 11:30 (past original expiry)
+      mockClock = new Date('2026-11-11T11:30:00.000Z');
+
+      const rawToken = 'stay-extended-token';
+      const hashedToken = service.hashToken(rawToken);
+
+      const session = new FossSession();
+      session.sessionId = 'sess-extended-past-old-expiry';
+      session.bookingId = 'b-101';
+      session.roomNumber = '101';
+      session.sessionToken = hashedToken;
+      session.isActive = true;
+      session.expiresAt = originalExpiresAt;
+
+      // FDS authoritatively extended the stay until Friday at 11:00
+      const newFdsStayEnd = '2026-11-13T11:00:00.000Z';
+      mockSessionRepository.findActiveBySessionToken.mockResolvedValue(session);
+      mockBookingVerificationService.verifyStay.mockResolvedValue({
+        ...validStay,
+        stayStart: '2026-11-09T14:00:00.000Z',
+        stayEnd: newFdsStayEnd,
+      });
+
+      const result = await service.validateSessionToken(rawToken);
+
+      expect(result.session.isActive).toBe(true);
+      expect(result.session.expiresAt).toEqual(new Date(newFdsStayEnd));
+      expect(mockSessionRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sessionId: 'sess-extended-past-old-expiry',
+          isActive: true,
+          expiresAt: new Date(newFdsStayEnd),
+        }),
+      );
+    });
+
+    it('strictly rejects access and never revives a session if isActive = false, even if FDS stay is extended (TC11)', async () => {
+      mockClock = new Date('2026-11-11T11:30:00.000Z');
+
+      const rawToken = 'revoked-inactive-token';
+      const hashedToken = service.hashToken(rawToken);
+
+      const inactiveSession = new FossSession();
+      inactiveSession.sessionId = 'sess-inactive';
+      inactiveSession.bookingId = 'b-101';
+      inactiveSession.roomNumber = '101';
+      inactiveSession.sessionToken = hashedToken;
+      inactiveSession.isActive = false; // Explicitly revoked / checked out previously
+      inactiveSession.expiresAt = new Date('2026-11-13T11:00:00.000Z');
+
+      mockSessionRepository.findActiveBySessionToken.mockResolvedValue(
+        inactiveSession,
+      );
+
+      await expect(service.validateSessionToken(rawToken)).rejects.toThrow(
+        UnauthorizedException,
+      );
+      // FDS verifyStay must NOT even be called to revive inactive credentials
+      expect(mockBookingVerificationService.verifyStay).not.toHaveBeenCalled();
+      expect(inactiveSession.isActive).toBe(false);
+    });
+
+    it('strictly rejects access if guest manually logged out, even if stay is active in FDS (TC12)', async () => {
+      mockClock = new Date('2026-11-11T10:00:00.000Z');
+
+      const rawToken = 'logged-out-token';
+      const hashedToken = service.hashToken(rawToken);
+
+      const loggedOutSession = new FossSession();
+      loggedOutSession.sessionId = 'sess-logged-out';
+      loggedOutSession.bookingId = 'b-101';
+      loggedOutSession.roomNumber = '101';
+      loggedOutSession.sessionToken = hashedToken;
+      loggedOutSession.isActive = false; // Marked false by logout
+      loggedOutSession.expiresAt = new Date('2026-11-13T11:00:00.000Z');
+
+      mockSessionRepository.findActiveBySessionToken.mockResolvedValue(
+        loggedOutSession,
+      );
+
+      await expect(service.validateSessionToken(rawToken)).rejects.toThrow(
+        UnauthorizedException,
+      );
+      expect(mockBookingVerificationService.verifyStay).not.toHaveBeenCalled();
     });
 
     it('revokes session when stay verification indicates checkout occurred', async () => {

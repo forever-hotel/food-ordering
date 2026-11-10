@@ -171,6 +171,84 @@ describe('GuestSessionsController', () => {
       expect(result).toEqual(responseDto);
     });
 
+    it('omits sessionToken from JSON response when setting HttpOnly session cookie (TC2)', async () => {
+      const responseDto: GuestSessionResponseDto = {
+        sessionId: 'sess-secure-cookie',
+        bookingId: 'book-1',
+        roomNumber: '101',
+        sessionToken: 'raw-sensitive-bearer-token',
+        guestName: 'Jane Doe',
+        stayStart: '2026-10-27T10:00:00Z',
+        stayEnd: '2026-10-30T10:00:00Z',
+        expiresAt: '2026-10-28T10:00:00Z',
+        createdAt: '2026-10-27T10:00:00Z',
+        active: true,
+      };
+
+      mockQrActivationService.redeemActivationCredential.mockResolvedValue(
+        responseDto,
+      );
+
+      const mockRes = {
+        cookie: jest.fn(),
+      } as any;
+      const mockReq = { headers: {} } as any;
+
+      const body: VerifyQrDto = {
+        qrToken: 'opaque-activation-token',
+      };
+      const result = await controller.authenticateWithQr(
+        body,
+        mockReq,
+        mockRes,
+      );
+
+      expect(mockRes.cookie).toHaveBeenCalledWith(
+        'foss_guest_session',
+        'raw-sensitive-bearer-token',
+        expect.objectContaining({
+          httpOnly: true,
+          path: '/',
+        }),
+      );
+      expect((result as any).sessionToken).toBeUndefined();
+      expect(result.sessionId).toBe('sess-secure-cookie');
+      expect(result.roomNumber).toBe('101');
+    });
+
+    it('preserves sessionToken in JSON when internal service header is present', async () => {
+      const responseDto: GuestSessionResponseDto = {
+        sessionId: 'sess-internal-client',
+        bookingId: 'book-1',
+        roomNumber: '101',
+        sessionToken: 'raw-sensitive-bearer-token',
+        guestName: 'Jane Doe',
+        stayStart: '2026-10-27T10:00:00Z',
+        stayEnd: '2026-10-30T10:00:00Z',
+        expiresAt: '2026-10-28T10:00:00Z',
+        createdAt: '2026-10-27T10:00:00Z',
+        active: true,
+      };
+
+      mockQrActivationService.redeemActivationCredential.mockResolvedValue(
+        responseDto,
+      );
+
+      const mockRes = { cookie: jest.fn() } as any;
+      const mockReq = {
+        headers: { 'x-preserve-bearer-token': 'true' },
+      } as any;
+
+      const body: VerifyQrDto = { qrToken: 'opaque-activation-token' };
+      const result = await controller.authenticateWithQr(
+        body,
+        mockReq,
+        mockRes,
+      );
+
+      expect(result.sessionToken).toBe('raw-sensitive-bearer-token');
+    });
+
     it('routes signed development fixture tokens (with dot) to GuestSessionsService', async () => {
       const responseDto: GuestSessionResponseDto = {
         sessionId: 'sess-1',
@@ -364,7 +442,34 @@ describe('GuestSessionsController', () => {
           path: '/',
         }),
       );
-      expect(result).toEqual(renewedDto);
+      const expectedResult = { ...renewedDto };
+      delete (expectedResult as any).sessionToken;
+      expect(result).toEqual(expectedResult);
+    });
+
+    it('preserves sessionToken in renewSession when requested via bearer or internal service header', async () => {
+      const renewedDto: GuestSessionResponseDto = {
+        sessionId: 'sess-renewed-123',
+        sessionToken: 'renewed-token-xyz',
+        bookingId: 'b-101',
+        roomNumber: '101',
+        guestName: 'Jane Smith',
+        active: true,
+        expiresAt: '2026-11-05T12:00:00.000Z',
+      };
+
+      mockGuestSessionsService.renewSession = jest
+        .fn<() => Promise<GuestSessionResponseDto>>()
+        .mockResolvedValue(renewedDto);
+
+      const req = {
+        sessionToken: 'current-session-token',
+        authSource: 'bearer',
+      } as any;
+      const res = { cookie: jest.fn() } as any;
+
+      const result = await controller.renewSession(req, res);
+      expect(result.sessionToken).toBe('renewed-token-xyz');
     });
   });
 
