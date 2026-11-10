@@ -177,14 +177,10 @@ export class GuestSessionsController {
     );
 
     // Security Hardening: Never expose live bearer tokens to browser JavaScript in JSON response.
-    // When cookie session is established, omit sessionToken unless explicitly requested via internal header.
-    const allowRawToken =
-      Boolean(req?.headers?.['x-preserve-bearer-token']) ||
-      Boolean(req?.headers?.['x-internal-service-key']) ||
-      !res ||
-      typeof res.cookie !== 'function';
-
-    if (!allowRawToken) {
+    // Unauthenticated or untrusted incoming request headers (such as spoofed internal keys)
+    // must NEVER trigger raw credential disclosure.
+    // When cookie capability is present, credentials are bound exclusively to the HttpOnly cookie.
+    if (res && typeof res.cookie === 'function') {
       const sanitized: GuestSessionResponseDto = { ...sessionResponse };
       delete (sanitized as any).sessionToken;
       return sanitized;
@@ -349,14 +345,14 @@ export class GuestSessionsController {
     );
     setSessionCookie(res, renewed.sessionToken, renewed.expiresAt);
 
-    const allowRawToken =
-      (req as any)?.authSource === 'bearer' ||
-      Boolean(req?.headers?.['x-preserve-bearer-token']) ||
-      Boolean(req?.headers?.['x-internal-service-key']) ||
-      !res ||
-      typeof res.cookie !== 'function';
-
-    if (!allowRawToken) {
+    // Only return sessionToken in JSON when the caller was authenticated via explicit Bearer header.
+    // Cookie-authenticated callers have credentials conveyed securely via the HttpOnly cookie.
+    // Unverified incoming request headers must NEVER cause raw credential leakage.
+    if (
+      (req as any)?.authSource !== 'bearer' &&
+      res &&
+      typeof res.cookie === 'function'
+    ) {
       const sanitized: GuestSessionResponseDto = { ...renewed };
       delete (sanitized as any).sessionToken;
       return sanitized;

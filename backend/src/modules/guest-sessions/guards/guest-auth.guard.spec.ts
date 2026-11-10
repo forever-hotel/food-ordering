@@ -139,6 +139,19 @@ describe('GuestAuthGuard', () => {
     );
   });
 
+  it('cookie expiry boundary: rejects with 401 Unauthorized when browser cookie has expired and is discarded by client', async () => {
+    // When the browser HttpOnly cookie expires, mobile browsers do not transmit it.
+    // In accordance with security boundaries, FOSS does not store bearer tokens in localStorage.
+    // The unauthenticated request fails closed with 401, requiring a fresh QR scan from Front Desk.
+    const context = createMockContext({
+      'user-agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)',
+    });
+
+    await expect(guard.canActivate(context)).rejects.toThrow(
+      UnauthorizedException,
+    );
+  });
+
   it('throws UnauthorizedException for malformed authorization format', async () => {
     const context = createMockContext({ authorization: 'Basic dXNlcjpwYXNz' });
 

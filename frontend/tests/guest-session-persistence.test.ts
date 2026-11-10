@@ -551,4 +551,73 @@ describe('FOSS Guest Session Persistence & Security Review (PR #137, Issue #136)
       globalThis.fetch = originalFetch;
     }
   });
+
+  it('Stay-extension & cookie-expiry boundary: access before expiry updates stay metadata, expired cookie fails closed with 401', async () => {
+    const originalFetch = globalThis.fetch;
+    const initialStayEnd = new Date(Date.now() + 12 * 3600 * 1000).toISOString(); // 12 hours remaining
+    const extendedStayEnd = new Date(Date.now() + 60 * 3600 * 1000).toISOString(); // Extended by 48 hours
+
+    // 1. Initial persistent record
+    savePersistentSession('__COOKIE_SESSION__', 'api', initialStayEnd, initialStayEnd);
+
+    // 2. Guest visits FOSS before original expiry: Backend returns updated stayEnd from FDS
+    globalThis.fetch = (async () => {
+      return new Response(
+        JSON.stringify({
+          sessionId: 'sess-101',
+          bookingId: 'book-101',
+          roomNumber: '101',
+          guestName: 'Valued Guest',
+          stayStart: new Date(Date.now() - 24 * 3600 * 1000).toISOString(),
+          stayEnd: extendedStayEnd,
+          expiresAt: extendedStayEnd,
+          active: true,
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      );
+    }) as typeof fetch;
+
+    try {
+      const apiSessionsProvider = new ApiSessionsProvider();
+      const current = await apiSessionsProvider.fetchCurrentSession('__COOKIE_SESSION__');
+      assert.equal(current.stayEnd, extendedStayEnd);
+
+      // Client saves updated stay boundaries
+      savePersistentSession('__COOKIE_SESSION__', 'api', current.expiresAt, current.stayEnd);
+
+      const updatedRecord = JSON.parse(
+        (globalThis as any).window.localStorage.getItem(getPersistentStorageKey('api')),
+      );
+      assert.equal(updatedRecord.stayEnd, extendedStayEnd);
+
+      // 3. Guest returns after browser cookie has expired:
+      // Browser does not send cookie, backend returns 401 Unauthorized
+      globalThis.fetch = (async () => {
+        return new Response(
+          JSON.stringify({
+            statusCode: 401,
+            message: 'Authorization header with Bearer token is required.',
+          }),
+          {
+            status: 401,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        );
+      }) as typeof fetch;
+
+      await assert.rejects(
+        () => apiSessionsProvider.fetchCurrentSession('__COOKIE_SESSION__'),
+        (err: any) => err.statusCode === 401,
+      );
+
+      // Frontend purges stale persistent metadata on 401
+      clearPersistentSession('api');
+      assert.equal(loadPersistentSession('api'), null);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });
