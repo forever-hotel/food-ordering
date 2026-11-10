@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Button, Modal, Spin, Typography } from 'antd';
+import { BrowserQRCodeReader, type IScannerControls } from '@zxing/browser';
 
 import { getDataMode } from '../../../lib/data-mode/data-mode.ts';
 
@@ -37,9 +38,10 @@ function parseScannedQr(rawValue: string): string {
 }
 
 export function QrScannerModal({ open, onClose, onScan, demoTokens = {} }: QrScannerModalProps) {
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const animFrameIdRef = useRef<number | null>(null);
+  const zxingControlsRef = useRef<IScannerControls | null>(null);
   const hasScannedRef = useRef<boolean>(false);
 
   const [cameraState, setCameraState] = useState<
@@ -49,11 +51,22 @@ export function QrScannerModal({ open, onClose, onScan, demoTokens = {} }: QrSca
 
   const isProduction = process.env.NODE_ENV === 'production';
 
-  // Stop camera stream and scanning loop cleanly
+  // Stop camera stream, scanning loops, and release video resources cleanly
   const stopCamera = useCallback(() => {
     if (animFrameIdRef.current !== null) {
       cancelAnimationFrame(animFrameIdRef.current);
       animFrameIdRef.current = null;
+    }
+    if (zxingControlsRef.current) {
+      try {
+        zxingControlsRef.current.stop();
+      } catch {
+        // Ignore errors during control teardown
+      }
+      zxingControlsRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
     }
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
@@ -81,6 +94,7 @@ export function QrScannerModal({ open, onClose, onScan, demoTokens = {} }: QrSca
     [onScan, onClose, stopCamera],
   );
 
+  // Effect 1: Manage camera stream acquisition and overall modal open/close lifecycle
   useEffect(() => {
     if (!open) {
       stopCamera();
@@ -123,48 +137,7 @@ export function QrScannerModal({ open, onClose, onScan, demoTokens = {} }: QrSca
         }
 
         streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play().catch(() => {});
-        }
         setCameraState('active');
-
-        // Setup live frame QR detection if native BarcodeDetector is available
-        const win =
-          typeof window !== 'undefined' ? (window as unknown as Record<string, unknown>) : {};
-        if ('BarcodeDetector' in win && typeof win.BarcodeDetector === 'function') {
-          try {
-            type BarcodeDetectorInstance = {
-              detect: (source: HTMLVideoElement) => Promise<Array<{ rawValue: string }>>;
-            };
-            const BarcodeDetectorCtor = win.BarcodeDetector as new (options?: {
-              formats: string[];
-            }) => BarcodeDetectorInstance;
-            const detector = new BarcodeDetectorCtor({ formats: ['qr_code'] });
-
-            const scanLoop = async () => {
-              if (isCancelled || hasScannedRef.current || !videoRef.current) return;
-
-              if (videoRef.current.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
-                try {
-                  const barcodes = await detector.detect(videoRef.current);
-                  if (barcodes.length > 0 && barcodes[0]?.rawValue && !hasScannedRef.current) {
-                    handleDetectedToken(barcodes[0].rawValue);
-                    return;
-                  }
-                } catch {
-                  // Ignore frame detection failures, continue loop
-                }
-              }
-
-              animFrameIdRef.current = requestAnimationFrame(scanLoop);
-            };
-
-            animFrameIdRef.current = requestAnimationFrame(scanLoop);
-          } catch {
-            // Fallback: scanner stays active in viewfinder mode
-          }
-        }
       } catch (err: unknown) {
         if (isCancelled) return;
         const domErr = err as DOMException | Error;
@@ -177,6 +150,24 @@ export function QrScannerModal({ open, onClose, onScan, demoTokens = {} }: QrSca
           setCameraState('unsupported');
           setErrorMessage(
             'No camera device was detected on your device. Please use manual room code entry.',
+          );
+        } else if (domErr.name === 'NotReadableError' || domErr.name === 'TrackStartError') {
+          setCameraState('error');
+          setErrorMessage(
+            'Camera hardware is in use by another application or failed to start. Please close other camera apps or use manual entry.',
+          );
+        } else if (
+          domErr.name === 'OverconstrainedError' ||
+          domErr.name === 'ConstraintNotSatisfiedError'
+        ) {
+          setCameraState('error');
+          setErrorMessage(
+            'Camera settings could not be satisfied. Please use manual room code entry.',
+          );
+        } else if (domErr.name === 'SecurityError') {
+          setCameraState('unsupported');
+          setErrorMessage(
+            'Camera access requires a secure HTTPS connection. Please use manual room code entry.',
           );
         } else {
           setCameraState('error');
@@ -194,6 +185,129 @@ export function QrScannerModal({ open, onClose, onScan, demoTokens = {} }: QrSca
       stopCamera();
     };
   }, [open, stopCamera, handleDetectedToken]);
+
+  // Effect 2: When camera state becomes active, attach stream to mounted <video> and start QR scanner
+  useEffect(() => {
+    if (cameraState !== 'active') return;
+
+    let isCancelled = false;
+    const video = videoRef.current;
+    const stream = streamRef.current;
+
+    if (!video || !stream) return;
+
+    const startPreviewAndScanner = async () => {
+      try {
+        if (video.srcObject !== stream) {
+          video.srcObject = stream;
+        }
+        const playPromise = video.play();
+        if (playPromise !== undefined && typeof playPromise.then === 'function') {
+          await playPromise;
+        }
+      } catch (err: unknown) {
+        if (isCancelled) return;
+        const domErr = err as DOMException | Error;
+        setCameraState('error');
+        setErrorMessage(
+          `Failed to start camera preview: ${domErr.message || 'Playback error'}. Please use manual entry.`,
+        );
+        return;
+      }
+
+      if (isCancelled || hasScannedRef.current) return;
+
+      // Check native BarcodeDetector support
+      const win =
+        typeof window !== 'undefined' ? (window as unknown as Record<string, unknown>) : {};
+      const hasNativeBarcodeDetector =
+        'BarcodeDetector' in win && typeof win.BarcodeDetector === 'function';
+
+      if (hasNativeBarcodeDetector) {
+        try {
+          type BarcodeDetectorInstance = {
+            detect: (source: HTMLVideoElement) => Promise<Array<{ rawValue: string }>>;
+          };
+          const BarcodeDetectorCtor = win.BarcodeDetector as new (options?: {
+            formats: string[];
+          }) => BarcodeDetectorInstance;
+          const detector = new BarcodeDetectorCtor({ formats: ['qr_code'] });
+
+          const scanLoop = async () => {
+            if (isCancelled || hasScannedRef.current || !videoRef.current) return;
+
+            if (videoRef.current.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+              try {
+                const barcodes = await detector.detect(videoRef.current);
+                if (barcodes.length > 0 && barcodes[0]?.rawValue && !hasScannedRef.current) {
+                  handleDetectedToken(barcodes[0].rawValue);
+                  return;
+                }
+              } catch {
+                // Ignore frame detection failures, continue loop
+              }
+            }
+
+            animFrameIdRef.current = requestAnimationFrame(scanLoop);
+          };
+
+          animFrameIdRef.current = requestAnimationFrame(scanLoop);
+          return;
+        } catch {
+          // If native BarcodeDetector instantiation failed, fall back to @zxing/browser
+        }
+      }
+
+      // Fallback: cross-browser QR decoding with @zxing/browser
+      try {
+        const codeReader = new BrowserQRCodeReader();
+        void codeReader
+          .decodeFromVideoElement(video, (result, _error, controls) => {
+            if (isCancelled || hasScannedRef.current) {
+              controls.stop();
+              return;
+            }
+            if (result) {
+              const text = result.getText();
+              if (text && !hasScannedRef.current) {
+                controls.stop();
+                handleDetectedToken(text);
+              }
+            }
+          })
+          .then((controls) => {
+            if (isCancelled || hasScannedRef.current) {
+              controls.stop();
+            } else {
+              zxingControlsRef.current = controls;
+            }
+          })
+          .catch(() => {
+            // If fallback decoder fails, camera preview remains active for viewfinder alignment
+          });
+      } catch {
+        // Fallback: scanner stays active in viewfinder mode
+      }
+    };
+
+    void startPreviewAndScanner();
+
+    return () => {
+      isCancelled = true;
+      if (animFrameIdRef.current !== null) {
+        cancelAnimationFrame(animFrameIdRef.current);
+        animFrameIdRef.current = null;
+      }
+      if (zxingControlsRef.current) {
+        try {
+          zxingControlsRef.current.stop();
+        } catch {
+          // Ignore control stop errors
+        }
+        zxingControlsRef.current = null;
+      }
+    };
+  }, [cameraState, handleDetectedToken]);
 
   const handleSimulateScan = (token: string) => {
     handleDetectedToken(token);
@@ -219,7 +333,18 @@ export function QrScannerModal({ open, onClose, onScan, demoTokens = {} }: QrSca
 
         {cameraState === 'active' && (
           <div className="relative w-full aspect-square max-w-[320px] bg-black rounded-xl overflow-hidden shadow-inner flex items-center justify-center">
-            <video ref={videoRef} className="w-full h-full object-cover" playsInline muted />
+            <video
+              ref={(node) => {
+                videoRef.current = node;
+                if (node && streamRef.current && node.srcObject !== streamRef.current) {
+                  node.srcObject = streamRef.current;
+                }
+              }}
+              className="w-full h-full object-cover"
+              autoPlay
+              playsInline
+              muted
+            />
             {/* Viewfinder overlay */}
             <div className="absolute inset-8 border-2 border-yellow-400 rounded-lg pointer-events-none flex flex-col justify-between p-2">
               <div className="w-full flex justify-between">

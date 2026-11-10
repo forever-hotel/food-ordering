@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { ConfigProvider, App } from 'antd';
 import { appTheme } from '../../src/config/theme';
 import { ManualEntryForm } from '../../src/features/auth/components/manual-entry-form';
@@ -9,6 +9,28 @@ import { ActiveSessionView } from '../../src/features/guest/components/active-se
 import { DemoModeToolbar } from '../../src/components/demo/demo-mode-toolbar';
 import { NavigationProvider } from '../../src/lib/navigation/navigation-context';
 import { CartProvider } from '../../src/lib/cart/cart-context';
+
+let mockZxingCallback:
+  | ((
+      result: { getText: () => string } | undefined,
+      error?: unknown,
+      controls?: { stop: () => void },
+    ) => void)
+  | null = null;
+const mockZxingStop = jest.fn();
+
+jest.mock('@zxing/browser', () => {
+  return {
+    BrowserQRCodeReader: jest.fn().mockImplementation(() => ({
+      decodeFromVideoElement: jest.fn().mockImplementation((_video: unknown, callback: any) => {
+        mockZxingCallback = callback;
+        return Promise.resolve({
+          stop: mockZxingStop,
+        });
+      }),
+    })),
+  };
+});
 
 let mockAuthContext = {
   status: 'idle',
@@ -468,6 +490,404 @@ describe('QrScannerModal Component', () => {
     fireEvent.click(expiredBtn);
 
     expect(scannedToken).toBe('expired-http-token');
+  });
+
+  it('attaches MediaStream to video.srcObject and invokes video.play() on camera initialization', async () => {
+    const mockTrack = { stop: jest.fn() };
+    const mockStream = { getTracks: () => [mockTrack] };
+    const originalMediaDevices = navigator.mediaDevices;
+    Object.defineProperty(navigator, 'mediaDevices', {
+      writable: true,
+      value: {
+        getUserMedia: jest.fn().mockResolvedValue(mockStream),
+      },
+    });
+
+    const origPlay = HTMLVideoElement.prototype.play;
+    const playMock = jest.fn().mockResolvedValue(undefined);
+    HTMLVideoElement.prototype.play = playMock;
+
+    render(
+      <Wrapper>
+        <QrScannerModal open={true} onClose={() => {}} onScan={() => {}} />
+      </Wrapper>,
+    );
+
+    await waitFor(() => {
+      const video = document.querySelector('video');
+      expect(video).not.toBeNull();
+      expect(video?.srcObject).toBe(mockStream);
+      expect(playMock).toHaveBeenCalled();
+    });
+
+    HTMLVideoElement.prototype.play = origPlay;
+    Object.defineProperty(navigator, 'mediaDevices', {
+      writable: true,
+      value: originalMediaDevices,
+    });
+  });
+
+  it('displays error alert when video.play() rejects (playback failure)', async () => {
+    const mockTrack = { stop: jest.fn() };
+    const mockStream = { getTracks: () => [mockTrack] };
+    const originalMediaDevices = navigator.mediaDevices;
+    Object.defineProperty(navigator, 'mediaDevices', {
+      writable: true,
+      value: {
+        getUserMedia: jest.fn().mockResolvedValue(mockStream),
+      },
+    });
+
+    const origPlay = HTMLVideoElement.prototype.play;
+    HTMLVideoElement.prototype.play = jest
+      .fn()
+      .mockRejectedValue(new Error('Autoplay policy denied'));
+
+    render(
+      <Wrapper>
+        <QrScannerModal open={true} onClose={() => {}} onScan={() => {}} />
+      </Wrapper>,
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Failed to start camera preview: Autoplay policy denied/i),
+      ).toBeDefined();
+    });
+
+    HTMLVideoElement.prototype.play = origPlay;
+    Object.defineProperty(navigator, 'mediaDevices', {
+      writable: true,
+      value: originalMediaDevices,
+    });
+  });
+
+  it('displays hardware in use error when getUserMedia rejects with NotReadableError', async () => {
+    const originalMediaDevices = navigator.mediaDevices;
+    Object.defineProperty(navigator, 'mediaDevices', {
+      writable: true,
+      value: {
+        getUserMedia: jest.fn().mockRejectedValue({ name: 'NotReadableError' }),
+      },
+    });
+
+    render(
+      <Wrapper>
+        <QrScannerModal open={true} onClose={() => {}} onScan={() => {}} />
+      </Wrapper>,
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Camera hardware is in use by another application or failed to start/i),
+      ).toBeDefined();
+    });
+
+    Object.defineProperty(navigator, 'mediaDevices', {
+      writable: true,
+      value: originalMediaDevices,
+    });
+  });
+
+  it('displays HTTPS required error when getUserMedia rejects with SecurityError', async () => {
+    const originalMediaDevices = navigator.mediaDevices;
+    Object.defineProperty(navigator, 'mediaDevices', {
+      writable: true,
+      value: {
+        getUserMedia: jest.fn().mockRejectedValue({ name: 'SecurityError' }),
+      },
+    });
+
+    render(
+      <Wrapper>
+        <QrScannerModal open={true} onClose={() => {}} onScan={() => {}} />
+      </Wrapper>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/Camera access requires a secure HTTPS connection/i)).toBeDefined();
+    });
+
+    Object.defineProperty(navigator, 'mediaDevices', {
+      writable: true,
+      value: originalMediaDevices,
+    });
+  });
+
+  it('detects QR code via cross-browser fallback (@zxing/browser) when native BarcodeDetector is unavailable', async () => {
+    delete (window as any).BarcodeDetector;
+    let detectedToken = '';
+    let closed = false;
+    mockZxingCallback = null;
+    mockZxingStop.mockClear();
+
+    const mockTrack = { stop: jest.fn() };
+    const mockStream = { getTracks: () => [mockTrack] };
+    const originalMediaDevices = navigator.mediaDevices;
+    Object.defineProperty(navigator, 'mediaDevices', {
+      writable: true,
+      value: {
+        getUserMedia: jest.fn().mockResolvedValue(mockStream),
+      },
+    });
+
+    render(
+      <Wrapper>
+        <QrScannerModal
+          open={true}
+          onClose={() => {
+            closed = true;
+          }}
+          onScan={(token) => {
+            detectedToken = token;
+          }}
+        />
+      </Wrapper>,
+    );
+
+    await waitFor(() => {
+      expect(mockZxingCallback).not.toBeNull();
+    });
+
+    act(() => {
+      mockZxingCallback?.(
+        { getText: () => 'https://hotel.com/activate?token=zxing-safari-pass' },
+        undefined,
+        { stop: mockZxingStop },
+      );
+    });
+
+    expect(detectedToken).toBe('zxing-safari-pass');
+    expect(closed).toBe(true);
+    expect(mockZxingStop).toHaveBeenCalled();
+    expect(mockTrack.stop).toHaveBeenCalled();
+
+    Object.defineProperty(navigator, 'mediaDevices', {
+      writable: true,
+      value: originalMediaDevices,
+    });
+  });
+
+  it('prevents duplicate scan callbacks when multiple decode events occur', async () => {
+    delete (window as any).BarcodeDetector;
+    const onScan = jest.fn();
+    mockZxingCallback = null;
+    mockZxingStop.mockClear();
+
+    const mockTrack = { stop: jest.fn() };
+    const mockStream = { getTracks: () => [mockTrack] };
+    const originalMediaDevices = navigator.mediaDevices;
+    Object.defineProperty(navigator, 'mediaDevices', {
+      writable: true,
+      value: {
+        getUserMedia: jest.fn().mockResolvedValue(mockStream),
+      },
+    });
+
+    render(
+      <Wrapper>
+        <QrScannerModal open={true} onClose={() => {}} onScan={onScan} />
+      </Wrapper>,
+    );
+
+    await waitFor(() => {
+      expect(mockZxingCallback).not.toBeNull();
+    });
+
+    act(() => {
+      mockZxingCallback?.({ getText: () => 'token-first-pass' }, undefined, {
+        stop: mockZxingStop,
+      });
+      mockZxingCallback?.({ getText: () => 'token-second-pass' }, undefined, {
+        stop: mockZxingStop,
+      });
+    });
+
+    expect(onScan).toHaveBeenCalledTimes(1);
+    expect(onScan).toHaveBeenCalledWith('token-first-pass');
+
+    Object.defineProperty(navigator, 'mediaDevices', {
+      writable: true,
+      value: originalMediaDevices,
+    });
+  });
+
+  it('stops all tracks and releases video stream when closed via Close button', async () => {
+    let closed = false;
+    const mockTrack = { stop: jest.fn() };
+    const mockStream = { getTracks: () => [mockTrack] };
+    const originalMediaDevices = navigator.mediaDevices;
+    Object.defineProperty(navigator, 'mediaDevices', {
+      writable: true,
+      value: {
+        getUserMedia: jest.fn().mockResolvedValue(mockStream),
+      },
+    });
+
+    render(
+      <Wrapper>
+        <QrScannerModal
+          open={true}
+          onClose={() => {
+            closed = true;
+          }}
+          onScan={() => {}}
+        />
+      </Wrapper>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/Align printed QR code inside frame/i)).toBeDefined();
+    });
+
+    const closeBtn = screen.getByRole('button', { name: /Close Scanner/i });
+    fireEvent.click(closeBtn);
+
+    expect(closed).toBe(true);
+    expect(mockTrack.stop).toHaveBeenCalled();
+
+    Object.defineProperty(navigator, 'mediaDevices', {
+      writable: true,
+      value: originalMediaDevices,
+    });
+  });
+
+  it('reopens scanner and initializes a fresh stream after closing', async () => {
+    const mockTrack1 = { stop: jest.fn() };
+    const mockStream1 = { getTracks: () => [mockTrack1] };
+    const mockTrack2 = { stop: jest.fn() };
+    const mockStream2 = { getTracks: () => [mockTrack2] };
+
+    const getUserMediaMock = jest
+      .fn()
+      .mockResolvedValueOnce(mockStream1)
+      .mockResolvedValueOnce(mockStream2);
+
+    const originalMediaDevices = navigator.mediaDevices;
+    Object.defineProperty(navigator, 'mediaDevices', {
+      writable: true,
+      value: {
+        getUserMedia: getUserMediaMock,
+      },
+    });
+
+    const { rerender } = render(
+      <Wrapper>
+        <QrScannerModal open={true} onClose={() => {}} onScan={() => {}} />
+      </Wrapper>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/Align printed QR code inside frame/i)).toBeDefined();
+    });
+
+    // Close modal
+    rerender(
+      <Wrapper>
+        <QrScannerModal open={false} onClose={() => {}} onScan={() => {}} />
+      </Wrapper>,
+    );
+
+    expect(mockTrack1.stop).toHaveBeenCalled();
+
+    // Reopen modal
+    rerender(
+      <Wrapper>
+        <QrScannerModal open={true} onClose={() => {}} onScan={() => {}} />
+      </Wrapper>,
+    );
+
+    await waitFor(() => {
+      expect(getUserMediaMock).toHaveBeenCalledTimes(2);
+      expect(screen.getByText(/Align printed QR code inside frame/i)).toBeDefined();
+    });
+
+    Object.defineProperty(navigator, 'mediaDevices', {
+      writable: true,
+      value: originalMediaDevices,
+    });
+  });
+
+  it('cancels camera initialization and stops tracks if modal is closed before getUserMedia resolves', async () => {
+    const mockTrack = { stop: jest.fn() };
+    const mockStream = { getTracks: () => [mockTrack] };
+
+    let resolveGetUserMedia: (stream: any) => void = () => {};
+    const pendingPromise = new Promise((resolve) => {
+      resolveGetUserMedia = resolve;
+    });
+
+    const getUserMediaMock = jest.fn().mockReturnValue(pendingPromise);
+    const originalMediaDevices = navigator.mediaDevices;
+    Object.defineProperty(navigator, 'mediaDevices', {
+      writable: true,
+      value: {
+        getUserMedia: getUserMediaMock,
+      },
+    });
+
+    const { rerender } = render(
+      <Wrapper>
+        <QrScannerModal open={true} onClose={() => {}} onScan={() => {}} />
+      </Wrapper>,
+    );
+
+    await waitFor(() => {
+      expect(getUserMediaMock).toHaveBeenCalled();
+    });
+
+    // Close modal while getUserMedia is still pending
+    rerender(
+      <Wrapper>
+        <QrScannerModal open={false} onClose={() => {}} onScan={() => {}} />
+      </Wrapper>,
+    );
+
+    // Now resolve getUserMedia
+    await act(async () => {
+      resolveGetUserMedia(mockStream);
+    });
+
+    // Tracks should be stopped immediately
+    await waitFor(() => {
+      expect(mockTrack.stop).toHaveBeenCalled();
+    });
+
+    Object.defineProperty(navigator, 'mediaDevices', {
+      writable: true,
+      value: originalMediaDevices,
+    });
+  });
+
+  it('cleans up all media stream tracks when component unmounts', async () => {
+    const mockTrack = { stop: jest.fn() };
+    const mockStream = { getTracks: () => [mockTrack] };
+    const originalMediaDevices = navigator.mediaDevices;
+    Object.defineProperty(navigator, 'mediaDevices', {
+      writable: true,
+      value: {
+        getUserMedia: jest.fn().mockResolvedValue(mockStream),
+      },
+    });
+
+    const { unmount } = render(
+      <Wrapper>
+        <QrScannerModal open={true} onClose={() => {}} onScan={() => {}} />
+      </Wrapper>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/Align printed QR code inside frame/i)).toBeDefined();
+    });
+
+    unmount();
+
+    expect(mockTrack.stop).toHaveBeenCalled();
+
+    Object.defineProperty(navigator, 'mediaDevices', {
+      writable: true,
+      value: originalMediaDevices,
+    });
   });
 });
 
