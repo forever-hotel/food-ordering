@@ -12,6 +12,7 @@ import { KmsMenuCatalogDto, MealPeriod } from '../dto/kms-menu.dto.js';
 import { KmsCreateOrderDto } from '../dto/kms-order.dto.js';
 import { KmsOrderResultDto } from '../dto/kms-order-result.dto.js';
 import { KmsProvider } from '../interfaces/kms-provider.interface.js';
+import { kitchenIdempotencyKey } from './kms-idempotency.js';
 
 @Injectable()
 export class RealKmsAdapter implements KmsProvider {
@@ -53,7 +54,10 @@ export class RealKmsAdapter implements KmsProvider {
       '/api/v1/guest/orders',
       'POST',
       {
-        idempotencyKey: order.idempotencyKey,
+        idempotencyKey: kitchenIdempotencyKey(
+          order.bookingId,
+          order.idempotencyKey,
+        ),
         bookingId: order.bookingId,
         roomNumber: order.roomNumber,
         mealPeriod,

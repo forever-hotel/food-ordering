@@ -74,6 +74,18 @@ describe('ServiceRequestsService', () => {
   });
 
   describe('createServiceRequest()', () => {
+    it('preserves an upstream idempotency conflict instead of reporting an outage', async () => {
+      mockRequestRepository.findByIdempotencyKey.mockResolvedValue(null);
+      jest
+        .spyOn(mockWkms, 'createTask')
+        .mockRejectedValueOnce(
+          new ConflictException('Idempotency key has a different request'),
+        );
+      await expect(
+        service.createServiceRequest(sampleGuest, validDto),
+      ).rejects.toThrow(ConflictException);
+      expect(mockRequestRepository.save).not.toHaveBeenCalled();
+    });
     it('creates and dispatches a room-bound service request successfully', async () => {
       mockRequestRepository.findByIdempotencyKey.mockResolvedValue(null);
 

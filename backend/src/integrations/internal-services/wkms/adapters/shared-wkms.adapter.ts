@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { DataSource } from 'typeorm';
 import { RealWkmsAdapter } from './real-wkms.adapter.js';
@@ -9,6 +9,7 @@ import { UpstreamServiceUnavailableException } from '../../../contracts/upstream
 
 /** FOSS owns the request; WKMS creates the linked task through its existing internal API. */
 export class SharedWkmsAdapter extends RealWkmsAdapter {
+  private readonly dispatchLogger = new Logger(SharedWkmsAdapter.name);
   constructor(
     private readonly database: DataSource,
     private readonly endpoint: string,
@@ -75,7 +76,10 @@ export class SharedWkmsAdapter extends RealWkmsAdapter {
           redirect: 'error',
         },
       );
-      if (!response.ok) throw new Error();
+      if (!response.ok) {
+        this.dispatchLogger.warn(`WKMS_DISPATCH_HTTP_${response.status}`);
+        throw new Error();
+      }
       task = await response.json();
       if (typeof task.taskId !== 'string') throw new Error();
     } catch {

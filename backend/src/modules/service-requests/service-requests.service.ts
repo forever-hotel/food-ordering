@@ -130,6 +130,13 @@ export class ServiceRequestsService {
       );
       wkmsResult = await this.wkmsProvider.createTask(wkmsTaskDto);
     } catch (err: unknown) {
+      // Contract/ownership conflicts are not dependency outages.
+      if (
+        err instanceof ConflictException ||
+        err instanceof ForbiddenException
+      ) {
+        throw err;
+      }
       if (err instanceof UpstreamServiceUnavailableException) {
         throw err;
       }
