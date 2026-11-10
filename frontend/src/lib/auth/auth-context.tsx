@@ -203,7 +203,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const resObj = result as GuestSessionResponse &
           GuestContext & { sessionToken?: string; expiresAt?: string };
         const guestData: GuestContext = isRenewed ? resObj.guest : resObj;
-        const token = resObj.sessionToken ?? effectiveToken ?? '';
+        const token = resObj.sessionToken || effectiveToken || '__COOKIE_SESSION__';
         const expiry = resObj.expiresAt ?? null;
 
         setExplicitToken(token);

@@ -104,66 +104,99 @@ export class GuestAuthGuard implements CanActivate {
     request.guest = guestContext;
     request.sessionRecord = session;
     request.sessionToken = token;
+    request.authSource = authSource;
 
     return true;
   }
 
   private validateCsrf(request: any): void {
-    // 1. Safe custom header check: standard cross-origin form POSTs cannot attach custom headers
+    const origin = request.headers?.['origin'] || request.headers?.['referer'];
     const customHeader =
-      request.headers?.['x-requested-with'] ||
-      request.headers?.['x-foss-client'];
-    if (customHeader) {
+      request.headers?.['x-foss-client'] ||
+      request.headers?.['x-requested-with'];
+
+    // 1. Strict Origin / Referer Validation:
+    // If an Origin or Referer is attached (as modern browsers do on all cross-origin or POST requests),
+    // it MUST match the strict allowed origin list. An arbitrary custom header CANNOT bypass an untrusted origin.
+    if (origin && typeof origin === 'string') {
+      let parsedOrigin: URL;
+      try {
+        parsedOrigin = new URL(origin);
+      } catch {
+        throw new ForbiddenException(
+          'CSRF validation failed: Malformed origin.',
+        );
+      }
+
+      if (!this.isAllowedOrigin(parsedOrigin)) {
+        throw new ForbiddenException(
+          `CSRF validation failed: Untrusted origin [${origin}].`,
+        );
+      }
       return;
     }
 
-    // 2. Origin or Referer header validation
-    const origin = request.headers?.['origin'] || request.headers?.['referer'];
-    if (!origin || typeof origin !== 'string') {
+    // 2. If neither Origin nor Referer is present:
+    // Standard cross-site form POSTs in browsers always send Origin/Referer.
+    // In scenarios where origin is absent (e.g. controlled non-browser test callers), require the custom header.
+    if (!customHeader) {
       throw new ForbiddenException(
         'CSRF validation failed: Missing origin or custom request header.',
       );
     }
+  }
 
-    let originHostname: string;
-    let originPort: string;
-    try {
-      const parsed = new URL(origin);
-      originHostname = parsed.hostname.toLowerCase();
-      originPort = parsed.port;
-    } catch {
-      throw new ForbiddenException('CSRF validation failed: Malformed origin.');
-    }
+  private isAllowedOrigin(parsedOrigin: URL): boolean {
+    const originProto = parsedOrigin.protocol.toLowerCase();
+    const originHost = parsedOrigin.hostname.toLowerCase();
+    const originPort =
+      parsedOrigin.port || (originProto === 'https:' ? '443' : '80');
 
-    const allowedOrigins = [
+    // Build strict allowed origin candidates from explicit configuration
+    const rawAllowed: string[] = [
       process.env.FRONTEND_URL,
-      'http://localhost:3000',
-      'http://127.0.0.1:3000',
-      'http://localhost:4200',
-      'http://localhost:4300',
+      process.env.FOSS_FRONTEND_URL,
+      process.env.FOSS_PUBLIC_APP_URL,
     ].filter(Boolean) as string[];
 
-    const hostHeader = request.headers?.['host'];
-    if (hostHeader) {
-      allowedOrigins.push(`http://${hostHeader}`, `https://${hostHeader}`);
+    if (process.env.ALLOWED_ORIGINS) {
+      const parts = process.env.ALLOWED_ORIGINS.split(',').map((s) => s.trim());
+      rawAllowed.push(...parts);
     }
 
-    const isMatch = allowedOrigins.some((allowed) => {
-      try {
-        const parsed = new URL(allowed);
-        return (
-          parsed.hostname.toLowerCase() === originHostname &&
-          (parsed.port === originPort || (!parsed.port && !originPort))
-        );
-      } catch {
-        return false;
-      }
-    });
-
-    if (!isMatch) {
-      throw new ForbiddenException(
-        `CSRF validation failed: Untrusted origin [${origin}].`,
+    if (process.env.NODE_ENV !== 'production') {
+      rawAllowed.push(
+        'http://localhost:3000',
+        'http://127.0.0.1:3000',
+        'http://localhost:4200',
+        'http://127.0.0.1:4200',
+        'http://localhost:4300',
+        'http://127.0.0.1:4300',
+        'https://localhost:3000',
+        'https://127.0.0.1:3000',
       );
     }
+
+    for (const allowed of rawAllowed) {
+      try {
+        const parsed = new URL(allowed);
+        const expectedProto = parsed.protocol.toLowerCase();
+        const expectedHost = parsed.hostname.toLowerCase();
+        const expectedPort =
+          parsed.port || (expectedProto === 'https:' ? '443' : '80');
+
+        if (
+          expectedProto === originProto &&
+          expectedHost === originHost &&
+          expectedPort === originPort
+        ) {
+          return true;
+        }
+      } catch {
+        // Skip unparseable configuration entries
+      }
+    }
+
+    return false;
   }
 }

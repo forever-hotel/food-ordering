@@ -10,6 +10,10 @@ import {
   savePersistentSession,
 } from '../src/lib/data-mode/data-mode.ts';
 import { ApiSessionsProvider } from '../src/lib/data-mode/api/api-sessions.provider.ts';
+import { ApiOrdersProvider } from '../src/lib/data-mode/api/api-orders.provider.ts';
+import { ApiServicesProvider } from '../src/lib/data-mode/api/api-services.provider.ts';
+import { ApiComplaintsProvider } from '../src/lib/data-mode/api/api-complaints.provider.ts';
+import { ApiMenuProvider } from '../src/lib/data-mode/api/api-menu.provider.ts';
 import { DemoSessionsProvider } from '../src/lib/data-mode/demo/demo-sessions.provider.ts';
 import {
   FossRealtimeClient,
@@ -401,6 +405,91 @@ describe('FOSS Guest Session Persistence & Security Review (PR #137, Issue #136)
 
       // Persistent credentials sentinel remains available on temporary network loss
       assert.equal(loadPersistentSession('api'), '__COOKIE_SESSION__');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('One-time QR authentication: restores session after 48h and 72h of inactivity during an active multi-day stay', () => {
+    // Guest checked in on Monday at 14:00, checking out on Friday at 11:00 (93 hours total)
+    const now = Date.now();
+    const stayEnd = new Date(now + 45 * 3600 * 1000).toISOString(); // 45 hours in future (Friday)
+
+    // Save session metadata established at Monday QR scan
+    savePersistentSession('token-ignored-in-api-mode', 'api', stayEnd, stayEnd);
+
+    // Simulate returning after 48h of inactivity (browser reopened, sessionStorage empty)
+    (globalThis as any).window.sessionStorage.clear();
+    const restoredSentinel48h = loadPersistentSession('api');
+    assert.equal(
+      restoredSentinel48h,
+      '__COOKIE_SESSION__',
+      'Must restore cookie session indicator after 48 hours of inactivity',
+    );
+
+    // Simulate returning after 72h of inactivity
+    const restoredSentinel72h = loadPersistentSession('api');
+    assert.equal(
+      restoredSentinel72h,
+      '__COOKIE_SESSION__',
+      'Must restore cookie session indicator after 72 hours of inactivity',
+    );
+  });
+
+  it('Cookie authentication works across all FOSS API providers without requiring a live Bearer token', async () => {
+    const originalFetch = globalThis.fetch;
+    const interceptedRequests: { url: string; method: string; credentials: any; headers: any }[] =
+      [];
+
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      interceptedRequests.push({
+        url: String(url),
+        method: init?.method || 'GET',
+        credentials: init?.credentials,
+        headers: (init?.headers as Record<string, string>) || {},
+      });
+
+      return new Response(JSON.stringify([]), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as typeof fetch;
+
+    try {
+      // 1. Food orders via cookie
+      const ordersProvider = new ApiOrdersProvider();
+      await ordersProvider.fetchGuestOrders('__COOKIE_SESSION__');
+
+      // 2. Service requests via cookie
+      const servicesProvider = new ApiServicesProvider();
+      await servicesProvider.fetchGuestServiceRequests('__COOKIE_SESSION__');
+
+      // 3. Complaints via cookie
+      const complaintsProvider = new ApiComplaintsProvider();
+      await complaintsProvider.fetchGuestComplaints('__COOKIE_SESSION__');
+
+      // 4. Menu via cookie
+      const menuProvider = new ApiMenuProvider();
+      await menuProvider.fetchGuestMenu('__COOKIE_SESSION__');
+
+      assert.equal(interceptedRequests.length, 4);
+      for (const req of interceptedRequests) {
+        assert.equal(
+          req.credentials,
+          'include',
+          `Request to ${req.url} must include credentials for HttpOnly cookie`,
+        );
+        assert.equal(
+          req.headers['x-foss-client'],
+          'foss-web',
+          `Request to ${req.url} must include x-foss-client header`,
+        );
+        assert.equal(
+          req.headers['Authorization'],
+          undefined,
+          `Request to ${req.url} must NOT send sentinel as Bearer token`,
+        );
+      }
     } finally {
       globalThis.fetch = originalFetch;
     }

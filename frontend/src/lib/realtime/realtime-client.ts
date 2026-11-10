@@ -157,7 +157,7 @@ export class FossRealtimeClient {
       const response = await fetch(`${this.config.apiUrl}/guest-sessions/realtime-ticket`, {
         method: 'POST',
         headers: {
-          ...(this.config.sessionToken
+          ...(this.config.sessionToken && this.config.sessionToken !== '__COOKIE_SESSION__'
             ? { Authorization: `Bearer ${this.config.sessionToken}` }
             : {}),
           'x-foss-client': 'foss-web',
@@ -230,7 +230,8 @@ export class FossRealtimeClient {
         method: 'GET',
         headers: {
           Accept: 'text/event-stream',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          'x-foss-client': 'foss-web',
+          ...(token && token !== '__COOKIE_SESSION__' ? { Authorization: `Bearer ${token}` } : {}),
         },
         credentials: 'include',
         signal: this.abortController.signal,
@@ -351,7 +352,7 @@ export class FossRealtimeClient {
 
     const response = await fetch(url.toString(), {
       headers: {
-        ...(this.config.sessionToken
+        ...(this.config.sessionToken && this.config.sessionToken !== '__COOKIE_SESSION__'
           ? { Authorization: `Bearer ${this.config.sessionToken}` }
           : {}),
         'x-foss-client': 'foss-web',

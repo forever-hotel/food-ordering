@@ -178,7 +178,7 @@ export const FALLBACK_COMPLAINTS: ComplaintResponse[] = [
  */
 export async function createComplaint(
   payload: CreateComplaintPayload,
-  sessionToken: string,
+  sessionToken?: string,
   idempotencyKey?: string,
 ): Promise<ComplaintResponse> {
   return getComplaintsProvider().createComplaint(payload, sessionToken, idempotencyKey);
@@ -187,7 +187,7 @@ export async function createComplaint(
 /**
  * Fetches all complaints filed for the current active guest stay.
  */
-export async function fetchGuestComplaints(sessionToken: string): Promise<ComplaintResponse[]> {
+export async function fetchGuestComplaints(sessionToken?: string): Promise<ComplaintResponse[]> {
   return getComplaintsProvider().fetchGuestComplaints(sessionToken);
 }
 
@@ -196,7 +196,7 @@ export async function fetchGuestComplaints(sessionToken: string): Promise<Compla
  */
 export async function fetchGuestComplaintById(
   id: string,
-  sessionToken: string,
+  sessionToken?: string,
 ): Promise<ComplaintResponse> {
   const normalizedId = id.replace(/^#/, '');
   return getComplaintsProvider().fetchGuestComplaintById(sessionToken, normalizedId);

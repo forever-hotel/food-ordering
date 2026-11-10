@@ -100,12 +100,9 @@ export class GuestSessionsService {
       );
     }
 
-    const sessionTtlMs = this.sessionTtlHours * 60 * 60 * 1000;
-    const computedExpiryTime = Math.min(
-      now.getTime() + sessionTtlMs,
-      stayEndTime,
-    );
-    const expiresAt = new Date(computedExpiryTime);
+    // Stay-bound session lifetime: session is valid until the authoritative checkout timestamp (stayEnd)
+    // Guests remain authenticated throughout their stay without an artificial 24-hour idle cutoff
+    const expiresAt = new Date(stayEndTime);
 
     // 4. Generate high-entropy bearer token and its SHA-256 storage hash
     const rawBearerToken = crypto.randomBytes(32).toString('hex');
@@ -246,30 +243,15 @@ export class GuestSessionsService {
       );
     }
 
-    // Ensure a previously issued session cannot bypass a newly shortened stay expiry
+    // Synchronize session expiresAt with authoritative stayEnd (handling both shortenings and extensions)
     const currentSessionExpiresAtTime = new Date(session.expiresAt).getTime();
-    if (stayEndTime < currentSessionExpiresAtTime) {
+    if (stayEndTime !== currentSessionExpiresAtTime) {
       this.logger.log(
-        `Authoritative stay expiry shortened for session [${session.sessionId}]. Updating expiresAt to [${stay.stayEnd}].`,
+        `Syncing session [${session.sessionId}] expiresAt with authoritative stayEnd [${stay.stayEnd}].`,
       );
       session.expiresAt = new Date(stayEndTime);
       session.updatedAt = now;
       await this.fossSessionRepository.save(session);
-    }
-
-    // Sliding renewal during active stay usage: if less than half TTL remains and stay is active, extend bounded by stayEndTime
-    const sessionTtlMs = this.sessionTtlHours * 60 * 60 * 1000;
-    const remainingMs = new Date(session.expiresAt).getTime() - now.getTime();
-    if (remainingMs < sessionTtlMs / 2 && now.getTime() < stayEndTime) {
-      const extendedExpiryTime = Math.min(
-        now.getTime() + sessionTtlMs,
-        stayEndTime,
-      );
-      if (extendedExpiryTime > new Date(session.expiresAt).getTime()) {
-        session.expiresAt = new Date(extendedExpiryTime);
-        session.updatedAt = now;
-        await this.fossSessionRepository.save(session);
-      }
     }
 
     return { session, stay };
@@ -368,13 +350,8 @@ export class GuestSessionsService {
       );
     }
 
-    // Compute renewed expiration bounded by session TTL and stay checkout
-    const sessionTtlMs = this.sessionTtlHours * 60 * 60 * 1000;
-    const computedExpiryTime = Math.min(
-      now.getTime() + sessionTtlMs,
-      stayEndTime,
-    );
-    const newExpiresAt = new Date(computedExpiryTime);
+    // Renew session expiration up to the authoritative stay checkout timestamp (stayEnd)
+    const newExpiresAt = new Date(stayEndTime);
 
     session.expiresAt = newExpiresAt;
     session.updatedAt = now;

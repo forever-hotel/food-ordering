@@ -226,7 +226,7 @@ describe('GuestSessionsService', () => {
       expect(result.expiresAt).toBe('2026-11-11T23:00:00.000Z');
     });
 
-    it('bounds session for 2-day booking expiring 48h after check-in by configured session TTL (Test 3)', async () => {
+    it('bounds session for 2-day booking to stayEnd checkout timestamp (Test 3)', async () => {
       mockClock = new Date('2026-11-10T15:00:00.000Z');
       const stay2Days: BookingVerificationResultDto = {
         ...validStay,
@@ -237,8 +237,8 @@ describe('GuestSessionsService', () => {
 
       const result = await service.authenticateWithQr('valid.qr.token');
 
-      // Security TTL is 24 hours, so expiresAt is now + 24h, not now + 48h
-      expect(result.expiresAt).toBe('2026-11-11T15:00:00.000Z');
+      // Stay-bound policy: expiresAt is the verified checkout timestamp (stayEnd), not artificially capped at 24h
+      expect(result.expiresAt).toBe('2026-11-12T15:00:00.000Z');
       expect(result.stayEnd).toBe('2026-11-12T15:00:00.000Z');
     });
 
@@ -419,6 +419,66 @@ describe('GuestSessionsService', () => {
       expect(result.stay.stayEnd).toBe(stayEnd);
     });
 
+    it('restores session and validates access after 48 hours of inactivity during an active stay', async () => {
+      // Checked in on Monday at 14:00, checking out on Friday at 11:00 (93h stay)
+      const stayEnd = '2026-11-13T11:00:00.000Z'; // Friday 11:00
+      // Returning on Wednesday at 14:00 (48h later, without intermediate renewal)
+      mockClock = new Date('2026-11-11T14:00:00.000Z');
+
+      const rawToken = 'multi-day-active-token';
+      const hashedToken = service.hashToken(rawToken);
+
+      const session = new FossSession();
+      session.sessionId = 'sess-48h-inactive';
+      session.bookingId = 'b-101';
+      session.roomNumber = '101';
+      session.sessionToken = hashedToken;
+      session.isActive = true;
+      session.expiresAt = new Date(stayEnd);
+
+      mockSessionRepository.findActiveBySessionToken.mockResolvedValue(session);
+      mockBookingVerificationService.verifyStay.mockResolvedValue({
+        ...validStay,
+        stayStart: '2026-11-09T14:00:00.000Z', // Monday 14:00
+        stayEnd,
+      });
+
+      const result = await service.validateSessionToken(rawToken);
+      expect(result.session.isActive).toBe(true);
+      expect(result.session.sessionId).toBe('sess-48h-inactive');
+      expect(result.stay.stayEnd).toBe(stayEnd);
+    });
+
+    it('restores session and validates access after 72 hours of inactivity during an active stay', async () => {
+      // Checked in on Monday at 14:00, checking out on Friday at 11:00
+      const stayEnd = '2026-11-13T11:00:00.000Z'; // Friday 11:00
+      // Returning on Thursday at 14:00 (72h later)
+      mockClock = new Date('2026-11-12T14:00:00.000Z');
+
+      const rawToken = 'multi-day-72h-token';
+      const hashedToken = service.hashToken(rawToken);
+
+      const session = new FossSession();
+      session.sessionId = 'sess-72h-inactive';
+      session.bookingId = 'b-101';
+      session.roomNumber = '101';
+      session.sessionToken = hashedToken;
+      session.isActive = true;
+      session.expiresAt = new Date(stayEnd);
+
+      mockSessionRepository.findActiveBySessionToken.mockResolvedValue(session);
+      mockBookingVerificationService.verifyStay.mockResolvedValue({
+        ...validStay,
+        stayStart: '2026-11-09T14:00:00.000Z',
+        stayEnd,
+      });
+
+      const result = await service.validateSessionToken(rawToken);
+      expect(result.session.isActive).toBe(true);
+      expect(result.session.sessionId).toBe('sess-72h-inactive');
+      expect(result.stay.stayEnd).toBe(stayEnd);
+    });
+
     it('rejects access at the exact expiry timestamp (Test 5)', async () => {
       const stayEnd = '2026-11-11T15:00:00.000Z';
       // Exactly at expiry
@@ -534,7 +594,7 @@ describe('GuestSessionsService', () => {
       expect(mockSessionRepository.save).toHaveBeenCalledWith(session);
     });
 
-    it('does not extend session beyond configured security TTL when stay is extended (Test 11)', async () => {
+    it('synchronizes session expiresAt when authoritative stay is extended (Test 11)', async () => {
       mockClock = new Date('2026-11-10T16:00:00.000Z');
 
       const rawToken = 'token-extended-stay';
@@ -546,25 +606,24 @@ describe('GuestSessionsService', () => {
       session.roomNumber = '101';
       session.sessionToken = hashedToken;
       session.isActive = true;
-      // Security TTL set expiresAt to Nov 11, 15:00 (24 hours from check-in)
       const originalExpiresAt = new Date('2026-11-11T15:00:00.000Z');
       session.expiresAt = originalExpiresAt;
 
       mockSessionRepository.findActiveBySessionToken.mockResolvedValue(session);
 
-      // Stay is extended by 5 days
+      // Stay is extended by 5 days in FDS
+      const newStayEnd = '2026-11-16T15:00:00.000Z';
       mockBookingVerificationService.verifyStay.mockResolvedValue({
         ...validStay,
         stayStart: '2026-11-10T15:00:00.000Z',
-        stayEnd: '2026-11-16T15:00:00.000Z', // 5 days later
+        stayEnd: newStayEnd,
       });
 
       const result = await service.validateSessionToken(rawToken);
 
-      // Session expiresAt must NOT be expanded to Nov 16; it remains bounded by configured TTL
-      expect(result.session.expiresAt).toEqual(originalExpiresAt);
-      // No unnecessary database write on valid request
-      expect(mockSessionRepository.save).not.toHaveBeenCalled();
+      // Session expiresAt is synchronized to the new stay checkout timestamp
+      expect(result.session.expiresAt).toEqual(new Date(newStayEnd));
+      expect(mockSessionRepository.save).toHaveBeenCalledWith(session);
     });
 
     it('bubbles up ServiceUnavailableException on FDS outage without revoking session (Test 14)', async () => {
@@ -865,8 +924,8 @@ describe('GuestSessionsService', () => {
 
       expect(result.sessionId).toBe('sess-multi-day');
       expect(result.active).toBe(true);
-      // New expiry is now (Oct 29, 08:00) + 24 hours = Oct 30, 08:00, bounded by stayEnd (Nov 4)
-      const expectedExpiry = new Date('2026-10-30T08:00:00.000Z').toISOString();
+      // New expiry is bounded by stayEnd (Nov 4)
+      const expectedExpiry = new Date(multiDayStayEnd).toISOString();
       expect(result.expiresAt).toBe(expectedExpiry);
       expect(mockSessionRepository.save).toHaveBeenCalledWith(
         expect.objectContaining({

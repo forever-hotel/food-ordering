@@ -48,13 +48,15 @@ function setSessionCookie(
   const isSecure =
     process.env.NODE_ENV === 'production' ||
     process.env.COOKIE_SECURE === 'true';
+  const sameSite =
+    (process.env.COOKIE_SAMESITE as 'lax' | 'strict' | 'none') || 'lax';
   const maxAge = expiresAt
     ? Math.max(0, new Date(expiresAt).getTime() - Date.now())
     : 24 * 60 * 60 * 1000;
   res.cookie('foss_guest_session', token, {
     httpOnly: true,
     secure: isSecure,
-    sameSite: 'lax',
+    sameSite,
     path: '/',
     maxAge,
   });
@@ -65,10 +67,12 @@ function clearSessionCookie(res?: Response): void {
   const isSecure =
     process.env.NODE_ENV === 'production' ||
     process.env.COOKIE_SECURE === 'true';
+  const sameSite =
+    (process.env.COOKIE_SAMESITE as 'lax' | 'strict' | 'none') || 'lax';
   res.clearCookie('foss_guest_session', {
     httpOnly: true,
     secure: isSecure,
-    sameSite: 'lax',
+    sameSite,
     path: '/',
   });
 }
@@ -203,12 +207,15 @@ export class GuestSessionsController {
       result.expiresAt = new Date(record.expiresAt).toISOString();
     }
     if (req?.sessionToken) {
-      result.sessionToken = req.sessionToken;
       setSessionCookie(
         res,
         req.sessionToken,
         record?.expiresAt || guest?.stayEnd,
       );
+      // Only expose sessionToken in JSON when requested via explicit Bearer header
+      if ((req as any)?.authSource === 'bearer') {
+        result.sessionToken = req.sessionToken;
+      }
     }
     return result;
   }

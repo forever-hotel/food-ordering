@@ -17,15 +17,18 @@ import type {
 import type { GuestContext, GuestSessionResponse } from '../../types/guest-session.ts';
 
 export interface OrdersProvider {
-  fetchGuestOrders(sessionToken: string): Promise<FoodOrderResponse[]>;
-  fetchGuestOrderById(sessionToken: string, orderId: string): Promise<FoodOrderResponse>;
+  fetchGuestOrders(sessionToken?: string): Promise<FoodOrderResponse[]>;
+  fetchGuestOrderById(
+    sessionToken: string | undefined,
+    orderId: string,
+  ): Promise<FoodOrderResponse>;
   placeFoodOrder(
-    sessionToken: string,
+    sessionToken: string | undefined,
     payload: CreateFoodOrderPayload,
     idempotencyKey: string,
   ): Promise<FoodOrderResponse>;
   cancelFoodOrder(
-    sessionToken: string,
+    sessionToken: string | undefined,
     orderId: string,
     reason?: string,
   ): Promise<FoodOrderResponse>;
@@ -42,13 +45,13 @@ export interface MenuProvider {
 }
 
 export interface ServicesProvider {
-  fetchGuestServiceRequests(sessionToken: string): Promise<ServiceRequestResponse[]>;
+  fetchGuestServiceRequests(sessionToken?: string): Promise<ServiceRequestResponse[]>;
   fetchGuestServiceRequestById(
-    sessionToken: string,
+    sessionToken: string | undefined,
     requestId: string,
   ): Promise<ServiceRequestResponse>;
   createServiceRequest(
-    sessionToken: string,
+    sessionToken: string | undefined,
     payload: CreateServiceRequestPayload,
     idempotencyKey?: string,
   ): Promise<ServiceRequestResponse>;
@@ -61,11 +64,14 @@ export interface ServicesProvider {
 }
 
 export interface ComplaintsProvider {
-  fetchGuestComplaints(sessionToken: string): Promise<ComplaintResponse[]>;
-  fetchGuestComplaintById(sessionToken: string, complaintId: string): Promise<ComplaintResponse>;
+  fetchGuestComplaints(sessionToken?: string): Promise<ComplaintResponse[]>;
+  fetchGuestComplaintById(
+    sessionToken: string | undefined,
+    complaintId: string,
+  ): Promise<ComplaintResponse>;
   createComplaint(
     payload: CreateComplaintPayload,
-    sessionToken: string,
+    sessionToken?: string,
     idempotencyKey?: string,
   ): Promise<ComplaintResponse>;
   advanceDemoComplaintStatus(

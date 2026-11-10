@@ -7,13 +7,17 @@ import type {
   ComplaintStatus,
 } from '../../../types/complaints.ts';
 
-function assertRealSessionToken(sessionToken: string, actionDesc: string): void {
-  if (!sessionToken || sessionToken.trim() === '') {
-    throw new ApiError(`Guest session token is required to ${actionDesc}.`, 401);
+function assertRealSessionToken(sessionToken: string | undefined, _actionDesc?: string): void {
+  if (sessionToken !== undefined && sessionToken.trim() === '') {
+    throw new ApiError(
+      `Guest session token is required to ${_actionDesc || 'perform action'}.`,
+      401,
+    );
   }
   if (
-    sessionToken.startsWith('demo-token-') ||
-    ['101', '102', '103', '204', '999'].includes(sessionToken)
+    sessionToken &&
+    (sessionToken.startsWith('demo-token-') ||
+      ['101', '102', '103', '204', '999'].includes(sessionToken))
   ) {
     throw new ApiError(
       'Demonstration session tokens cannot be transmitted to real API endpoints.',
@@ -22,16 +26,29 @@ function assertRealSessionToken(sessionToken: string, actionDesc: string): void 
   }
 }
 
+function buildHeaders(
+  sessionToken?: string,
+  extraHeaders: Record<string, string> = {},
+): Record<string, string> {
+  const headers: Record<string, string> = {
+    'x-foss-client': 'foss-web',
+    ...extraHeaders,
+  };
+  if (sessionToken && sessionToken !== '__COOKIE_SESSION__') {
+    headers.Authorization = `Bearer ${sessionToken}`;
+  }
+  return headers;
+}
+
 export class ApiComplaintsProvider implements ComplaintsProvider {
-  async fetchGuestComplaints(sessionToken: string): Promise<ComplaintResponse[]> {
+  async fetchGuestComplaints(sessionToken?: string): Promise<ComplaintResponse[]> {
     assertRealSessionToken(sessionToken, 'fetch complaints');
 
     try {
       const response = await fetch(`${API_URL}/complaints`, {
         method: 'GET',
-        headers: {
-          Authorization: `Bearer ${sessionToken}`,
-        },
+        headers: buildHeaders(sessionToken),
+        credentials: 'include',
       });
 
       const body = await response.json().catch(() => null);
@@ -58,7 +75,7 @@ export class ApiComplaintsProvider implements ComplaintsProvider {
   }
 
   async fetchGuestComplaintById(
-    sessionToken: string,
+    sessionToken: string | undefined,
     complaintId: string,
   ): Promise<ComplaintResponse> {
     assertRealSessionToken(sessionToken, 'fetch complaint details');
@@ -66,9 +83,8 @@ export class ApiComplaintsProvider implements ComplaintsProvider {
     try {
       const response = await fetch(`${API_URL}/complaints/${encodeURIComponent(complaintId)}`, {
         method: 'GET',
-        headers: {
-          Authorization: `Bearer ${sessionToken}`,
-        },
+        headers: buildHeaders(sessionToken),
+        credentials: 'include',
       });
 
       const body = await response.json().catch(() => null);
@@ -93,7 +109,7 @@ export class ApiComplaintsProvider implements ComplaintsProvider {
 
   async createComplaint(
     payload: CreateComplaintPayload,
-    sessionToken: string,
+    sessionToken?: string,
     idempotencyKey?: string,
   ): Promise<ComplaintResponse> {
     assertRealSessionToken(sessionToken, 'submit a complaint');
@@ -106,11 +122,11 @@ export class ApiComplaintsProvider implements ComplaintsProvider {
     try {
       const response = await fetch(`${API_URL}/complaints`, {
         method: 'POST',
-        headers: {
+        headers: buildHeaders(sessionToken, {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${sessionToken}`,
           'idempotency-key': idemKey,
-        },
+        }),
+        credentials: 'include',
         body: JSON.stringify({
           category: payload.category,
           severity: payload.severity || 'LOW',
@@ -194,10 +210,10 @@ export class ApiComplaintsProvider implements ComplaintsProvider {
       `${API_URL}/complaints/${encodeURIComponent(complaintId)}/status`,
       {
         method: 'PATCH',
-        headers: {
+        headers: buildHeaders(sessionToken, {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${sessionToken}`,
-        },
+        }),
+        credentials: 'include',
         body: JSON.stringify({
           status: newStatus,
           resolutionNotes:
