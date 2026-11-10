@@ -547,7 +547,6 @@ describe('ServicesTab Component', () => {
 
     mockAuth = savedAuth;
   });
-
 });
 
 describe('ComplaintsTab Component', () => {

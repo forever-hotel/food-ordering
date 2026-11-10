@@ -506,120 +506,120 @@ export function ServicesTab() {
         {requests.length > 0 && (
           <div className="space-y-2.5">
             {requests.map((req) => {
-            const isExpanded = expandedRequestId === req.requestId;
+              const isExpanded = expandedRequestId === req.requestId;
 
-            return (
-              <Card
-                key={req.requestId}
-                onClick={() => setExpandedRequestId(isExpanded ? null : req.requestId)}
-                className="!rounded-2xl !border-slate-100 !bg-white !shadow-xs hover:border-slate-200 active:scale-[0.99] transition-all cursor-pointer"
-                styles={{ body: { padding: '14px 16px' } }}
-              >
-                <div className="flex items-center justify-between mb-1">
-                  <Title level={4} className="!text-sm !font-bold !text-[#1E293B] !mb-0">
-                    {getCategoryLabel(req.requestType)}
-                  </Title>
-                  {getStatusBadge(req)}
-                </div>
-
-                {/* Subtitle matching Figure 38 */}
-                {req.status === 'ASSIGNED' && (
-                  <Paragraph className="!text-xs !text-amber-800 !mb-0 font-medium">
-                    Worker en route → <strong className="font-bold">In Progress</strong>
-                  </Paragraph>
-                )}
-                {req.status === 'IN_PROGRESS' && (
-                  <Paragraph className="!text-xs !text-amber-700 !mb-0 font-medium">
-                    Staff working on your request (Est. ~{req.estimatedCompletionMinutes || 15}m)
-                  </Paragraph>
-                )}
-                {req.status === 'COMPLETED' && (
-                  <Paragraph className="!text-xs !text-slate-500 !mb-0">
-                    Completed {req.assignedStaff ? `by ${req.assignedStaff}` : ''}
-                  </Paragraph>
-                )}
-                {req.status === 'SUBMITTED' && (
-                  <Paragraph className="!text-xs !text-slate-500 !mb-0">
-                    Request received by housekeeping desk
-                  </Paragraph>
-                )}
-
-                {req.description && (
-                  <div className="mt-1 text-[11px] text-slate-400 truncate">
-                    Note: {req.description}
+              return (
+                <Card
+                  key={req.requestId}
+                  onClick={() => setExpandedRequestId(isExpanded ? null : req.requestId)}
+                  className="!rounded-2xl !border-slate-100 !bg-white !shadow-xs hover:border-slate-200 active:scale-[0.99] transition-all cursor-pointer"
+                  styles={{ body: { padding: '14px 16px' } }}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <Title level={4} className="!text-sm !font-bold !text-[#1E293B] !mb-0">
+                      {getCategoryLabel(req.requestType)}
+                    </Title>
+                    {getStatusBadge(req)}
                   </div>
-                )}
 
-                {/* Expandable 4-Stage Progression Timeline */}
-                {isExpanded && (
-                  <div className="mt-3 pt-3 border-t border-slate-100 space-y-2 animate-fade-in">
-                    <Text className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                      TASK PROGRESSION
-                    </Text>
-                    <div className="space-y-1.5 text-xs">
-                      {(req.timeline || []).map((step) => (
-                        <div key={step.status} className="flex items-center justify-between">
-                          <span
-                            className={`flex items-center gap-1.5 font-medium ${
-                              step.completed
-                                ? 'text-slate-800'
-                                : step.current
-                                  ? 'text-amber-700 font-bold'
-                                  : 'text-slate-400'
-                            }`}
-                          >
-                            <span aria-hidden="true" className="inline-flex items-center">
-                              {step.completed ? (
-                                <CheckCircleOutlined className="text-emerald-600 text-xs" />
-                              ) : (
-                                <ClockCircleOutlined className="text-slate-300 text-xs" />
-                              )}
+                  {/* Subtitle matching Figure 38 */}
+                  {req.status === 'ASSIGNED' && (
+                    <Paragraph className="!text-xs !text-amber-800 !mb-0 font-medium">
+                      Worker en route → <strong className="font-bold">In Progress</strong>
+                    </Paragraph>
+                  )}
+                  {req.status === 'IN_PROGRESS' && (
+                    <Paragraph className="!text-xs !text-amber-700 !mb-0 font-medium">
+                      Staff working on your request (Est. ~{req.estimatedCompletionMinutes || 15}m)
+                    </Paragraph>
+                  )}
+                  {req.status === 'COMPLETED' && (
+                    <Paragraph className="!text-xs !text-slate-500 !mb-0">
+                      Completed {req.assignedStaff ? `by ${req.assignedStaff}` : ''}
+                    </Paragraph>
+                  )}
+                  {req.status === 'SUBMITTED' && (
+                    <Paragraph className="!text-xs !text-slate-500 !mb-0">
+                      Request received by housekeeping desk
+                    </Paragraph>
+                  )}
+
+                  {req.description && (
+                    <div className="mt-1 text-[11px] text-slate-400 truncate">
+                      Note: {req.description}
+                    </div>
+                  )}
+
+                  {/* Expandable 4-Stage Progression Timeline */}
+                  {isExpanded && (
+                    <div className="mt-3 pt-3 border-t border-slate-100 space-y-2 animate-fade-in">
+                      <Text className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                        TASK PROGRESSION
+                      </Text>
+                      <div className="space-y-1.5 text-xs">
+                        {(req.timeline || []).map((step) => (
+                          <div key={step.status} className="flex items-center justify-between">
+                            <span
+                              className={`flex items-center gap-1.5 font-medium ${
+                                step.completed
+                                  ? 'text-slate-800'
+                                  : step.current
+                                    ? 'text-amber-700 font-bold'
+                                    : 'text-slate-400'
+                              }`}
+                            >
+                              <span aria-hidden="true" className="inline-flex items-center">
+                                {step.completed ? (
+                                  <CheckCircleOutlined className="text-emerald-600 text-xs" />
+                                ) : (
+                                  <ClockCircleOutlined className="text-slate-300 text-xs" />
+                                )}
+                              </span>
+                              {step.label}
                             </span>
-                            {step.label}
-                          </span>
-                          {step.timestamp && (
-                            <span className="text-[11px] text-slate-400">{step.timestamp}</span>
+                            {step.timestamp && (
+                              <span className="text-[11px] text-slate-400">{step.timestamp}</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Demo status advancement buttons for evaluation */}
+                      {getDataMode() === 'demo' && (
+                        <div className="pt-2 flex items-center gap-1.5 justify-end">
+                          {req.status !== 'IN_PROGRESS' && req.status !== 'COMPLETED' && (
+                            <Button
+                              size="small"
+                              disabled={advancingId === req.requestId}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleAdvanceStatus(req.requestId, 'IN_PROGRESS');
+                              }}
+                              className="text-[11px] !rounded-lg"
+                            >
+                              Demo: In Progress
+                            </Button>
+                          )}
+                          {req.status !== 'COMPLETED' && (
+                            <Button
+                              size="small"
+                              disabled={advancingId === req.requestId}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleAdvanceStatus(req.requestId, 'COMPLETED');
+                              }}
+                              className="text-[11px] !rounded-lg"
+                            >
+                              Demo: Complete
+                            </Button>
                           )}
                         </div>
-                      ))}
+                      )}
                     </div>
-
-                    {/* Demo status advancement buttons for evaluation */}
-                    {getDataMode() === 'demo' && (
-                      <div className="pt-2 flex items-center gap-1.5 justify-end">
-                        {req.status !== 'IN_PROGRESS' && req.status !== 'COMPLETED' && (
-                          <Button
-                            size="small"
-                            disabled={advancingId === req.requestId}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleAdvanceStatus(req.requestId, 'IN_PROGRESS');
-                            }}
-                            className="text-[11px] !rounded-lg"
-                          >
-                            Demo: In Progress
-                          </Button>
-                        )}
-                        {req.status !== 'COMPLETED' && (
-                          <Button
-                            size="small"
-                            disabled={advancingId === req.requestId}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleAdvanceStatus(req.requestId, 'COMPLETED');
-                            }}
-                            className="text-[11px] !rounded-lg"
-                          >
-                            Demo: Complete
-                          </Button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </Card>
-            );
-          })}
+                  )}
+                </Card>
+              );
+            })}
           </div>
         )}
       </div>
