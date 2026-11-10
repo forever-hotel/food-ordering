@@ -16,6 +16,7 @@ export class ApiSessionsProvider implements SessionsProvider {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'x-foss-client': 'foss-web',
       },
       credentials: 'include',
       body: JSON.stringify({ qrToken: qrToken.trim() }),

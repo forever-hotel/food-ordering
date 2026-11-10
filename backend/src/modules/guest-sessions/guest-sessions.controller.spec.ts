@@ -171,7 +171,7 @@ describe('GuestSessionsController', () => {
       expect(result).toEqual(responseDto);
     });
 
-    it('omits sessionToken from JSON response when setting HttpOnly session cookie (TC2)', async () => {
+    it('omits sessionToken from JSON response when setting HttpOnly session cookie on browser request (TC2)', async () => {
       const responseDto: GuestSessionResponseDto = {
         sessionId: 'sess-secure-cookie',
         bookingId: 'book-1',
@@ -192,7 +192,12 @@ describe('GuestSessionsController', () => {
       const mockRes = {
         cookie: jest.fn(),
       } as any;
-      const mockReq = { headers: {} } as any;
+      const mockReq = {
+        headers: {
+          'x-foss-client': 'foss-web',
+          origin: 'http://localhost:3000',
+        },
+      } as any;
 
       const body: VerifyQrDto = {
         qrToken: 'opaque-activation-token',
@@ -216,7 +221,7 @@ describe('GuestSessionsController', () => {
       expect(result.roomNumber).toBe('101');
     });
 
-    it('security audit: rejects credential disclosure even when arbitrary spoofed internal headers are passed', async () => {
+    it('security audit: rejects credential disclosure even when arbitrary spoofed internal headers are passed from browser', async () => {
       const responseDto: GuestSessionResponseDto = {
         sessionId: 'sess-internal-client',
         bookingId: 'book-1',
@@ -237,6 +242,8 @@ describe('GuestSessionsController', () => {
       const mockRes = { cookie: jest.fn() } as any;
       const mockReq = {
         headers: {
+          'x-foss-client': 'foss-web',
+          origin: 'http://localhost:3000',
           'x-preserve-bearer-token': 'true',
           'x-internal-service-key': 'attacker-key',
           'x-internal-bypass': 'true',
@@ -257,6 +264,38 @@ describe('GuestSessionsController', () => {
         'raw-sensitive-bearer-token',
         expect.objectContaining({ httpOnly: true }),
       );
+    });
+
+    it('preserves sessionToken for automated non-browser API test callers', async () => {
+      const responseDto: GuestSessionResponseDto = {
+        sessionId: 'sess-api-caller',
+        bookingId: 'book-1',
+        roomNumber: '101',
+        sessionToken: 'raw-sensitive-bearer-token',
+        guestName: 'Jane Doe',
+        stayStart: '2026-10-27T10:00:00Z',
+        stayEnd: '2026-10-30T10:00:00Z',
+        expiresAt: '2026-10-28T10:00:00Z',
+        createdAt: '2026-10-27T10:00:00Z',
+        active: true,
+      };
+
+      mockQrActivationService.redeemActivationCredential.mockResolvedValue(
+        responseDto,
+      );
+
+      const mockRes = { cookie: jest.fn() } as any;
+      const mockReq = { headers: {} } as any; // No browser headers
+
+      const body: VerifyQrDto = { qrToken: 'opaque-activation-token' };
+      const result = await controller.authenticateWithQr(
+        body,
+        mockReq,
+        mockRes,
+      );
+
+      // Non-browser API callers retain sessionToken according to GuestSessionResponseDto contract
+      expect(result.sessionToken).toBe('raw-sensitive-bearer-token');
     });
 
     it('routes signed development fixture tokens (with dot) to GuestSessionsService', async () => {

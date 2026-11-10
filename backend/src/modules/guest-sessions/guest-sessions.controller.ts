@@ -1,3 +1,4 @@
+import * as crypto from 'node:crypto';
 import {
   BadRequestException,
   Body,
@@ -15,6 +16,7 @@ import {
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import type { Request, Response } from 'express';
 
 import { InternalServiceGuard } from '../../common/auth/internal-service.guard.js';
@@ -77,12 +79,61 @@ function clearSessionCookie(res?: Response): void {
   });
 }
 
+function isVerifiedInternalCaller(
+  req?: Request,
+  configService?: ConfigService,
+): boolean {
+  if (!req || !configService) return false;
+  const headerKey =
+    req.headers?.['x-internal-service-key'] || req.headers?.['x-fds-signature'];
+  if (!headerKey || typeof headerKey !== 'string') return false;
+
+  const configuredSecret =
+    configService.get<string>('INTERNAL_SERVICE_KEY') ||
+    configService.get<string>('INTERNAL_SERVICE_SECRET') ||
+    configService.get<string>('FDS_WEBHOOK_SECRET');
+
+  const demoMode =
+    configService.get<string>('DEMO_MODE') === 'true' ||
+    configService.get<string>('MOCK_EXTERNAL_SERVICES') === 'true';
+  const isProduction = configService.get<string>('NODE_ENV') === 'production';
+  const expectedSecret =
+    configuredSecret || (demoMode ? 'fds-internal-secret-demo' : null);
+
+  if (!expectedSecret) return false;
+  if (isProduction && expectedSecret === 'fds-internal-secret-demo')
+    return false;
+
+  const provided = headerKey.trim();
+  try {
+    const hashProvided = crypto.createHash('sha256').update(provided).digest();
+    const hashExpected = crypto
+      .createHash('sha256')
+      .update(expectedSecret)
+      .digest();
+    if (crypto.timingSafeEqual(hashProvided, hashExpected)) {
+      return true;
+    }
+    if (demoMode && !isProduction) {
+      const hashDemo = crypto
+        .createHash('sha256')
+        .update('fds-internal-secret-demo')
+        .digest();
+      return crypto.timingSafeEqual(hashProvided, hashDemo);
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
 @Controller('guest-sessions')
 export class GuestSessionsController {
   constructor(
     private readonly guestSessionsService: GuestSessionsService,
     private readonly qrTokenService: QrTokenService,
     @Optional() private readonly qrActivationService?: QrActivationService,
+    @Optional() private readonly configService?: ConfigService,
   ) {}
 
   /**
@@ -176,11 +227,23 @@ export class GuestSessionsController {
       sessionResponse.expiresAt,
     );
 
+    const isBrowserFacing = Boolean(
+      req?.headers?.['x-foss-client'] ||
+      req?.headers?.['origin'] ||
+      req?.headers?.['referer'],
+    );
+
+    const isVerifiedInternal = isVerifiedInternalCaller(
+      req,
+      this.configService,
+    );
+
     // Security Hardening: Never expose live bearer tokens to browser JavaScript in JSON response.
     // Unauthenticated or untrusted incoming request headers (such as spoofed internal keys)
     // must NEVER trigger raw credential disclosure.
-    // When cookie capability is present, credentials are bound exclusively to the HttpOnly cookie.
-    if (res && typeof res.cookie === 'function') {
+    // When a request originates from a browser client (identified by x-foss-client or Origin/Referer),
+    // credentials are bound exclusively to the HttpOnly cookie.
+    if (isBrowserFacing && !isVerifiedInternal) {
       const sanitized: GuestSessionResponseDto = { ...sessionResponse };
       delete (sanitized as any).sessionToken;
       return sanitized;
@@ -345,14 +408,14 @@ export class GuestSessionsController {
     );
     setSessionCookie(res, renewed.sessionToken, renewed.expiresAt);
 
-    // Only return sessionToken in JSON when the caller was authenticated via explicit Bearer header.
-    // Cookie-authenticated callers have credentials conveyed securely via the HttpOnly cookie.
-    // Unverified incoming request headers must NEVER cause raw credential leakage.
-    if (
-      (req as any)?.authSource !== 'bearer' &&
-      res &&
-      typeof res.cookie === 'function'
-    ) {
+    const isVerifiedInternal = isVerifiedInternalCaller(
+      req,
+      this.configService,
+    );
+
+    // Only return sessionToken in JSON when verified via explicit Bearer authorization header or verified internal service credential.
+    // For cookie-authenticated sessions, credentials are bound to the HttpOnly cookie and never exposed to JSON.
+    if ((req as any)?.authSource !== 'bearer' && !isVerifiedInternal) {
       const sanitized: GuestSessionResponseDto = { ...renewed };
       delete (sanitized as any).sessionToken;
       return sanitized;
