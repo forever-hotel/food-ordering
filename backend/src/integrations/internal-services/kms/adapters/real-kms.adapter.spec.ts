@@ -120,6 +120,13 @@ describe('RealKmsAdapter', () => {
       });
 
       expect(result).toEqual(mockOrderResult);
+      const calls = (global.fetch as jest.Mock).mock.calls;
+      const sent = JSON.parse(
+        (calls[calls.length - 1]![1] as RequestInit).body as string,
+      );
+      expect(sent.idempotencyKey).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+      );
       expect(global.fetch).toHaveBeenLastCalledWith(
         'https://kms.internal.foreverhotel.com/api/v1/guest/orders',
         expect.objectContaining({
