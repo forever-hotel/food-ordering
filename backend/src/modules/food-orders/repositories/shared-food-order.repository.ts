@@ -4,6 +4,7 @@ import { DataSource } from 'typeorm';
 import { FossDemoOrderRepository } from './foss-demo-order.repository.js';
 import { FossDemoOrder } from '../entities/foss-demo-order.entity.js';
 import { FoodOrderStatus } from '../enums/food-order-status.enum.js';
+import { kitchenIdempotencyKey } from '../../../integrations/internal-services/kms/adapters/kms-idempotency.js';
 
 /** Must match KMS stableOrderId: shared durable identity, not an in-memory receipt. */
 export function kitchenOrderId(key: string): string {
@@ -72,10 +73,20 @@ export class SharedFoodOrderRepository extends FossDemoOrderRepository {
     });
   }
 
-  override async findByIdempotencyKey(key: string) {
-    const order = await this.findById(kitchenOrderId(key));
-    if (order) order.idempotencyKey = key;
-    return order;
+  override async findByIdempotencyKey(key: string, bookingId?: string) {
+    const normalized = bookingId ? kitchenIdempotencyKey(bookingId, key) : key;
+    const order = await this.findById(kitchenOrderId(normalized));
+    if (order) {
+      order.idempotencyKey = key;
+      return order;
+    }
+    // Retain lookup support for orders created before the opaque-key conversion.
+    if (normalized !== key) {
+      const legacy = await this.findById(kitchenOrderId(key));
+      if (legacy) legacy.idempotencyKey = key;
+      return legacy;
+    }
+    return null;
   }
 
   override async findByBookingAndRoom(booking: string, room: string) {

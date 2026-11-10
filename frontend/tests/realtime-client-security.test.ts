@@ -8,6 +8,54 @@ import {
 } from '../src/lib/realtime/realtime-client.ts';
 
 describe('Realtime Client Security & Fetch-Based SSE Authentication (CIT-04 Phase B)', () => {
+  it('stops retries when the authenticated stream returns 401', async () => {
+    const originalFetch = globalThis.fetch;
+    let calls = 0;
+    globalThis.fetch = (async () => {
+      calls++;
+      return new Response('Session revoked', { status: 401 });
+    }) as typeof fetch;
+    const client = new FossRealtimeClient({
+      apiUrl: 'http://localhost:4300',
+      sessionToken: 'expired',
+      bookingId: 'booking',
+      roomNumber: '101',
+      initialBackoffMs: 1,
+    });
+    try {
+      client.connect();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      assert.equal(client.getStatus(), 'DISCONNECTED');
+      assert.equal(calls, 1);
+    } finally {
+      client.disconnect();
+      globalThis.fetch = originalFetch;
+    }
+  });
+  it('refreshes owner snapshots even when the fallback event buffer is empty', async () => {
+    const originalFetch = globalThis.fetch;
+    let refreshes = 0;
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ events: [] }), { status: 200 })) as typeof fetch;
+    const client = new FossRealtimeClient({
+      apiUrl: 'http://localhost:4300',
+      sessionToken: 'guest',
+      bookingId: 'booking',
+      roomNumber: '101',
+      onRefresh: () => {
+        refreshes++;
+      },
+    });
+    try {
+      // Model a connected socket recovering missed invalidations.
+      Object.assign(client, { status: 'CONNECTED' });
+      await client.pollOnce();
+      assert.equal(refreshes, 1);
+    } finally {
+      client.disconnect();
+      globalThis.fetch = originalFetch;
+    }
+  });
   it('connects to SSE stream via fetch with Authorization header and NO token in URL', async () => {
     let capturedUrl = '';
     let capturedHeaders: Record<string, string> = {};
