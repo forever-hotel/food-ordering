@@ -227,23 +227,17 @@ export class GuestSessionsController {
       sessionResponse.expiresAt,
     );
 
-    const isBrowserFacing = Boolean(
-      req?.headers?.['x-foss-client'] ||
-      req?.headers?.['origin'] ||
-      req?.headers?.['referer'],
-    );
-
     const isVerifiedInternal = isVerifiedInternalCaller(
       req,
       this.configService,
     );
 
-    // Security Hardening: Never expose live bearer tokens to browser JavaScript in JSON response.
-    // Unauthenticated or untrusted incoming request headers (such as spoofed internal keys)
-    // must NEVER trigger raw credential disclosure.
-    // When a request originates from a browser client (identified by x-foss-client or Origin/Referer),
-    // credentials are bound exclusively to the HttpOnly cookie.
-    if (isBrowserFacing && !isVerifiedInternal) {
+    // Security Hardening: Never return the raw sessionToken from the public QR activation endpoint
+    // to unauthenticated callers, regardless of request headers. Browser-header presence or absence
+    // must NEVER be used to determine credential exposure. Authentication is established exclusively
+    // through the secure HttpOnly cookie. Only genuinely trusted internal callers with cryptographically
+    // verified service credentials receive raw bearer tokens.
+    if (!isVerifiedInternal) {
       const sanitized: GuestSessionResponseDto = { ...sessionResponse };
       delete (sanitized as any).sessionToken;
       return sanitized;

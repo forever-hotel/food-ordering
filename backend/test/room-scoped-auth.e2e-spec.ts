@@ -84,7 +84,11 @@ describe('Server-Side Room-Scoped Authorization & IDOR Protection (e2e)', () => 
       .send({ qrToken: qr101 })
       .expect(200);
 
-    room101Token = loginRes.body.sessionToken;
+    const cookieHeader = loginRes.headers['set-cookie'] || [];
+    const match = (
+      Array.isArray(cookieHeader) ? cookieHeader.join(';') : cookieHeader
+    ).match(/foss_guest_session=([^;]+)/);
+    room101Token = match ? match[1] : loginRes.body.sessionToken;
   });
 
   afterAll(async () => {
