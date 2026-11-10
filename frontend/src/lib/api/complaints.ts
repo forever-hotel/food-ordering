@@ -84,6 +84,8 @@ export function generateComplaintIdempotencyKey(): string {
 
 /**
  * Deterministic fallback complaints matching Figure 39 and evaluator expectations.
+ * Retained for automated test fixtures and isolated test harnesses.
+ * Not used as runtime fallback in guest-facing UI to prevent synthetic data contamination.
  */
 export const FALLBACK_COMPLAINTS: ComplaintResponse[] = [
   {

@@ -82,6 +82,15 @@ const mockAdvanceServiceRequestStatusDemo = jest.fn();
 const mockCreateComplaint = jest.fn();
 const mockFetchGuestComplaints = jest.fn();
 const mockAdvanceComplaintStatusDemo = jest.fn();
+const mockFetchGuestOrders = jest.fn();
+
+jest.mock('../../src/lib/api/orders', () => {
+  const actual = jest.requireActual('../../src/lib/api/orders');
+  return {
+    ...actual,
+    fetchGuestOrders: (...args: unknown[]) => mockFetchGuestOrders(...args),
+  };
+});
 
 jest.mock('../../src/lib/api/services', () => {
   const actual = jest.requireActual('../../src/lib/api/services');
@@ -110,11 +119,12 @@ jest.mock('../../src/lib/api/complaints', () => {
   };
 });
 
+let mockDataMode: 'demo' | 'api' = 'demo';
 jest.mock('../../src/lib/data-mode/data-mode', () => {
   const actual = jest.requireActual('../../src/lib/data-mode/data-mode');
   return {
     ...actual,
-    getDataMode: () => 'demo',
+    getDataMode: () => mockDataMode,
   };
 });
 
@@ -617,6 +627,11 @@ describe('ComplaintsTab Component', () => {
     mockAuth = { ...initialMockAuth };
     mockFetchGuestComplaints.mockReset();
     mockCreateComplaint.mockReset();
+    mockDataMode = 'demo';
+    mockFetchGuestOrders.mockReset();
+    mockFetchGuestServiceRequests.mockReset();
+    mockFetchGuestOrders.mockResolvedValue([]);
+    mockFetchGuestServiceRequests.mockResolvedValue([]);
     mockFetchGuestComplaints.mockResolvedValue([mockComplaint]);
     mockCreateComplaint.mockResolvedValue(mockComplaint);
   });
@@ -675,7 +690,7 @@ describe('ComplaintsTab Component', () => {
     });
   });
 
-  it('renders complaints tracking list when empty using fallback complaints', async () => {
+  it('renders complaints tracking empty state when guest has no submitted complaints', async () => {
     mockFetchGuestComplaints.mockResolvedValue([]);
 
     render(
@@ -686,6 +701,7 @@ describe('ComplaintsTab Component', () => {
 
     await waitFor(() => {
       expect(screen.getByText(/Stay Complaints & Tracking/i)).toBeDefined();
+      expect(screen.getByText(/No complaints submitted yet/i)).toBeDefined();
     });
   });
 
@@ -719,6 +735,38 @@ describe('ComplaintsTab Component', () => {
   });
 
   it('handles selecting severity levels and linked references', async () => {
+    mockFetchGuestOrders.mockResolvedValue([
+      {
+        orderId: 'ORD-291',
+        bookingId: 'BK-SRV-1',
+        roomNumber: '401',
+        status: 'DELIVERED',
+        totalAmount: 1500,
+        items: [{ itemId: 'item-1', name: 'Lunch', unitPrice: 1500, quantity: 1 }],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        timeline: [],
+      },
+    ]);
+    mockFetchGuestServiceRequests.mockResolvedValue([
+      {
+        requestId: 'REQ-041',
+        bookingId: 'BK-SRV-1',
+        roomNumber: '401',
+        requestType: 'EXTRA_TOWELS',
+        description: 'Extra towels',
+        status: 'SUBMITTED',
+        priority: 'NORMAL',
+        assignedStaff: null,
+        estimatedCompletionMinutes: 15,
+        taskId: 'task-1',
+        idempotencyKey: 'idemp-1',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        timeline: [],
+      },
+    ]);
+
     render(
       <Wrapper>
         <ComplaintsTab />
@@ -727,6 +775,8 @@ describe('ComplaintsTab Component', () => {
 
     await waitFor(() => {
       expect(screen.getAllByText(/Undercooked chicken/i).length).toBeGreaterThan(0);
+      expect(screen.getByLabelText(/Request #REQ-041/i)).toBeDefined();
+      expect(screen.getByLabelText(/Order #ORD-291/i)).toBeDefined();
     });
 
     // Select Low, Medium, High severity buttons
@@ -743,6 +793,9 @@ describe('ComplaintsTab Component', () => {
     expect(highBtn.getAttribute('aria-pressed')).toBe('true');
 
     // Link reference radio buttons
+    const orderRadio = screen.getByLabelText(/Order #ORD-291/i);
+    fireEvent.click(orderRadio);
+
     const reqRadio = screen.getByLabelText(/Request #REQ-041/i);
     fireEvent.click(reqRadio);
 
@@ -1208,5 +1261,242 @@ describe('ComplaintsTab Component', () => {
     await waitFor(() => {
       expect(screen.getAllByText(/Resolved/i).length).toBeGreaterThan(0);
     });
+  });
+
+  it('initializes form with empty subject, description, LOW severity, and none reference, resetting after submission', async () => {
+    mockCreateComplaint.mockResolvedValue({
+      ...mockComplaint,
+      complaintId: 'CMP-NEW-101',
+    });
+
+    render(
+      <Wrapper>
+        <ComplaintsTab />
+      </Wrapper>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByText(/Undercooked chicken/i).length).toBeGreaterThan(0);
+    });
+
+    // Verify textarea starts empty
+    const descInput = screen.getByPlaceholderText(
+      /Please detail your experience/i,
+    ) as HTMLTextAreaElement;
+    expect(descInput.value).toBe('');
+
+    // Default severity is LOW
+    const lowBtn = screen.getByRole('button', { name: /Low/i });
+    expect(lowBtn.getAttribute('aria-pressed')).toBe('true');
+
+    // Default reference is none
+    const noneRadio = screen.getByLabelText(/No reference/i) as HTMLInputElement;
+    expect(noneRadio.checked).toBe(true);
+
+    // Fill valid description and submit
+    fireEvent.change(descInput, { target: { value: 'Water leaking under the bathroom vanity.' } });
+    const submitBtn = screen.getByRole('button', { name: /Submit Complaint/i });
+    fireEvent.click(submitBtn);
+
+    await waitFor(() => {
+      expect(mockCreateComplaint).toHaveBeenCalledTimes(1);
+    });
+
+    // Form resets back to empty description
+    expect(descInput.value).toBe('');
+  });
+
+  it('filters out orders and service requests belonging to a different room or booking', async () => {
+    mockFetchGuestOrders.mockResolvedValue([
+      {
+        orderId: 'ORD-FOREIGN',
+        bookingId: 'BK-OTHER-ROOM',
+        roomNumber: '999',
+        status: 'DELIVERED',
+        totalAmount: 1500,
+        items: [{ itemId: 'item-1', name: 'Other Guest Meal', unitPrice: 1500, quantity: 1 }],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        timeline: [],
+      },
+      {
+        orderId: 'ORD-VALID',
+        bookingId: 'BK-SRV-1',
+        roomNumber: '401',
+        status: 'DELIVERED',
+        totalAmount: 2200,
+        items: [{ itemId: 'item-2', name: 'Valid Guest Meal', unitPrice: 2200, quantity: 1 }],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        timeline: [],
+      },
+    ]);
+    mockFetchGuestServiceRequests.mockResolvedValue([
+      {
+        requestId: 'REQ-FOREIGN',
+        bookingId: 'BK-OTHER-ROOM',
+        roomNumber: '999',
+        requestType: 'ROOM_CLEANING',
+        status: 'SUBMITTED',
+        priority: 'NORMAL',
+        assignedStaff: null,
+        estimatedCompletionMinutes: 15,
+        taskId: 'task-f',
+        idempotencyKey: 'idemp-f',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        timeline: [],
+      },
+      {
+        requestId: 'REQ-VALID',
+        bookingId: 'BK-SRV-1',
+        roomNumber: '401',
+        requestType: 'EXTRA_TOWELS',
+        status: 'SUBMITTED',
+        priority: 'NORMAL',
+        assignedStaff: null,
+        estimatedCompletionMinutes: 15,
+        taskId: 'task-v',
+        idempotencyKey: 'idemp-v',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        timeline: [],
+      },
+    ]);
+
+    render(
+      <Wrapper>
+        <ComplaintsTab />
+      </Wrapper>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Order #ORD-VALID/i)).toBeDefined();
+      expect(screen.getByLabelText(/Request #REQ-VALID/i)).toBeDefined();
+    });
+
+    expect(screen.queryByLabelText(/ORD-FOREIGN/i)).toBeNull();
+    expect(screen.queryByLabelText(/REQ-FOREIGN/i)).toBeNull();
+  });
+
+  it('hides evaluator status advance buttons in API mode', async () => {
+    mockDataMode = 'api';
+    mockFetchGuestComplaints.mockResolvedValueOnce([
+      {
+        ...mockComplaint,
+        complaintId: 'CMP-API-MODE',
+        status: 'SUBMITTED',
+      },
+    ]);
+
+    render(
+      <Wrapper>
+        <ComplaintsTab />
+      </Wrapper>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('CMP-API-MODE')).toBeDefined();
+    });
+
+    // Evaluator buttons must NOT appear in API mode
+    expect(screen.queryByRole('button', { name: /Start Investigation/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Escalate to GM/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Mark Resolved/i })).toBeNull();
+  });
+
+  it('prevents stale complaint data when session changes during flight (AC2)', async () => {
+    let resolveStaleComplaints: (data: any) => void;
+    const stalePromise = new Promise((resolve) => {
+      resolveStaleComplaints = resolve;
+    });
+
+    mockFetchGuestComplaints.mockImplementationOnce(() => stalePromise);
+    mockFetchGuestOrders.mockResolvedValue([]);
+    mockFetchGuestServiceRequests.mockResolvedValue([]);
+
+    const { rerender } = render(
+      <Wrapper>
+        <ComplaintsTab />
+      </Wrapper>,
+    );
+
+    // Guest logs out or switches to unauthenticated session
+    mockAuth = {
+      ...mockAuth,
+      sessionToken: null,
+      guest: null,
+      status: 'unauthenticated',
+    };
+
+    rerender(
+      <Wrapper>
+        <ComplaintsTab />
+      </Wrapper>,
+    );
+
+    // Now stale promise resolves with Guest 1's complaint
+    await act(async () => {
+      resolveStaleComplaints!([
+        {
+          ...mockComplaint,
+          complaintId: 'CMP-STALE-OLD',
+          subject: 'Stale session complaint',
+        },
+      ]);
+    });
+
+    // The stale complaint must NOT be rendered because session was changed/cleared
+    expect(screen.queryByText('CMP-STALE-OLD')).toBeNull();
+  });
+
+  it('formats reference labels cleanly without duplicate prefixes (AC3)', async () => {
+    mockFetchGuestOrders.mockResolvedValue([
+      {
+        orderId: 'ORD-999',
+        bookingId: 'BK-SRV-1',
+        roomNumber: '401',
+        totalAmount: 2500,
+        items: [{ name: 'Rice Bowl' }],
+      },
+      {
+        orderId: 'order-ORD-888',
+        bookingId: 'BK-SRV-1',
+        roomNumber: '401',
+        totalAmount: 1800,
+        items: [{ name: 'Fruit Salad' }],
+      },
+    ]);
+    mockFetchGuestServiceRequests.mockResolvedValue([
+      {
+        requestId: 'REQ-777',
+        bookingId: 'BK-SRV-1',
+        roomNumber: '401',
+        requestType: 'ROOM_CLEANING',
+      },
+      {
+        requestId: 'req-REQ-666',
+        bookingId: 'BK-SRV-1',
+        roomNumber: '401',
+        requestType: 'EXTRA_TOWELS',
+      },
+    ]);
+
+    render(
+      <Wrapper>
+        <ComplaintsTab />
+      </Wrapper>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Order #ORD-999/i)).toBeDefined();
+      expect(screen.getByLabelText(/Order #ORD-888/i)).toBeDefined();
+      expect(screen.getByLabelText(/Request #REQ-777/i)).toBeDefined();
+      expect(screen.getByLabelText(/Request #REQ-666/i)).toBeDefined();
+    });
+
+    // Verify there are no duplicate prefixes such as ORD-ORD- or REQ-REQ-
+    expect(screen.queryByLabelText(/ORD-ORD-/i)).toBeNull();
+    expect(screen.queryByLabelText(/REQ-REQ-/i)).toBeNull();
   });
 });
