@@ -87,7 +87,7 @@ describe('Server-Side Room-Scoped Authorization & IDOR Protection (e2e)', () => 
     const cookieHeader = loginRes.headers['set-cookie'] || [];
     const match = (
       Array.isArray(cookieHeader) ? cookieHeader.join(';') : cookieHeader
-    ).match(/foss_guest_session=([^;]+)/);
+    ).match(/foss_session=([^;]+)/);
     room101Token = match ? match[1] : loginRes.body.sessionToken;
   });
 

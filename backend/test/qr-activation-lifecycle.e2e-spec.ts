@@ -349,7 +349,7 @@ describe('Secure FDS QR Activation Lifecycle (e2e)', () => {
       expect(redeemRes.headers['set-cookie']).toBeDefined();
       expect(
         redeemRes.headers['set-cookie'].some((c: string) =>
-          c.includes('foss_guest_session='),
+          c.includes('foss_session='),
         ),
       ).toBe(true);
       expect(redeemRes.body.active).toBe(true);

@@ -550,6 +550,6 @@ describe('AuthProvider', () => {
 
     expect(result.current.status).toBe('authenticated');
     expect(result.current.sessionToken).toBe('valid-session-jwt-123');
-    expect(result.current.guest?.guestName).toBe('Jane Context');
+    expect(result.current.guest?.guestName).toBe('Verified Guest');
   });
 });

@@ -2,6 +2,7 @@ import { jest } from '@jest/globals';
 import {
   BadRequestException,
   ConflictException,
+  InternalServerErrorException,
   UnauthorizedException,
 } from '@nestjs/common';
 
@@ -217,7 +218,7 @@ describe('GuestSessionsController', () => {
       expect((result as any).sessionToken).toBeUndefined();
       expect(result.sessionId).toBe('sess-no-headers');
       expect(mockRes.cookie).toHaveBeenCalledWith(
-        'foss_guest_session',
+        'foss_session',
         'raw-sensitive-bearer-token',
         expect.objectContaining({ httpOnly: true, path: '/' }),
       );
@@ -260,7 +261,7 @@ describe('GuestSessionsController', () => {
       // Raw sessionToken must NEVER be exposed in JSON response regardless of spoofed headers
       expect((result as any).sessionToken).toBeUndefined();
       expect(mockRes.cookie).toHaveBeenCalledWith(
-        'foss_guest_session',
+        'foss_session',
         'raw-sensitive-bearer-token',
         expect.objectContaining({ httpOnly: true }),
       );
@@ -302,7 +303,7 @@ describe('GuestSessionsController', () => {
 
       expect((result as any).sessionToken).toBeUndefined();
       expect(mockRes.cookie).toHaveBeenCalledWith(
-        'foss_guest_session',
+        'foss_session',
         'raw-sensitive-bearer-token',
         expect.objectContaining({ httpOnly: true }),
       );
@@ -346,7 +347,7 @@ describe('GuestSessionsController', () => {
 
       // Cookie maxAge must match checkout-bound duration without arbitrary 24h cap
       expect(mockRes.cookie).toHaveBeenCalledWith(
-        'foss_guest_session',
+        'foss_session',
         'raw-sensitive-bearer-token',
         expect.objectContaining({
           httpOnly: true,
@@ -539,6 +540,83 @@ describe('GuestSessionsController', () => {
         }),
       ).rejects.toThrow('QR activation service is unconfigured.');
     });
+
+    it('8. fail-closed regression test: throws InternalServerErrorException when HTTP response cannot set session cookie', async () => {
+      const responseDto: GuestSessionResponseDto = {
+        sessionId: 'sess-cookie-failure',
+        bookingId: 'book-1',
+        roomNumber: '101',
+        sessionToken: 'raw-sensitive-bearer-token',
+        guestName: 'Jane Doe',
+        stayStart: '2026-10-27T10:00:00Z',
+        stayEnd: '2026-10-30T10:00:00Z',
+        expiresAt: '2026-10-30T10:00:00Z',
+        createdAt: '2026-10-27T10:00:00Z',
+        active: true,
+      };
+
+      mockQrActivationService.redeemActivationCredential.mockResolvedValue(
+        responseDto,
+      );
+
+      const mockReq = { headers: {} } as any;
+      const nonCookieRes = {} as any;
+
+      await expect(
+        controller.authenticateWithQr(
+          { qrToken: 'opaque-activation-token' },
+          mockReq,
+          nonCookieRes,
+        ),
+      ).rejects.toThrow(InternalServerErrorException);
+    });
+
+    it('9. sets Secure attribute alongside HttpOnly and SameSite=Lax when COOKIE_SECURE=true', async () => {
+      const prevSecure = process.env.COOKIE_SECURE;
+      process.env.COOKIE_SECURE = 'true';
+      try {
+        const responseDto: GuestSessionResponseDto = {
+          sessionId: 'sess-secure-cookie',
+          bookingId: 'book-1',
+          roomNumber: '101',
+          sessionToken: 'secure-session-token',
+          guestName: 'Jane Doe',
+          stayStart: '2026-10-27T10:00:00Z',
+          stayEnd: '2026-10-30T10:00:00Z',
+          expiresAt: '2026-10-30T10:00:00Z',
+          createdAt: '2026-10-27T10:00:00Z',
+          active: true,
+        };
+        mockQrActivationService.redeemActivationCredential.mockResolvedValue(
+          responseDto,
+        );
+
+        const mockRes = { cookie: jest.fn() } as any;
+        const mockReq = { headers: {} } as any;
+        await controller.authenticateWithQr(
+          { qrToken: 'opaque-activation-token' },
+          mockReq,
+          mockRes,
+        );
+
+        expect(mockRes.cookie).toHaveBeenCalledWith(
+          'foss_session',
+          'secure-session-token',
+          expect.objectContaining({
+            httpOnly: true,
+            secure: true,
+            sameSite: 'lax',
+            path: '/',
+          }),
+        );
+      } finally {
+        if (prevSecure === undefined) {
+          delete process.env.COOKIE_SECURE;
+        } else {
+          process.env.COOKIE_SECURE = prevSecure;
+        }
+      }
+    });
   });
 
   describe('getMe', () => {
@@ -577,7 +655,7 @@ describe('GuestSessionsController', () => {
       const result = controller.getMe(guestContext, req, res);
 
       expect(res.cookie).toHaveBeenCalledWith(
-        'foss_guest_session',
+        'foss_session',
         'valid-session-token',
         expect.objectContaining({
           httpOnly: true,
@@ -644,6 +722,13 @@ describe('GuestSessionsController', () => {
         'bearer-token-123',
       );
       expect(res.clearCookie).toHaveBeenCalledWith(
+        'foss_session',
+        expect.objectContaining({
+          httpOnly: true,
+          path: '/',
+        }),
+      );
+      expect(res.clearCookie).toHaveBeenCalledWith(
         'foss_guest_session',
         expect.objectContaining({
           httpOnly: true,
@@ -681,7 +766,7 @@ describe('GuestSessionsController', () => {
         'current-session-token',
       );
       expect(res.cookie).toHaveBeenCalledWith(
-        'foss_guest_session',
+        'foss_session',
         'renewed-token-xyz',
         expect.objectContaining({
           httpOnly: true,

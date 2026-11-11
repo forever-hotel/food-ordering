@@ -7,6 +7,7 @@ import {
   Header,
   HttpCode,
   HttpStatus,
+  InternalServerErrorException,
   Optional,
   Param,
   Post,
@@ -45,8 +46,8 @@ function setSessionCookie(
   res?: Response,
   token?: string,
   expiresAt?: string | Date,
-): void {
-  if (!res || !token || typeof res.cookie !== 'function') return;
+): boolean {
+  if (!res || !token || typeof res.cookie !== 'function') return false;
   const isSecure =
     process.env.NODE_ENV === 'production' ||
     process.env.COOKIE_SECURE === 'true';
@@ -55,13 +56,14 @@ function setSessionCookie(
   const maxAge = expiresAt
     ? Math.max(0, new Date(expiresAt).getTime() - Date.now())
     : 24 * 60 * 60 * 1000;
-  res.cookie('foss_guest_session', token, {
+  res.cookie('foss_session', token, {
     httpOnly: true,
     secure: isSecure,
     sameSite,
     path: '/',
     maxAge,
   });
+  return true;
 }
 
 function clearSessionCookie(res?: Response): void {
@@ -71,12 +73,14 @@ function clearSessionCookie(res?: Response): void {
     process.env.COOKIE_SECURE === 'true';
   const sameSite =
     (process.env.COOKIE_SAMESITE as 'lax' | 'strict' | 'none') || 'lax';
-  res.clearCookie('foss_guest_session', {
+  const cookieOpts = {
     httpOnly: true,
     secure: isSecure,
     sameSite,
     path: '/',
-  });
+  };
+  res.clearCookie('foss_session', cookieOpts);
+  res.clearCookie('foss_guest_session', cookieOpts);
 }
 
 function isVerifiedInternalCaller(
@@ -221,16 +225,25 @@ export class GuestSessionsController {
         await this.guestSessionsService.authenticateWithQr(token);
     }
 
-    setSessionCookie(
-      res,
-      sessionResponse.sessionToken,
-      sessionResponse.expiresAt,
-    );
-
     const isVerifiedInternal = isVerifiedInternalCaller(
       req,
       this.configService,
     );
+
+    const cookieSet = setSessionCookie(
+      res,
+      sessionResponse?.sessionToken,
+      sessionResponse?.expiresAt,
+    );
+
+    if (
+      !sessionResponse?.sessionToken ||
+      ((req || res) && !cookieSet && !isVerifiedInternal)
+    ) {
+      throw new InternalServerErrorException(
+        'Session cookie could not be established.',
+      );
+    }
 
     // Security Hardening: Never return the raw sessionToken from the public QR activation endpoint
     // to unauthenticated callers, regardless of request headers. Browser-header presence or absence

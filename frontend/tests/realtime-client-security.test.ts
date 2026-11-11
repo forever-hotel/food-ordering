@@ -390,4 +390,107 @@ describe('Realtime Client Security & Fetch-Based SSE Authentication (CIT-04 Phas
     assert.equal(clientA.getStatus(), 'DISCONNECTED');
     assert.equal(clientB.getStatus(), 'DISCONNECTED');
   });
+
+  it('ignores late 401 responses after disconnect() so stale clients cannot clear a fresh QR session', async () => {
+    const originalFetch = globalThis.fetch;
+    const originalWindow = (globalThis as any).window;
+    const dispatchedEvents: any[] = [];
+    let resolveInFlight!: (value: Response) => void;
+
+    (globalThis as any).window = {
+      dispatchEvent: (event: any) => {
+        dispatchedEvents.push(event);
+        return true;
+      },
+    };
+    globalThis.fetch = (async () =>
+      new Promise<Response>((resolve) => {
+        resolveInFlight = resolve;
+      })) as typeof fetch;
+
+    const staleClient = new FossRealtimeClient({
+      apiUrl: 'http://localhost:4300',
+      sessionToken: '__COOKIE_SESSION__',
+      bookingId: 'old-booking',
+      roomNumber: '101',
+      initialBackoffMs: 10,
+    });
+
+    try {
+      staleClient.connect();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Disconnect old client right before a new QR login begins, then resolve in-flight fetch with 401
+      staleClient.disconnect();
+      resolveInFlight(new Response('Unauthorized', { status: 401 }));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      assert.equal(dispatchedEvents.length, 0);
+    } finally {
+      staleClient.disconnect();
+      globalThis.fetch = originalFetch;
+      if (originalWindow === undefined) {
+        delete (globalThis as any).window;
+      } else {
+        (globalThis as any).window = originalWindow;
+      }
+    }
+  });
+
+  it('ignores late pollOnce() 401 after disconnect() and tags active expiry events with stay scope', async () => {
+    const originalFetch = globalThis.fetch;
+    const originalWindow = (globalThis as any).window;
+    const dispatchedEvents: any[] = [];
+
+    (globalThis as any).window = {
+      dispatchEvent: (event: any) => {
+        dispatchedEvents.push(event);
+        return true;
+      },
+    };
+
+    let resolvePoll!: (value: Response) => void;
+    globalThis.fetch = (async () =>
+      new Promise<Response>((resolve) => {
+        resolvePoll = resolve;
+      })) as typeof fetch;
+
+    const stalePollClient = new FossRealtimeClient({
+      apiUrl: 'http://localhost:4300',
+      sessionToken: '__COOKIE_SESSION__',
+      bookingId: 'old-booking',
+      roomNumber: '101',
+    });
+
+    try {
+      const pendingPoll = stalePollClient.pollOnce();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      stalePollClient.disconnect();
+      resolvePoll(new Response('Unauthorized', { status: 401 }));
+      await assert.rejects(() => pendingPoll, /401/);
+      assert.equal(dispatchedEvents.length, 0);
+
+      // Active client reporting 401 dispatches booking/room scoped event
+      globalThis.fetch = (async () =>
+        new Response('Unauthorized', { status: 401 })) as typeof fetch;
+      const activeClient = new FossRealtimeClient({
+        apiUrl: 'http://localhost:4300',
+        sessionToken: '__COOKIE_SESSION__',
+        bookingId: 'active-booking',
+        roomNumber: '202',
+      });
+      await assert.rejects(() => activeClient.pollOnce(), /401/);
+      assert.equal(dispatchedEvents.length, 1);
+      assert.equal(dispatchedEvents[0].detail.bookingId, 'active-booking');
+      assert.equal(dispatchedEvents[0].detail.roomNumber, '202');
+    } finally {
+      stalePollClient.disconnect();
+      globalThis.fetch = originalFetch;
+      if (originalWindow === undefined) {
+        delete (globalThis as any).window;
+      } else {
+        (globalThis as any).window = originalWindow;
+      }
+    }
+  });
 });

@@ -258,15 +258,14 @@ describe('GuestAuthGuard', () => {
     ).not.toHaveBeenCalled();
   });
 
-  it('allows access and attaches guest context for valid foss_guest_session in Cookie header', async () => {
+  it('allows access and attaches guest context for valid foss_session in Cookie header', async () => {
     mockGuestSessionsService.validateSessionToken.mockResolvedValue({
       session: mockSessionRecord as any,
       stay: mockBookingVerification,
     });
 
     const context = createMockContext({
-      cookie:
-        'other_cookie=xyz; foss_guest_session=cookie-session-token; tracking=1',
+      cookie: 'other_cookie=xyz; foss_session=cookie-session-token; tracking=1',
     });
 
     const result = await guard.canActivate(context);
@@ -280,7 +279,45 @@ describe('GuestAuthGuard', () => {
     expect(request.guest).toEqual(mockGuestContext);
   });
 
-  it('allows access for valid foss_guest_session in request.cookies', async () => {
+  it('prefers foss_session over legacy foss_guest_session when both cookies exist', async () => {
+    mockGuestSessionsService.validateSessionToken.mockResolvedValue({
+      session: mockSessionRecord as any,
+      stay: mockBookingVerification,
+    });
+
+    const context = createMockContext({
+      cookie:
+        'foss_guest_session=legacy-cookie-token; foss_session=primary-gateway-token',
+    });
+
+    const result = await guard.canActivate(context);
+
+    expect(result).toBe(true);
+    expect(mockGuestSessionsService.validateSessionToken).toHaveBeenCalledWith(
+      'primary-gateway-token',
+    );
+  });
+
+  it('retains fallback support for legacy foss_guest_session in Cookie header', async () => {
+    mockGuestSessionsService.validateSessionToken.mockResolvedValue({
+      session: mockSessionRecord as any,
+      stay: mockBookingVerification,
+    });
+
+    const context = createMockContext({
+      cookie:
+        'other_cookie=xyz; foss_guest_session=legacy-session-token; tracking=1',
+    });
+
+    const result = await guard.canActivate(context);
+
+    expect(result).toBe(true);
+    expect(mockGuestSessionsService.validateSessionToken).toHaveBeenCalledWith(
+      'legacy-session-token',
+    );
+  });
+
+  it('allows access for valid foss_session in request.cookies', async () => {
     mockGuestSessionsService.validateSessionToken.mockResolvedValue({
       session: mockSessionRecord as any,
       stay: mockBookingVerification,
@@ -291,7 +328,7 @@ describe('GuestAuthGuard', () => {
         getRequest: () => ({
           headers: {},
           query: {},
-          cookies: { foss_guest_session: 'parsed-cookie-token' },
+          cookies: { foss_session: 'parsed-cookie-token' },
           path: '/guest-sessions/me',
         }),
       }),
