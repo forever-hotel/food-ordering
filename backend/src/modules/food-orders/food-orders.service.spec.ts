@@ -485,7 +485,24 @@ describe('FoodOrdersService', () => {
   });
 
   describe('advanceOrderStatus() [DEMO_MODE]', () => {
-    it('advances order status when DEMO_MODE is true', async () => {
+    it('rejects status advancement by default when ENABLE_ORDER_DEMO_SIMULATION is unset or false', async () => {
+      await expect(
+        service.advanceOrderStatus(
+          sampleGuest,
+          'order-demo-001',
+          FoodOrderStatus.READY,
+        ),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('advances order status when ENABLE_ORDER_DEMO_SIMULATION and DEMO_MODE are explicitly true in test/dev', async () => {
+      mockConfigService.get.mockImplementation((key: string) => {
+        if (key === 'ENABLE_ORDER_DEMO_SIMULATION') return 'true';
+        if (key === 'DEMO_MODE') return 'true';
+        if (key === 'MOCK_EXTERNAL_SERVICES') return 'true';
+        return undefined;
+      });
+
       const order = new FossDemoOrder();
       order.orderId = 'order-demo-001';
       order.bookingId = sampleGuest.bookingId;
@@ -518,7 +535,11 @@ describe('FoodOrdersService', () => {
     });
 
     it('rejects status advancement when DEMO_MODE is false with 403 Forbidden', async () => {
-      mockConfigService.get.mockReturnValueOnce('false');
+      mockConfigService.get.mockImplementation((key: string) => {
+        if (key === 'ENABLE_ORDER_DEMO_SIMULATION') return 'true';
+        if (key === 'DEMO_MODE') return 'false';
+        return undefined;
+      });
 
       await expect(
         service.advanceOrderStatus(
@@ -529,7 +550,12 @@ describe('FoodOrdersService', () => {
       ).rejects.toThrow(ForbiddenException);
     });
 
-    it('strictly rejects status advancement when NODE_ENV is production even if DEMO_MODE is true', async () => {
+    it('strictly rejects status advancement when NODE_ENV is production even if flags are true', async () => {
+      mockConfigService.get.mockImplementation((key: string) => {
+        if (key === 'ENABLE_ORDER_DEMO_SIMULATION') return 'true';
+        if (key === 'DEMO_MODE') return 'true';
+        return undefined;
+      });
       process.env.NODE_ENV = 'production';
       try {
         await expect(
@@ -544,7 +570,44 @@ describe('FoodOrdersService', () => {
       }
     });
 
+    it('strictly rejects status advancement in staging or when SHARED_DATABASE_MODE is true', async () => {
+      mockConfigService.get.mockImplementation((key: string) => {
+        if (key === 'ENABLE_ORDER_DEMO_SIMULATION') return 'true';
+        if (key === 'DEMO_MODE') return 'true';
+        if (key === 'DEPLOYMENT_ENV') return 'staging';
+        return undefined;
+      });
+
+      await expect(
+        service.advanceOrderStatus(
+          sampleGuest,
+          'order-demo-001',
+          FoodOrderStatus.READY,
+        ),
+      ).rejects.toThrow(ForbiddenException);
+
+      mockConfigService.get.mockImplementation((key: string) => {
+        if (key === 'ENABLE_ORDER_DEMO_SIMULATION') return 'true';
+        if (key === 'DEMO_MODE') return 'true';
+        if (key === 'SHARED_DATABASE_MODE') return 'true';
+        return undefined;
+      });
+
+      await expect(
+        service.advanceOrderStatus(
+          sampleGuest,
+          'order-demo-001',
+          FoodOrderStatus.READY,
+        ),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
     it('throws NotFoundException if order to advance does not exist', async () => {
+      mockConfigService.get.mockImplementation((key: string) => {
+        if (key === 'ENABLE_ORDER_DEMO_SIMULATION') return 'true';
+        if (key === 'DEMO_MODE') return 'true';
+        return undefined;
+      });
       mockOrderRepository.findById.mockResolvedValue(null);
 
       await expect(
@@ -557,6 +620,11 @@ describe('FoodOrdersService', () => {
     });
 
     it('throws ForbiddenException if order belongs to a different room or booking', async () => {
+      mockConfigService.get.mockImplementation((key: string) => {
+        if (key === 'ENABLE_ORDER_DEMO_SIMULATION') return 'true';
+        if (key === 'DEMO_MODE') return 'true';
+        return undefined;
+      });
       const foreignOrder = new FossDemoOrder();
       foreignOrder.orderId = 'order-foreign';
       foreignOrder.bookingId = 'booking-foreign';
@@ -574,6 +642,11 @@ describe('FoodOrdersService', () => {
     });
 
     it('sets estimatedDeliveryMinutes to 5 when advanced to READY', async () => {
+      mockConfigService.get.mockImplementation((key: string) => {
+        if (key === 'ENABLE_ORDER_DEMO_SIMULATION') return 'true';
+        if (key === 'DEMO_MODE') return 'true';
+        return undefined;
+      });
       const order = new FossDemoOrder();
       order.orderId = 'order-ready-test';
       order.bookingId = sampleGuest.bookingId;
@@ -600,6 +673,11 @@ describe('FoodOrdersService', () => {
     });
 
     it('sets estimatedDeliveryMinutes to 0 when advanced to DELIVERED', async () => {
+      mockConfigService.get.mockImplementation((key: string) => {
+        if (key === 'ENABLE_ORDER_DEMO_SIMULATION') return 'true';
+        if (key === 'DEMO_MODE') return 'true';
+        return undefined;
+      });
       const order = new FossDemoOrder();
       order.orderId = 'order-delivered-test';
       order.bookingId = sampleGuest.bookingId;

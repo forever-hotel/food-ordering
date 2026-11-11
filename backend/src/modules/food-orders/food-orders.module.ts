@@ -6,6 +6,8 @@ import { GuestSessionsModule } from '../guest-sessions/guest-sessions.module.js'
 import { MenuModule } from '../menu/menu.module.js';
 import { FoodOrdersController } from './food-orders.controller.js';
 import { FoodOrdersService } from './food-orders.service.js';
+import { OrderDemoSimulationGuard } from './demo-simulation/order-demo-simulation.guard.js';
+import { OrderDemoSimulationService } from './demo-simulation/order-demo-simulation.service.js';
 import { FossDemoOrderRepository } from './repositories/foss-demo-order.repository.js';
 import { SharedFoodOrderRepository } from './repositories/shared-food-order.repository.js';
 import { ConfigService } from '@nestjs/config';
@@ -32,6 +34,8 @@ import { DataSource } from 'typeorm';
         return new SharedFoodOrderRepository(database);
       },
     },
+    OrderDemoSimulationGuard,
+    OrderDemoSimulationService,
     FoodOrdersService,
   ],
   exports: [FoodOrdersService, FossDemoOrderRepository],

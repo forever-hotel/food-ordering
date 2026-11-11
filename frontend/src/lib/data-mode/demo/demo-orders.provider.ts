@@ -4,6 +4,7 @@ import type {
   CreateFoodOrderPayload,
   FoodOrderStatus,
 } from '../../../types/orders.ts';
+import { isOrderDemoSimulationEnabled } from '../data-mode.ts';
 import { DemoStateStore } from './demo-state-store.ts';
 
 export class DemoOrdersProvider implements OrdersProvider {
@@ -45,6 +46,9 @@ export class DemoOrdersProvider implements OrdersProvider {
     orderId: string,
     newStatus: FoodOrderStatus,
   ): Promise<FoodOrderResponse> {
+    if (!isOrderDemoSimulationEnabled()) {
+      throw new Error('Order demo status simulation is disabled in this environment.');
+    }
     const stay = this.store.resolveStayByToken(sessionToken);
     return this.store.advanceOrderStatus(stay, orderId, newStatus);
   }

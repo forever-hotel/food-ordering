@@ -24,6 +24,12 @@ if (isProdOrStaging && process.env.NEXT_PUBLIC_DATA_MODE === 'demo') {
   );
 }
 
+if (isProdOrStaging && process.env.NEXT_PUBLIC_ENABLE_ORDER_DEMO_SIMULATION === 'true') {
+  throw new Error(
+    `SECURITY VIOLATION: ${deploymentEnv.toUpperCase()} build cannot be compiled with NEXT_PUBLIC_ENABLE_ORDER_DEMO_SIMULATION=true.`,
+  );
+}
+
 if (
   (deploymentEnv === 'preview' || deploymentEnv === 'demo-preview') &&
   process.env.NEXT_PUBLIC_DATA_MODE === 'demo' &&

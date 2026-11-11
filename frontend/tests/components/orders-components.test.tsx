@@ -187,9 +187,26 @@ describe('OrderConfirmation Component', () => {
 });
 
 describe('OrderStatusTracker Component', () => {
+  const prevDemoSimFlag = process.env.NEXT_PUBLIC_ENABLE_ORDER_DEMO_SIMULATION;
+  const prevDeployEnv = process.env.NEXT_PUBLIC_DEPLOYMENT_ENV;
+  const prevDataMode = process.env.NEXT_PUBLIC_DATA_MODE;
+
   beforeEach(() => {
     mockFetchGuestOrderById.mockReset();
     mockCancelFoodOrder.mockReset();
+    mockAdvanceOrderStatusDemo.mockReset();
+    delete process.env.NEXT_PUBLIC_ENABLE_ORDER_DEMO_SIMULATION;
+    process.env.NEXT_PUBLIC_DEPLOYMENT_ENV = 'development';
+    process.env.NEXT_PUBLIC_DATA_MODE = 'api';
+  });
+
+  afterEach(() => {
+    if (prevDemoSimFlag === undefined) delete process.env.NEXT_PUBLIC_ENABLE_ORDER_DEMO_SIMULATION;
+    else process.env.NEXT_PUBLIC_ENABLE_ORDER_DEMO_SIMULATION = prevDemoSimFlag;
+    if (prevDeployEnv === undefined) delete process.env.NEXT_PUBLIC_DEPLOYMENT_ENV;
+    else process.env.NEXT_PUBLIC_DEPLOYMENT_ENV = prevDeployEnv;
+    if (prevDataMode === undefined) delete process.env.NEXT_PUBLIC_DATA_MODE;
+    else process.env.NEXT_PUBLIC_DATA_MODE = prevDataMode;
   });
 
   it('renders tracker skeleton then order timeline and handles order cancellation', async () => {
@@ -273,7 +290,42 @@ describe('OrderStatusTracker Component', () => {
     });
   });
 
-  it('handles advancing order status in demo mode across IN_PREPARATION, READY, DELIVERED and offline fallback', async () => {
+  it('hides demo simulation controls by default in development and strictly in production', async () => {
+    mockFetchGuestOrderById.mockResolvedValue(mockOrder);
+
+    const { rerender } = render(
+      <Wrapper>
+        <OrderStatusTracker orderId="ORD-789" onBack={() => {}} />
+      </Wrapper>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/Lamprais Special/i)).toBeDefined();
+    });
+
+    expect(screen.queryByText(/DEMO SIMULATION: ADVANCE STATUS/i)).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Ready$/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Delivered$/i })).toBeNull();
+
+    // Production environment must never render demo simulation even if flag is misconfigured
+    process.env.NEXT_PUBLIC_DEPLOYMENT_ENV = 'production';
+    process.env.NEXT_PUBLIC_ENABLE_ORDER_DEMO_SIMULATION = 'true';
+
+    rerender(
+      <Wrapper>
+        <OrderStatusTracker orderId="ORD-789" onBack={() => {}} />
+      </Wrapper>,
+    );
+
+    expect(screen.queryByText(/DEMO SIMULATION: ADVANCE STATUS/i)).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Ready$/i })).toBeNull();
+  });
+
+  it('handles advancing order status in demo mode across IN_PREPARATION, READY, DELIVERED and offline fallback when explicitly enabled in dev', async () => {
+    process.env.NEXT_PUBLIC_ENABLE_ORDER_DEMO_SIMULATION = 'true';
+    process.env.NEXT_PUBLIC_DEPLOYMENT_ENV = 'development';
+    process.env.NEXT_PUBLIC_DATA_MODE = 'demo';
+
     mockFetchGuestOrderById.mockResolvedValue(mockOrder);
     mockAdvanceOrderStatusDemo.mockResolvedValueOnce({
       ...mockOrder,
@@ -302,7 +354,7 @@ describe('OrderStatusTracker Component', () => {
       );
     });
 
-    // Offline simulation fallback when API throws
+    // Offline simulation fallback when API throws in demo data mode
     mockAdvanceOrderStatusDemo.mockRejectedValueOnce(new Error('Connection lost'));
     const readyBtn = screen.getByRole('button', { name: /^Ready$/i });
     fireEvent.click(readyBtn);
@@ -312,6 +364,33 @@ describe('OrderStatusTracker Component', () => {
         0,
       );
     });
+  });
+
+  it('does not fake local order status when demo call fails in API mode', async () => {
+    process.env.NEXT_PUBLIC_ENABLE_ORDER_DEMO_SIMULATION = 'true';
+    process.env.NEXT_PUBLIC_DEPLOYMENT_ENV = 'development';
+    process.env.NEXT_PUBLIC_DATA_MODE = 'api';
+
+    mockFetchGuestOrderById.mockResolvedValue(mockOrder);
+    mockAdvanceOrderStatusDemo.mockRejectedValueOnce(new Error('Forbidden in this environment'));
+
+    render(
+      <Wrapper>
+        <OrderStatusTracker orderId="ORD-789" onBack={() => {}} />
+      </Wrapper>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/Lamprais Special/i)).toBeDefined();
+    });
+
+    const readyBtn = screen.getByRole('button', { name: /^Ready$/i });
+    fireEvent.click(readyBtn);
+
+    await waitFor(() => {
+      expect(screen.getAllByText(/Forbidden in this environment/i).length).toBeGreaterThan(0);
+    });
+    expect(screen.queryByText(/Demo simulation: status set to READY/i)).toBeNull();
   });
 
   it('renders allergy notes, back button, and handles cancellation failure', async () => {
@@ -717,6 +796,9 @@ describe('OrdersTab Component', () => {
   });
 
   it('handles OrderStatusTracker cancel modal dismissal, createdAt fallback countdown, and delivered advancement', async () => {
+    process.env.NEXT_PUBLIC_ENABLE_ORDER_DEMO_SIMULATION = 'true';
+    process.env.NEXT_PUBLIC_DEPLOYMENT_ENV = 'development';
+
     const recentOrder: FoodOrderResponse = {
       ...mockOrder,
       orderId: 'ORD-RECENT-1',
