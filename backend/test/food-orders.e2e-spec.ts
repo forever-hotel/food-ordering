@@ -16,6 +16,8 @@ import { GuestAuthGuard } from '../src/modules/guest-sessions/guards/guest-auth.
 import { GuestSessionsService } from '../src/modules/guest-sessions/services/guest-sessions.service.js';
 import { FoodOrdersController } from '../src/modules/food-orders/food-orders.controller.js';
 import { FoodOrdersService } from '../src/modules/food-orders/food-orders.service.js';
+import { OrderDemoSimulationGuard } from '../src/modules/food-orders/demo-simulation/order-demo-simulation.guard.js';
+import { OrderDemoSimulationService } from '../src/modules/food-orders/demo-simulation/order-demo-simulation.service.js';
 import { FossDemoOrder } from '../src/modules/food-orders/entities/foss-demo-order.entity.js';
 import { FossDemoOrderRepository } from '../src/modules/food-orders/repositories/foss-demo-order.repository.js';
 import { HotelClockService } from '../src/modules/menu/services/hotel-clock.service.js';
@@ -104,12 +106,20 @@ describe('Food Orders Atomicity, Idempotency & 10-Minute Cancellation (e2e)', ()
       imports: [
         ConfigModule.forRoot({
           isGlobal: true,
-          load: [() => ({ DEMO_MODE: 'true', MOCK_EXTERNAL_SERVICES: 'true' })],
+          load: [
+            () => ({
+              DEMO_MODE: 'true',
+              MOCK_EXTERNAL_SERVICES: 'true',
+              ENABLE_ORDER_DEMO_SIMULATION: 'true',
+            }),
+          ],
         }),
       ],
       controllers: [FoodOrdersController],
       providers: [
         FoodOrdersService,
+        OrderDemoSimulationGuard,
+        OrderDemoSimulationService,
         MealWindowService,
         {
           provide: HotelClockService,
@@ -634,6 +644,163 @@ describe('Food Orders Atomicity, Idempotency & 10-Minute Cancellation (e2e)', ()
       expect(unauthorizedCancel.body.message).toContain(
         'permission to cancel orders from another room',
       );
+    });
+
+    it('blocks direct POST /food-orders/:id/status when ENABLE_ORDER_DEMO_SIMULATION is disabled by default while keeping normal order flows working', async () => {
+      const defaultModule: TestingModule = await Test.createTestingModule({
+        imports: [
+          ConfigModule.forRoot({
+            isGlobal: true,
+            load: [
+              () => ({
+                NODE_ENV: 'development',
+                DEMO_MODE: 'true',
+                MOCK_EXTERNAL_SERVICES: 'true',
+              }),
+            ],
+          }),
+        ],
+        controllers: [FoodOrdersController],
+        providers: [
+          FoodOrdersService,
+          OrderDemoSimulationGuard,
+          OrderDemoSimulationService,
+          MealWindowService,
+          { provide: HotelClockService, useValue: clockService },
+          { provide: KMS_PROVIDER, useValue: mockKms },
+          {
+            provide: FossDemoOrderRepository,
+            useValue: {
+              findById: async (id: string) => inMemoryOrders.get(id) || null,
+              findByIdempotencyKey: async (key: string) =>
+                Array.from(inMemoryOrders.values()).find(
+                  (o) => o.idempotencyKey === key,
+                ) || null,
+              findByBookingAndRoom: async (booking: string, room: string) =>
+                Array.from(inMemoryOrders.values()).filter(
+                  (o) => o.bookingId === booking && o.roomNumber === room,
+                ),
+              save: async (order: FossDemoOrder) => {
+                inMemoryOrders.set(order.orderId, order);
+                return order;
+              },
+            },
+          },
+          {
+            provide: GuestSessionsService,
+            useValue: {
+              validateSessionToken: async () => ({
+                session: {
+                  sessionId: 'session-uuid-101',
+                  bookingId: 'booking-101',
+                  roomNumber: '101',
+                  isActive: true,
+                },
+                stay: {
+                  guestName: 'Jane Doe',
+                  stayStart: new Date(),
+                  stayEnd: new Date(Date.now() + 86400000),
+                },
+              }),
+            },
+          },
+          GuestAuthGuard,
+        ],
+      }).compile();
+
+      const defaultApp = defaultModule.createNestApplication();
+      await defaultApp.init();
+      try {
+        clockService.setFixedTime(new Date('2026-10-28T07:30:00.000Z'));
+        const placed = await request(defaultApp.getHttpServer())
+          .post('/food-orders')
+          .set('Authorization', `Bearer ${activeTokenRoom101}`)
+          .set('Idempotency-Key', 'idemp-default-disabled-001')
+          .send({ items: [{ menuItemId: 'menu-item-001', quantity: 1 }] });
+        expect(placed.status).toBe(201);
+
+        const blocked = await request(defaultApp.getHttpServer())
+          .post(`/food-orders/${placed.body.orderId}/status`)
+          .set('Authorization', `Bearer ${activeTokenRoom101}`)
+          .send({ status: 'READY' });
+        expect(blocked.status).toBe(403);
+
+        const fetched = await request(defaultApp.getHttpServer())
+          .get(`/food-orders/${placed.body.orderId}`)
+          .set('Authorization', `Bearer ${activeTokenRoom101}`);
+        expect(fetched.status).toBe(200);
+        expect(fetched.body.status).toBe('PLACED');
+
+        const cancelled = await request(defaultApp.getHttpServer())
+          .post(`/food-orders/${placed.body.orderId}/cancel`)
+          .set('Authorization', `Bearer ${activeTokenRoom101}`)
+          .send({ reason: 'Changed mind' });
+        expect(cancelled.status).toBe(200);
+        expect(cancelled.body.status).toBe('CANCELLED');
+      } finally {
+        await defaultApp.close();
+      }
+    });
+
+    it('blocks direct POST /food-orders/:id/status in production even when ENABLE_ORDER_DEMO_SIMULATION=true', async () => {
+      const prodModule: TestingModule = await Test.createTestingModule({
+        imports: [
+          ConfigModule.forRoot({
+            isGlobal: true,
+            load: [
+              () => ({
+                NODE_ENV: 'production',
+                DEMO_MODE: 'true',
+                ENABLE_ORDER_DEMO_SIMULATION: 'true',
+              }),
+            ],
+          }),
+        ],
+        controllers: [FoodOrdersController],
+        providers: [
+          FoodOrdersService,
+          OrderDemoSimulationGuard,
+          OrderDemoSimulationService,
+          MealWindowService,
+          { provide: HotelClockService, useValue: clockService },
+          { provide: KMS_PROVIDER, useValue: mockKms },
+          {
+            provide: FossDemoOrderRepository,
+            useValue: new FossDemoOrderRepository(),
+          },
+          {
+            provide: GuestSessionsService,
+            useValue: {
+              validateSessionToken: async () => ({
+                session: {
+                  sessionId: 'session-uuid-101',
+                  bookingId: 'booking-101',
+                  roomNumber: '101',
+                  isActive: true,
+                },
+                stay: {
+                  guestName: 'Jane Doe',
+                  stayStart: new Date(),
+                  stayEnd: new Date(Date.now() + 86400000),
+                },
+              }),
+            },
+          },
+          GuestAuthGuard,
+        ],
+      }).compile();
+
+      const prodApp = prodModule.createNestApplication();
+      await prodApp.init();
+      try {
+        const res = await request(prodApp.getHttpServer())
+          .post('/food-orders/order-any/status')
+          .set('Authorization', `Bearer ${activeTokenRoom101}`)
+          .send({ status: 'DELIVERED' });
+        expect(res.status).toBe(403);
+      } finally {
+        await prodApp.close();
+      }
     });
   });
 });

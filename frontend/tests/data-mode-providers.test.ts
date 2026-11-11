@@ -135,25 +135,39 @@ describe('Phase 7 — Comprehensive Data Mode & Production Safeguards Tests (#10
       assert.equal(newOrder.status, 'PLACED');
       assert.equal(newOrder.totalAmount, 3600); // 1800 * 2
 
-      // 2. Advance to IN_PREPARATION
-      const prep = await demoOrders.advanceDemoOrderStatus(
-        token101,
-        newOrder.orderId,
-        'IN_PREPARATION',
+      // Blocked by default until explicitly enabled
+      const prevFlag = process.env.NEXT_PUBLIC_ENABLE_ORDER_DEMO_SIMULATION;
+      delete process.env.NEXT_PUBLIC_ENABLE_ORDER_DEMO_SIMULATION;
+      await assert.rejects(
+        () => demoOrders.advanceDemoOrderStatus(token101, newOrder.orderId, 'IN_PREPARATION'),
+        /disabled/,
       );
-      assert.equal(prep.status, 'IN_PREPARATION');
 
-      // 3. Advance to READY
-      const ready = await demoOrders.advanceDemoOrderStatus(token101, newOrder.orderId, 'READY');
-      assert.equal(ready.status, 'READY');
+      process.env.NEXT_PUBLIC_ENABLE_ORDER_DEMO_SIMULATION = 'true';
+      try {
+        // 2. Advance to IN_PREPARATION
+        const prep = await demoOrders.advanceDemoOrderStatus(
+          token101,
+          newOrder.orderId,
+          'IN_PREPARATION',
+        );
+        assert.equal(prep.status, 'IN_PREPARATION');
 
-      // 4. Advance to DELIVERED
-      const delivered = await demoOrders.advanceDemoOrderStatus(
-        token101,
-        newOrder.orderId,
-        'DELIVERED',
-      );
-      assert.equal(delivered.status, 'DELIVERED');
+        // 3. Advance to READY
+        const ready = await demoOrders.advanceDemoOrderStatus(token101, newOrder.orderId, 'READY');
+        assert.equal(ready.status, 'READY');
+
+        // 4. Advance to DELIVERED
+        const delivered = await demoOrders.advanceDemoOrderStatus(
+          token101,
+          newOrder.orderId,
+          'DELIVERED',
+        );
+        assert.equal(delivered.status, 'DELIVERED');
+      } finally {
+        if (prevFlag === undefined) delete process.env.NEXT_PUBLIC_ENABLE_ORDER_DEMO_SIMULATION;
+        else process.env.NEXT_PUBLIC_ENABLE_ORDER_DEMO_SIMULATION = prevFlag;
+      }
     });
 
     it('simulates order cancellation within allowed window', async () => {

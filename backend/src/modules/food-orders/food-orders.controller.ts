@@ -19,6 +19,7 @@ import {
 import { CurrentGuest } from '../guest-sessions/decorators/current-guest.decorator.js';
 import { GuestAuthGuard } from '../guest-sessions/guards/guest-auth.guard.js';
 import type { GuestContext } from '../guest-sessions/interfaces/guest-context.interface.js';
+import { OrderDemoSimulationGuard } from './demo-simulation/order-demo-simulation.guard.js';
 import { AdvanceOrderStatusDto } from './dto/advance-order-status.dto.js';
 import { CancelFoodOrderDto } from './dto/cancel-food-order.dto.js';
 import { CreateFoodOrderDto } from './dto/create-food-order.dto.js';
@@ -160,12 +161,13 @@ export class FoodOrdersController {
   }
 
   @Post(':id/status')
+  @UseGuards(OrderDemoSimulationGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
-      'Advance order status for deterministic demo flow (DEMO_MODE only)',
+      'Advance order status for deterministic demo flow (dev/test demo simulation only)',
     description:
-      'Advances order lifecycle status in KMS and demo persistence. Gated by DEMO_MODE.',
+      'Advances order lifecycle status in mock KMS and demo persistence. Disabled by default; strictly gated by ENABLE_ORDER_DEMO_SIMULATION=true and DEMO_MODE=true in non-production environments.',
   })
   @ApiResponse({
     status: 200,
@@ -174,7 +176,8 @@ export class FoodOrdersController {
   })
   @ApiResponse({
     status: 403,
-    description: 'Forbidden. DEMO_MODE is not enabled or cross-room access.',
+    description:
+      'Forbidden. Demo simulation is disabled, running in production/staging, or cross-room access attempted.',
   })
   @ApiResponse({
     status: 404,

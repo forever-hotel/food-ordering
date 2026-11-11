@@ -3,13 +3,11 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { App, Button, Card, Modal, Typography } from 'antd';
 import type { FoodOrderResponse, FoodOrderStatus } from '../../../types/orders.ts';
-import {
-  advanceOrderStatusDemo,
-  cancelFoodOrder,
-  fetchGuestOrderById,
-} from '../../../lib/api/orders.ts';
+import { cancelFoodOrder, fetchGuestOrderById } from '../../../lib/api/orders.ts';
 import { formatLkrPrice } from '../../../lib/api/menu.ts';
+import { isOrderDemoSimulationEnabled } from '../../../lib/data-mode/data-mode.ts';
 import { useAuth } from '../../../lib/auth/auth-context.tsx';
+import { OrderDemoSimulationControls } from './order-demo-simulation-controls.tsx';
 import { useNavigation } from '../../../lib/navigation/navigation-context.tsx';
 import {
   FossRealtimeClient,
@@ -62,7 +60,6 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
   const [cancelling, setCancelling] = useState<boolean>(false);
   const [cancelModalVisible, setCancelModalVisible] = useState<boolean>(false);
   const [secondsRemaining, setSecondsRemaining] = useState<number>(0);
-  const [advancingDemo, setAdvancingDemo] = useState<boolean>(false);
 
   const formattedOrderId = orderId.startsWith('#')
     ? orderId
@@ -270,39 +267,6 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
       loadOrder(false);
     } finally {
       setCancelling(false);
-    }
-  };
-
-  const handleAdvanceStatus = async (targetStatus: FoodOrderStatus) => {
-    if (!sessionToken) return;
-
-    setAdvancingDemo(true);
-    try {
-      const updated = await advanceOrderStatusDemo(sessionToken, orderId, targetStatus);
-      setOrder(updated);
-      message.info(`Demo: Order status advanced to ${targetStatus}`);
-    } catch {
-      // In offline/mock mode, update state locally
-      if (order) {
-        const nextOrder: FoodOrderResponse = {
-          ...order,
-          status: targetStatus,
-          canCancel: false,
-          timeline: (order.timeline || []).map((step) => ({
-            ...step,
-            completed: step.status === targetStatus ? true : step.completed,
-            current: step.status === targetStatus,
-            timestamp:
-              step.status === targetStatus && !step.timestamp
-                ? new Date().toISOString()
-                : step.timestamp,
-          })),
-        };
-        setOrder(nextOrder);
-        message.info(`Demo simulation: status set to ${targetStatus}`);
-      }
-    } finally {
-      setAdvancingDemo(false);
     }
   };
 
@@ -636,38 +600,14 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
         </div>
       </Card>
 
-      {/* 5. Demo Status Advancement Simulation Toolbar */}
-      <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-2xl space-y-1.5 text-center">
-        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block">
-          DEMO SIMULATION: ADVANCE STATUS
-        </span>
-        <div className="flex items-center justify-center gap-1.5 flex-wrap">
-          <Button
-            size="small"
-            disabled={advancingDemo || currentStatus === 'IN_PREPARATION'}
-            onClick={() => handleAdvanceStatus('IN_PREPARATION')}
-            className="text-[11px] !rounded-xl"
-          >
-            In Kitchen
-          </Button>
-          <Button
-            size="small"
-            disabled={advancingDemo || currentStatus === 'READY'}
-            onClick={() => handleAdvanceStatus('READY')}
-            className="text-[11px] !rounded-xl"
-          >
-            Ready
-          </Button>
-          <Button
-            size="small"
-            disabled={advancingDemo || currentStatus === 'DELIVERED'}
-            onClick={() => handleAdvanceStatus('DELIVERED')}
-            className="text-[11px] !rounded-xl"
-          >
-            Delivered
-          </Button>
-        </div>
-      </div>
+      {/* 5. Isolated Demo Status Advancement Simulation Toolbar (explicitly enabled dev/test only) */}
+      {isOrderDemoSimulationEnabled() && order && (
+        <OrderDemoSimulationControls
+          order={order}
+          sessionToken={sessionToken}
+          onOrderUpdated={setOrder}
+        />
+      )}
 
       {/* Cancellation Confirmation Modal */}
       <Modal

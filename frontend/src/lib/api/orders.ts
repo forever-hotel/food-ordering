@@ -3,6 +3,8 @@ import type {
   FoodOrderResponse,
   FoodOrderStatus,
 } from '../../types/orders.ts';
+import { ApiError } from '../data-mode/api-error.ts';
+import { isOrderDemoSimulationEnabled } from '../data-mode/data-mode.ts';
 import { getOrdersProvider } from '../data-mode/provider-factory.ts';
 import { FALLBACK_MENU_RESPONSE } from './menu.ts';
 import { calculateLineTotal, roundMoney } from '../utils/money.ts';
@@ -328,13 +330,16 @@ export async function cancelFoodOrder(
 }
 
 /**
- * Advances order status for demonstration rehearsal flows (DEMO_MODE only).
+ * Advances order status for demonstration rehearsal flows (explicit non-production dev flag only).
  */
 export async function advanceOrderStatusDemo(
   sessionToken: string,
   orderId: string,
   status: string,
 ): Promise<FoodOrderResponse> {
+  if (!isOrderDemoSimulationEnabled()) {
+    throw new ApiError('Order demo status simulation is disabled in this environment.', 403);
+  }
   const normalizedId = orderId.replace(/^#/, '');
   return getOrdersProvider().advanceDemoOrderStatus(
     sessionToken,
@@ -348,6 +353,9 @@ export async function advanceDemoOrderStatus(
   orderId: string,
   newStatus: FoodOrderStatus,
 ): Promise<FoodOrderResponse> {
+  if (!isOrderDemoSimulationEnabled()) {
+    throw new ApiError('Order demo status simulation is disabled in this environment.', 403);
+  }
   const normalizedId = orderId.replace(/^#/, '');
   return getOrdersProvider().advanceDemoOrderStatus(sessionToken, normalizedId, newStatus);
 }

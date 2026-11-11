@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
-import { App, Button, Card, Input, Radio, Select, Tag, Typography } from 'antd';
+import { App, Button, Card, Input, Select, Tag, Typography } from 'antd';
 function CheckIcon({ className }: { className?: string }) {
   return (
     <svg
@@ -216,7 +216,14 @@ export function ComplaintsTab() {
 
   // Dynamically mapped source options strictly scoped to the active guest booking
   const sourceOptions: SourceReferenceOption[] = useMemo(() => {
-    const options: SourceReferenceOption[] = [];
+    // Always provide No reference option first as default
+    const options: SourceReferenceOption[] = [
+      {
+        id: 'none',
+        type: 'none',
+        label: 'No reference',
+      },
+    ];
 
     // Map genuine guest orders belonging to active booking
     guestOrders.forEach((o) => {
@@ -268,13 +275,6 @@ export function ComplaintsTab() {
         referenceId: r.requestId,
         label: `Request ${reqNum} — ${typeLabel}${descSnippet}`,
       });
-    });
-
-    // Always provide No reference option
-    options.push({
-      id: 'none',
-      type: 'none',
-      label: 'No reference',
     });
 
     return options;
@@ -785,25 +785,31 @@ export function ComplaintsTab() {
         </div>
 
         {/* 3. Link to Order or Request (Optional) */}
-        <div className="mb-4">
-          <Text className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
-            LINK TO ORDER OR REQUEST (OPTIONAL)
-          </Text>
-          <Radio.Group
-            value={reference}
-            onChange={(e) => setReference(e.target.value)}
-            className="w-full flex flex-col gap-2"
+        <div className="mb-4 min-w-0">
+          <label
+            htmlFor="complaint-reference-select"
+            className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1.5"
           >
-            {sourceOptions.map((opt) => (
-              <Radio
-                key={opt.id}
-                value={opt.id}
-                className="!border !border-slate-200 !rounded-xl !p-2.5 !m-0 hover:!border-slate-300 text-xs"
-              >
-                {opt.label}
-              </Radio>
-            ))}
-          </Radio.Group>
+            LINK TO ORDER OR REQUEST (OPTIONAL)
+          </label>
+          <Select
+            id="complaint-reference-select"
+            aria-label="Link to order or request (optional)"
+            value={reference}
+            onChange={(val) => setReference(val as string)}
+            loading={referencesLoading}
+            popupMatchSelectWidth={true}
+            className="w-full !rounded-xl !h-10 text-xs [&_.ant-select-selection-item]:truncate"
+            optionRender={(option) => (
+              <span className="block whitespace-normal break-words text-xs leading-snug py-0.5">
+                {option.label}
+              </span>
+            )}
+            options={sourceOptions.map((opt) => ({
+              value: opt.id,
+              label: opt.label,
+            }))}
+          />
         </div>
 
         {/* 4. Description Textarea (Figure 39) */}

@@ -28,13 +28,17 @@ import { HotelClockService } from '../menu/services/hotel-clock.service.js';
 import { MealWindowService } from '../menu/services/meal-window.service.js';
 import { CreateFoodOrderDto } from './dto/create-food-order.dto.js';
 import {
-  FoodOrderItemResponseDto,
   FoodOrderResponseDto,
   OrderTimelineStepDto,
 } from './dto/food-order-response.dto.js';
 import { FoodOrderStatus } from './enums/food-order-status.enum.js';
 import { FossDemoOrderItem } from './entities/foss-demo-order-item.entity.js';
 import { FossDemoOrder } from './entities/foss-demo-order.entity.js';
+import {
+  buildFoodOrderTimeline,
+  mapFoodOrderToResponse,
+} from './order-response.mapper.js';
+import { OrderDemoSimulationService } from './demo-simulation/order-demo-simulation.service.js';
 import { FossDemoOrderRepository } from './repositories/foss-demo-order.repository.js';
 
 @Injectable()
@@ -52,6 +56,8 @@ export class FoodOrdersService {
     private readonly realtimeService?: RealtimeService,
     @Optional()
     private readonly rabbitMqPublisher?: RabbitMqPublisherService,
+    @Optional()
+    private readonly orderDemoSimulationService?: OrderDemoSimulationService,
   ) {}
 
   /**
@@ -434,124 +440,34 @@ export class FoodOrdersService {
   }
 
   /**
-   * Deterministic status advance utility gated by DEMO_MODE for demonstration rehearsal flows.
+   * Deterministic status advance utility delegated to the isolated OrderDemoSimulationService.
    */
   public async advanceOrderStatus(
     guest: GuestContext,
     orderId: string,
     newStatus: FoodOrderStatus,
   ): Promise<FoodOrderResponseDto> {
-    const isDevOrTest =
-      !process.env.NODE_ENV ||
-      process.env.NODE_ENV === 'development' ||
-      process.env.NODE_ENV === 'test';
-    const isDemo = this.configService.get<string>('DEMO_MODE') === 'true';
-    if (!isDemo || !isDevOrTest || process.env.NODE_ENV === 'production') {
-      throw new ForbiddenException(
-        'Demo status advancement is only permitted in development/test environments when DEMO_MODE is enabled.',
+    const demoSimulation =
+      this.orderDemoSimulationService ??
+      new OrderDemoSimulationService(
+        this.kmsProvider,
+        this.clockService,
+        this.orderRepository,
+        this.configService,
+        this.realtimeService,
       );
-    }
-
-    const order = await this.orderRepository.findById(orderId);
-    if (!order) {
-      throw new NotFoundException(`Order [${orderId}] was not found.`);
-    }
-
-    if (
-      order.roomNumber !== guest.roomNumber ||
-      order.bookingId !== guest.bookingId
-    ) {
-      throw new ForbiddenException(
-        'You do not have permission to modify orders from another room or booking.',
-      );
-    }
-
-    await this.kmsProvider.transitionOrderStatus(orderId, newStatus);
-
-    const now = this.clockService.now();
-    order.status = newStatus;
-    order.updatedAt = now;
-
-    if (newStatus === FoodOrderStatus.DELIVERED) {
-      order.estimatedDeliveryMinutes = 0;
-    } else if (newStatus === FoodOrderStatus.READY) {
-      order.estimatedDeliveryMinutes = 5;
-    }
-
-    await this.orderRepository.save(order);
-    const response = this.mapToResponse(order, now);
-    this.realtimeService?.emitToStay(
-      guest.bookingId,
-      guest.roomNumber,
-      RealtimeEventType.FOOD_ORDER_STATUS_UPDATED,
-      response,
-    );
-    return response;
+    return demoSimulation.advanceOrderStatus(guest, orderId, newStatus);
   }
 
   private mapToResponse(
     order: FossDemoOrder,
     referenceTime?: Date,
   ): FoodOrderResponseDto {
-    const now = referenceTime || this.clockService.now();
-    let createdAtDate: Date;
-    if (order.createdAt instanceof Date && !isNaN(order.createdAt.getTime())) {
-      createdAtDate = order.createdAt;
-    } else if (order.createdAt) {
-      const parsed = new Date(order.createdAt);
-      createdAtDate = isNaN(parsed.getTime()) ? now : parsed;
-    } else {
-      createdAtDate = now;
-    }
-
-    let updatedAtDate: Date;
-    if (order.updatedAt instanceof Date && !isNaN(order.updatedAt.getTime())) {
-      updatedAtDate = order.updatedAt;
-    } else if (order.updatedAt) {
-      const parsed = new Date(order.updatedAt);
-      updatedAtDate = isNaN(parsed.getTime()) ? now : parsed;
-    } else {
-      updatedAtDate = now;
-    }
-
-    const elapsedSeconds = Math.floor(
-      (now.getTime() - createdAtDate.getTime()) / 1000,
+    return mapFoodOrderToResponse(
+      order,
+      this.clockService.now(),
+      referenceTime,
     );
-
-    const withinWindow = elapsedSeconds < 600;
-    const canCancel = order.status === FoodOrderStatus.PLACED && withinWindow;
-    const cancellationCutoffTime = new Date(
-      createdAtDate.getTime() + 600 * 1000,
-    ).toISOString();
-    const secondsRemainingToCancel = canCancel
-      ? Math.max(0, 600 - elapsedSeconds)
-      : 0;
-
-    const items: FoodOrderItemResponseDto[] = (order.items || []).map((i) => ({
-      itemId: i.menuItemId,
-      name: i.name,
-      unitPrice: Number(i.unitPrice),
-      quantity: i.quantity,
-      specialNotes: i.specialNotes ?? undefined,
-    }));
-
-    return {
-      orderId: order.orderId,
-      roomNumber: order.roomNumber,
-      bookingId: order.bookingId,
-      status: order.status,
-      totalAmount: Number(order.totalAmount),
-      items,
-      allergyNotes: order.allergyNotes ?? undefined,
-      estimatedDeliveryMinutes: order.estimatedDeliveryMinutes,
-      createdAt: createdAtDate.toISOString(),
-      updatedAt: updatedAtDate.toISOString(),
-      idempotencyKey: order.idempotencyKey,
-      canCancel,
-      cancellationCutoffTime,
-      secondsRemainingToCancel,
-      timeline: this.buildTimeline(order, createdAtDate, updatedAtDate),
-    };
   }
 
   private buildTimeline(
@@ -559,66 +475,11 @@ export class FoodOrdersService {
     createdAtDate?: Date,
     updatedAtDate?: Date,
   ): OrderTimelineStepDto[] {
-    const now = this.clockService.now();
-    const cDate =
-      createdAtDate ||
-      (order.createdAt instanceof Date && !isNaN(order.createdAt.getTime())
-        ? order.createdAt
-        : now);
-    const uDate =
-      updatedAtDate ||
-      (order.updatedAt instanceof Date && !isNaN(order.updatedAt.getTime())
-        ? order.updatedAt
-        : now);
-    const createdAtIso = cDate.toISOString();
-    const updatedAtIso = uDate.toISOString();
-
-    if (order.status === FoodOrderStatus.CANCELLED) {
-      return [
-        {
-          status: FoodOrderStatus.PLACED,
-          label: 'Order Placed',
-          completed: true,
-          current: false,
-          timestamp: createdAtIso,
-        },
-        {
-          status: FoodOrderStatus.CANCELLED,
-          label: 'Cancelled',
-          completed: true,
-          current: true,
-          timestamp: updatedAtIso,
-        },
-      ];
-    }
-
-    const steps = [
-      { status: FoodOrderStatus.PLACED, label: 'Order Placed' },
-      { status: FoodOrderStatus.IN_PREPARATION, label: 'In Kitchen' },
-      { status: FoodOrderStatus.READY, label: 'Ready for Delivery' },
-      { status: FoodOrderStatus.DELIVERED, label: 'Delivered to Room' },
-    ];
-
-    const statusHierarchy = [
-      FoodOrderStatus.PLACED,
-      FoodOrderStatus.IN_PREPARATION,
-      FoodOrderStatus.READY,
-      FoodOrderStatus.DELIVERED,
-    ];
-
-    const currentIndex = statusHierarchy.indexOf(order.status);
-
-    return steps.map((step, idx) => ({
-      status: step.status,
-      label: step.label,
-      completed: idx <= currentIndex,
-      current: idx === currentIndex,
-      timestamp:
-        idx === 0
-          ? createdAtIso
-          : idx === currentIndex
-            ? updatedAtIso
-            : undefined,
-    }));
+    return buildFoodOrderTimeline(
+      order,
+      this.clockService.now(),
+      createdAtDate,
+      updatedAtDate,
+    );
   }
 }

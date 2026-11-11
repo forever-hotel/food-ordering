@@ -279,7 +279,42 @@ describe('TC-DDP-141-AC3: Boundary, Concurrency & Security', () => {
     }
   });
 
-  it('advances order status via DEMO_MODE endpoint safely', async () => {
+  it('blocks order demo simulation by default and in production', async () => {
+    const prevFlag = process.env.NEXT_PUBLIC_ENABLE_ORDER_DEMO_SIMULATION;
+    const prevEnv = process.env.NEXT_PUBLIC_DEPLOYMENT_ENV;
+    delete process.env.NEXT_PUBLIC_ENABLE_ORDER_DEMO_SIMULATION;
+    process.env.NEXT_PUBLIC_DEPLOYMENT_ENV = 'development';
+
+    try {
+      await assert.rejects(
+        async () => {
+          await advanceOrderStatusDemo('session-101', 'ORD-291', 'READY');
+        },
+        (err: unknown) => err instanceof ApiError && err.statusCode === 403,
+      );
+
+      process.env.NEXT_PUBLIC_ENABLE_ORDER_DEMO_SIMULATION = 'true';
+      process.env.NEXT_PUBLIC_DEPLOYMENT_ENV = 'production';
+      await assert.rejects(
+        async () => {
+          await advanceOrderStatusDemo('session-101', 'ORD-291', 'READY');
+        },
+        (err: unknown) => err instanceof ApiError && err.statusCode === 403,
+      );
+    } finally {
+      if (prevFlag === undefined) delete process.env.NEXT_PUBLIC_ENABLE_ORDER_DEMO_SIMULATION;
+      else process.env.NEXT_PUBLIC_ENABLE_ORDER_DEMO_SIMULATION = prevFlag;
+      if (prevEnv === undefined) delete process.env.NEXT_PUBLIC_DEPLOYMENT_ENV;
+      else process.env.NEXT_PUBLIC_DEPLOYMENT_ENV = prevEnv;
+    }
+  });
+
+  it('advances order status via DEMO_MODE endpoint safely when explicitly enabled in development', async () => {
+    const prevFlag = process.env.NEXT_PUBLIC_ENABLE_ORDER_DEMO_SIMULATION;
+    const prevEnv = process.env.NEXT_PUBLIC_DEPLOYMENT_ENV;
+    process.env.NEXT_PUBLIC_ENABLE_ORDER_DEMO_SIMULATION = 'true';
+    process.env.NEXT_PUBLIC_DEPLOYMENT_ENV = 'development';
+
     const advancedOrder: FoodOrderResponse = {
       orderId: 'ORD-291',
       roomNumber: '103',
@@ -312,6 +347,10 @@ describe('TC-DDP-141-AC3: Boundary, Concurrency & Security', () => {
       assert.equal(result.estimatedDeliveryMinutes, 5);
     } finally {
       globalThis.fetch = originalFetch;
+      if (prevFlag === undefined) delete process.env.NEXT_PUBLIC_ENABLE_ORDER_DEMO_SIMULATION;
+      else process.env.NEXT_PUBLIC_ENABLE_ORDER_DEMO_SIMULATION = prevFlag;
+      if (prevEnv === undefined) delete process.env.NEXT_PUBLIC_DEPLOYMENT_ENV;
+      else process.env.NEXT_PUBLIC_DEPLOYMENT_ENV = prevEnv;
     }
   });
 });

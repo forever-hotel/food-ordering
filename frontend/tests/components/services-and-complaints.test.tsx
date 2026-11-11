@@ -773,11 +773,21 @@ describe('ComplaintsTab Component', () => {
       </Wrapper>,
     );
 
+    const refDropdown = screen.getByRole('combobox', {
+      name: /Link to order or request/i,
+    });
+
     await waitFor(() => {
       expect(screen.getAllByText(/Undercooked chicken/i).length).toBeGreaterThan(0);
-      expect(screen.getByLabelText(/Request #REQ-041/i)).toBeDefined();
-      expect(screen.getByLabelText(/Order #ORD-291/i)).toBeDefined();
+      // Collapsed by default with "No reference" selected
+      expect(refDropdown.getAttribute('aria-expanded')).not.toBe('true');
+      expect(screen.getByText('No reference')).toBeDefined();
     });
+
+    // Radio inputs must no longer be rendered for references
+    expect(screen.queryByRole('radio', { name: /No reference/i })).toBeNull();
+    // Options stay collapsed until opened
+    expect(screen.queryByText(/Request #REQ-041/i)).toBeNull();
 
     // Select Low, Medium, High severity buttons
     const lowBtn = screen.getByRole('button', { name: /Low/i });
@@ -792,15 +802,36 @@ describe('ComplaintsTab Component', () => {
     fireEvent.click(highBtn);
     expect(highBtn.getAttribute('aria-pressed')).toBe('true');
 
-    // Link reference radio buttons
-    const orderRadio = screen.getByLabelText(/Order #ORD-291/i);
-    fireEvent.click(orderRadio);
+    // Open dropdown and verify available order, service request, and No reference options
+    fireEvent.mouseDown(refDropdown);
 
-    const reqRadio = screen.getByLabelText(/Request #REQ-041/i);
-    fireEvent.click(reqRadio);
+    const findSelectOption = (pattern: RegExp) =>
+      Array.from(document.querySelectorAll('.ant-select-item-option')).find((el) =>
+        pattern.test(el.textContent || ''),
+      );
 
-    const noneRadio = screen.getByLabelText(/No reference/i);
-    fireEvent.click(noneRadio);
+    await waitFor(() => {
+      expect(findSelectOption(/Order #ORD-291/i)).toBeDefined();
+      expect(findSelectOption(/Request #REQ-041/i)).toBeDefined();
+      expect(findSelectOption(/^No reference$/i)).toBeDefined();
+    });
+
+    // Select Order #ORD-291
+    fireEvent.click(findSelectOption(/Order #ORD-291/i)!);
+
+    // Change selection to Request #REQ-041
+    fireEvent.mouseDown(refDropdown);
+    await waitFor(() => {
+      expect(findSelectOption(/Request #REQ-041/i)).toBeDefined();
+    });
+    fireEvent.click(findSelectOption(/Request #REQ-041/i)!);
+
+    // Change selection back to No reference
+    fireEvent.mouseDown(refDropdown);
+    await waitFor(() => {
+      expect(findSelectOption(/^No reference$/i)).toBeDefined();
+    });
+    fireEvent.click(findSelectOption(/^No reference$/i)!);
   });
 
   it('validates description > 1000 characters and handles submission errors', async () => {
@@ -1289,9 +1320,12 @@ describe('ComplaintsTab Component', () => {
     const lowBtn = screen.getByRole('button', { name: /Low/i });
     expect(lowBtn.getAttribute('aria-pressed')).toBe('true');
 
-    // Default reference is none
-    const noneRadio = screen.getByLabelText(/No reference/i) as HTMLInputElement;
-    expect(noneRadio.checked).toBe(true);
+    // Default reference is No reference in collapsed dropdown
+    const refDropdown = screen.getByRole('combobox', {
+      name: /Link to order or request/i,
+    });
+    expect(refDropdown.getAttribute('aria-expanded')).not.toBe('true');
+    expect(screen.getByText('No reference')).toBeDefined();
 
     // Fill valid description and submit
     fireEvent.change(descInput, { target: { value: 'Water leaking under the bathroom vanity.' } });
@@ -1301,9 +1335,133 @@ describe('ComplaintsTab Component', () => {
     await waitFor(() => {
       expect(mockCreateComplaint).toHaveBeenCalledTimes(1);
     });
+    expect(mockCreateComplaint).toHaveBeenCalledWith(
+      expect.objectContaining({
+        relatedOrderId: undefined,
+        relatedRequestId: undefined,
+      }),
+      expect.any(String),
+      expect.any(String),
+    );
 
     // Form resets back to empty description
     expect(descInput.value).toBe('');
+  });
+
+  it('submits complaint with selected order reference and selected service request reference from dropdown', async () => {
+    mockFetchGuestOrders.mockResolvedValue([
+      {
+        orderId: 'ORD-LONG-1234567890-ABCDEF',
+        bookingId: 'BK-SRV-1',
+        roomNumber: '401',
+        status: 'DELIVERED',
+        totalAmount: 1850,
+        items: [
+          {
+            itemId: 'item-1',
+            name: 'Extremely Long Dish Name That Wraps Cleanly On Mobile',
+            unitPrice: 1850,
+            quantity: 1,
+          },
+        ],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        timeline: [],
+      },
+    ]);
+    mockFetchGuestServiceRequests.mockResolvedValue([
+      {
+        requestId: 'REQ-LONG-9876543210-XYZ',
+        bookingId: 'BK-SRV-1',
+        roomNumber: '401',
+        requestType: 'MAINTENANCE',
+        description: 'Air conditioner making loud rattling noise throughout the night',
+        status: 'SUBMITTED',
+        priority: 'NORMAL',
+        assignedStaff: null,
+        estimatedCompletionMinutes: 15,
+        taskId: 'task-long',
+        idempotencyKey: 'idemp-long',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        timeline: [],
+      },
+    ]);
+    mockCreateComplaint.mockResolvedValue({
+      ...mockComplaint,
+      complaintId: 'CMP-REF-1',
+    });
+
+    render(
+      <Wrapper>
+        <ComplaintsTab />
+      </Wrapper>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByText(/Undercooked chicken/i).length).toBeGreaterThan(0);
+    });
+
+    const refDropdown = screen.getByRole('combobox', {
+      name: /Link to order or request/i,
+    });
+    fireEvent.mouseDown(refDropdown);
+
+    const findSelectOption = (pattern: RegExp) =>
+      Array.from(document.querySelectorAll('.ant-select-item-option')).find((el) =>
+        pattern.test(el.textContent || ''),
+      );
+
+    await waitFor(() => {
+      expect(findSelectOption(/Order #ORD-LONG-1234567890-ABCDEF/i)).toBeDefined();
+      expect(findSelectOption(/Request #REQ-LONG-9876543210-XYZ/i)).toBeDefined();
+    });
+
+    // 1. Select order reference and submit
+    fireEvent.click(findSelectOption(/Order #ORD-LONG-1234567890-ABCDEF/i)!);
+
+    const descInput = screen.getByPlaceholderText(/Please detail your experience/i);
+    fireEvent.change(descInput, { target: { value: 'Order arrived cold and missing utensils.' } });
+    fireEvent.click(screen.getByRole('button', { name: /Submit Complaint/i }));
+
+    await waitFor(() => {
+      expect(mockCreateComplaint).toHaveBeenCalledWith(
+        expect.objectContaining({
+          relatedOrderId: 'ORD-LONG-1234567890-ABCDEF',
+          relatedRequestId: undefined,
+        }),
+        expect.any(String),
+        expect.any(String),
+      );
+    });
+
+    // After submission, selection resets to No reference
+    await waitFor(() => {
+      expect(screen.getAllByText('No reference').length).toBeGreaterThan(0);
+    });
+
+    // 2. Select service request reference and submit
+    fireEvent.mouseDown(refDropdown);
+    await waitFor(() => {
+      expect(findSelectOption(/Request #REQ-LONG-9876543210-XYZ/i)).toBeDefined();
+    });
+    fireEvent.click(findSelectOption(/Request #REQ-LONG-9876543210-XYZ/i)!);
+
+    fireEvent.change(descInput, {
+      target: { value: 'Maintenance issue still persists after visit.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Submit Complaint/i }));
+
+    await waitFor(() => {
+      expect(mockCreateComplaint).toHaveBeenCalledWith(
+        expect.objectContaining({
+          relatedOrderId: undefined,
+          relatedRequestId: 'REQ-LONG-9876543210-XYZ',
+        }),
+        expect.any(String),
+        expect.any(String),
+      );
+    });
   });
 
   it('filters out orders and service requests belonging to a different room or booking', async () => {
@@ -1370,13 +1528,18 @@ describe('ComplaintsTab Component', () => {
       </Wrapper>,
     );
 
+    const refDropdown = screen.getByRole('combobox', {
+      name: /Link to order or request/i,
+    });
+    fireEvent.mouseDown(refDropdown);
+
     await waitFor(() => {
-      expect(screen.getByLabelText(/Order #ORD-VALID/i)).toBeDefined();
-      expect(screen.getByLabelText(/Request #REQ-VALID/i)).toBeDefined();
+      expect(screen.getByText(/Order #ORD-VALID/i)).toBeDefined();
+      expect(screen.getByText(/Request #REQ-VALID/i)).toBeDefined();
     });
 
-    expect(screen.queryByLabelText(/ORD-FOREIGN/i)).toBeNull();
-    expect(screen.queryByLabelText(/REQ-FOREIGN/i)).toBeNull();
+    expect(screen.queryByText(/ORD-FOREIGN/i)).toBeNull();
+    expect(screen.queryByText(/REQ-FOREIGN/i)).toBeNull();
   });
 
   it('hides evaluator status advance buttons in API mode', async () => {
@@ -1488,15 +1651,26 @@ describe('ComplaintsTab Component', () => {
       </Wrapper>,
     );
 
+    const refSelect = await screen.findByRole('combobox', {
+      name: /Link to order or request/i,
+    });
     await waitFor(() => {
-      expect(screen.getByLabelText(/Order #ORD-999/i)).toBeDefined();
-      expect(screen.getByLabelText(/Order #ORD-888/i)).toBeDefined();
-      expect(screen.getByLabelText(/Request #REQ-777/i)).toBeDefined();
-      expect(screen.getByLabelText(/Request #REQ-666/i)).toBeDefined();
+      expect(mockFetchGuestOrders).toHaveBeenCalled();
+      expect(mockFetchGuestServiceRequests).toHaveBeenCalled();
     });
 
-    // Verify there are no duplicate prefixes such as ORD-ORD- or REQ-REQ-
-    expect(screen.queryByLabelText(/ORD-ORD-/i)).toBeNull();
-    expect(screen.queryByLabelText(/REQ-REQ-/i)).toBeNull();
+    fireEvent.mouseDown(refSelect);
+
+    await waitFor(() => {
+      const optionTexts = Array.from(document.querySelectorAll('.ant-select-item-option')).map(
+        (el) => el.textContent ?? '',
+      );
+      expect(optionTexts.some((t) => /Order #ORD-999/i.test(t))).toBe(true);
+      expect(optionTexts.some((t) => /Order #ORD-888/i.test(t))).toBe(true);
+      expect(optionTexts.some((t) => /Request #REQ-777/i.test(t))).toBe(true);
+      expect(optionTexts.some((t) => /Request #REQ-666/i.test(t))).toBe(true);
+      expect(optionTexts.some((t) => /ORD-ORD-/i.test(t))).toBe(false);
+      expect(optionTexts.some((t) => /REQ-REQ-/i.test(t))).toBe(false);
+    });
   });
 });

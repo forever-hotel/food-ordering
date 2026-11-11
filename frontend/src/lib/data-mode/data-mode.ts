@@ -87,6 +87,21 @@ export function isDemoAllowed(): boolean {
 }
 
 /**
+ * Determines whether Order Status Demo Simulation controls and endpoints may be invoked.
+ *
+ * Isolation guarantees:
+ * - Disabled by default (requires NEXT_PUBLIC_ENABLE_ORDER_DEMO_SIMULATION === 'true').
+ * - Strictly blocked in production and staging regardless of feature flags.
+ * - Blocked in unauthorized preview builds where demo mode is not permitted.
+ */
+export function isOrderDemoSimulationEnabled(): boolean {
+  if (isProduction() || getDeploymentEnv() === 'staging' || !isDemoAllowed()) {
+    return false;
+  }
+  return process.env.NEXT_PUBLIC_ENABLE_ORDER_DEMO_SIMULATION === 'true';
+}
+
+/**
  * Returns the partition-scoped session storage key for the current or given data mode.
  * Strictly isolates demo tokens from API tokens in browser storage.
  */

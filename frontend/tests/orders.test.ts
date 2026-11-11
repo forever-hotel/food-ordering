@@ -378,7 +378,12 @@ describe('TC-DDP-140-AC4: Contract & Visual Layout Fidelity Audit (Figure 35)', 
     }
   });
 
-  it('advanceDemoOrderStatus strips # prefix and forwards to provider', async () => {
+  it('advanceDemoOrderStatus strips # prefix and forwards to provider when explicitly enabled in dev', async () => {
+    const prevFlag = process.env.NEXT_PUBLIC_ENABLE_ORDER_DEMO_SIMULATION;
+    const prevEnv = process.env.NEXT_PUBLIC_DEPLOYMENT_ENV;
+    process.env.NEXT_PUBLIC_ENABLE_ORDER_DEMO_SIMULATION = 'true';
+    process.env.NEXT_PUBLIC_DEPLOYMENT_ENV = 'development';
+
     const readyOrder: FoodOrderResponse = {
       ...createMockOrderResponse({ items: [] }, 'idemp-advance', '103'),
       status: 'READY',
@@ -398,6 +403,10 @@ describe('TC-DDP-140-AC4: Contract & Visual Layout Fidelity Audit (Figure 35)', 
       assert.equal(result.status, 'READY');
     } finally {
       globalThis.fetch = originalFetch;
+      if (prevFlag === undefined) delete process.env.NEXT_PUBLIC_ENABLE_ORDER_DEMO_SIMULATION;
+      else process.env.NEXT_PUBLIC_ENABLE_ORDER_DEMO_SIMULATION = prevFlag;
+      if (prevEnv === undefined) delete process.env.NEXT_PUBLIC_DEPLOYMENT_ENV;
+      else process.env.NEXT_PUBLIC_DEPLOYMENT_ENV = prevEnv;
     }
   });
 

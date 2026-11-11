@@ -529,7 +529,18 @@ describe('ApiOrdersProvider Comprehensive Scenarios', () => {
       globalThis.fetch = originalFetch;
     }
 
-    // advanceDemoOrderStatus failure
+    // advanceDemoOrderStatus blocked by default when feature flag is unset
+    const prevFlag = process.env.NEXT_PUBLIC_ENABLE_ORDER_DEMO_SIMULATION;
+    const prevEnv = process.env.NEXT_PUBLIC_DEPLOYMENT_ENV;
+    delete process.env.NEXT_PUBLIC_ENABLE_ORDER_DEMO_SIMULATION;
+    process.env.NEXT_PUBLIC_DEPLOYMENT_ENV = 'development';
+    await assert.rejects(
+      async () => provider.advanceDemoOrderStatus('real-token-uuid', 'ORD-101', 'DELIVERED' as any),
+      (err: any) => err instanceof ApiError && err.status === 403,
+    );
+
+    // advanceDemoOrderStatus failure when enabled in development
+    process.env.NEXT_PUBLIC_ENABLE_ORDER_DEMO_SIMULATION = 'true';
     globalThis.fetch = (async () => ({
       ok: false,
       status: 400,
@@ -544,6 +555,10 @@ describe('ApiOrdersProvider Comprehensive Scenarios', () => {
       );
     } finally {
       globalThis.fetch = originalFetch;
+      if (prevFlag === undefined) delete process.env.NEXT_PUBLIC_ENABLE_ORDER_DEMO_SIMULATION;
+      else process.env.NEXT_PUBLIC_ENABLE_ORDER_DEMO_SIMULATION = prevFlag;
+      if (prevEnv === undefined) delete process.env.NEXT_PUBLIC_DEPLOYMENT_ENV;
+      else process.env.NEXT_PUBLIC_DEPLOYMENT_ENV = prevEnv;
     }
   });
 });

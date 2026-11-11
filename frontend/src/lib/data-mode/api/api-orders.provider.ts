@@ -1,5 +1,6 @@
 import API_URL from '../config.ts';
 import { ApiError } from '../api-error.ts';
+import { isOrderDemoSimulationEnabled } from '../data-mode.ts';
 import type { OrdersProvider } from '../interfaces.ts';
 import type {
   FoodOrderResponse,
@@ -190,6 +191,11 @@ export class ApiOrdersProvider implements OrdersProvider {
     orderId: string,
     newStatus: FoodOrderStatus,
   ): Promise<FoodOrderResponse> {
+    if (!isOrderDemoSimulationEnabled()) {
+      throw new ApiError('Order demo status simulation is disabled in this environment.', 403);
+    }
+    assertRealSessionToken(sessionToken, 'advance demo order status');
+
     const response = await fetch(`${API_URL}/food-orders/${encodeURIComponent(orderId)}/status`, {
       method: 'POST',
       headers: buildHeaders(sessionToken, {

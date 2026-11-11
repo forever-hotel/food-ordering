@@ -337,25 +337,32 @@ describe(
     });
 
     it('9. Advances order status through lifecycle via advanceDemoOrderStatus()', async () => {
-      const tokens = await getOrInitTokens();
-      assert.ok(createdOrderId);
+      const prevFlag = process.env.NEXT_PUBLIC_ENABLE_ORDER_DEMO_SIMULATION;
+      process.env.NEXT_PUBLIC_ENABLE_ORDER_DEMO_SIMULATION = 'true';
+      try {
+        const tokens = await getOrInitTokens();
+        assert.ok(createdOrderId);
 
-      // 1. IN_PREPARATION
-      const prepData = await advanceDemoOrderStatus(
-        tokens.token101,
-        createdOrderId,
-        'IN_PREPARATION',
-      );
-      assert.equal(prepData.status, 'IN_PREPARATION');
+        // 1. IN_PREPARATION
+        const prepData = await advanceDemoOrderStatus(
+          tokens.token101,
+          createdOrderId,
+          'IN_PREPARATION',
+        );
+        assert.equal(prepData.status, 'IN_PREPARATION');
 
-      // 2. READY
-      const readyData = await advanceDemoOrderStatus(tokens.token101, createdOrderId, 'READY');
-      assert.equal(readyData.status, 'READY');
+        // 2. READY
+        const readyData = await advanceDemoOrderStatus(tokens.token101, createdOrderId, 'READY');
+        assert.equal(readyData.status, 'READY');
 
-      // 3. DELIVERED
-      const delData = await advanceDemoOrderStatus(tokens.token101, createdOrderId, 'DELIVERED');
-      assert.equal(delData.status, 'DELIVERED');
-      assert.equal(delData.canCancel, false);
+        // 3. DELIVERED
+        const delData = await advanceDemoOrderStatus(tokens.token101, createdOrderId, 'DELIVERED');
+        assert.equal(delData.status, 'DELIVERED');
+        assert.equal(delData.canCancel, false);
+      } finally {
+        if (prevFlag === undefined) delete process.env.NEXT_PUBLIC_ENABLE_ORDER_DEMO_SIMULATION;
+        else process.env.NEXT_PUBLIC_ENABLE_ORDER_DEMO_SIMULATION = prevFlag;
+      }
     });
 
     it('10. Validates order cancellation and cutoff rules via cancelFoodOrder()', async () => {
