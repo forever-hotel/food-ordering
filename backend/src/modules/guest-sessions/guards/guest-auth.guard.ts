@@ -11,17 +11,22 @@ import { GuestSessionsService } from '../services/guest-sessions.service.js';
 function extractTokenFromCookies(cookieHeader?: string): string | undefined {
   if (!cookieHeader || typeof cookieHeader !== 'string') return undefined;
   const pairs = cookieHeader.split(';');
+  let legacyToken: string | undefined;
   for (const pair of pairs) {
     const idx = pair.indexOf('=');
     if (idx > -1) {
       const key = pair.slice(0, idx).trim();
-      if (key === 'foss_guest_session') {
-        const val = pair.slice(idx + 1).trim();
+      const val = pair.slice(idx + 1).trim();
+      if (!val) continue;
+      if (key === 'foss_session') {
         return decodeURIComponent(val);
+      }
+      if (key === 'foss_guest_session' && !legacyToken) {
+        legacyToken = decodeURIComponent(val);
       }
     }
   }
-  return undefined;
+  return legacyToken;
 }
 
 @Injectable()
@@ -61,6 +66,11 @@ export class GuestAuthGuard implements CanActivate {
     } else if (request.headers?.cookie) {
       token = extractTokenFromCookies(request.headers.cookie);
       if (token) authSource = 'cookie';
+    }
+
+    if (!token && request.cookies?.foss_session) {
+      token = request.cookies.foss_session;
+      authSource = 'cookie';
     }
 
     if (!token && request.cookies?.foss_guest_session) {
@@ -157,6 +167,7 @@ export class GuestAuthGuard implements CanActivate {
       process.env.FRONTEND_URL,
       process.env.FOSS_FRONTEND_URL,
       process.env.FOSS_PUBLIC_APP_URL,
+      process.env.APP_BASE_URL,
     ].filter(Boolean) as string[];
 
     if (process.env.ALLOWED_ORIGINS) {

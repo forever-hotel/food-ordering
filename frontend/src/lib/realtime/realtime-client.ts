@@ -35,6 +35,7 @@ export interface RealtimeClientConfig {
   sessionToken: string;
   bookingId: string;
   roomNumber: string;
+  sessionId?: string;
   maxReconnectAttempts?: number;
   initialBackoffMs?: number;
   maxBackoffMs?: number;
@@ -79,6 +80,7 @@ export class FossRealtimeClient {
   private socket: Socket | null = null;
   private pollTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private disconnectSeq = 0;
   private lastVersion = 0;
   private readonly seenEventIds = new Set<string>();
   private readonly config: RealtimeClientConfig;
@@ -123,6 +125,7 @@ export class FossRealtimeClient {
   }
 
   public disconnect(): void {
+    this.disconnectSeq += 1;
     activeRealtimeClients.delete(this);
     this.setStatus('DISCONNECTED');
     this.reconnectAttempts = 0;
@@ -151,6 +154,7 @@ export class FossRealtimeClient {
   }
 
   private async startSharedSocket(): Promise<void> {
+    const seq = this.disconnectSeq;
     const controller = new AbortController();
     this.abortController = controller;
     try {
@@ -165,7 +169,12 @@ export class FossRealtimeClient {
         credentials: 'include',
         signal: controller.signal,
       });
-      if (response.status === 401) this.expireSession();
+      if (response.status === 401) {
+        if (!controller.signal.aborted && seq === this.disconnectSeq) {
+          this.expireSession();
+        }
+        throw new Error(`Realtime ticket failed: ${response.status}`);
+      }
       if (!response.ok) throw new Error(`Realtime ticket failed: ${response.status}`);
       const body = await response.json();
       if (typeof body.ticket !== 'string' || !/^[\w-]{43}$/.test(body.ticket))
@@ -221,7 +230,9 @@ export class FossRealtimeClient {
    * with tokens in query strings and proxy URL logs.
    */
   private async startFetchStream(): Promise<void> {
-    this.abortController = new AbortController();
+    const seq = this.disconnectSeq;
+    const controller = new AbortController();
+    this.abortController = controller;
     const token = this.config.sessionToken?.trim();
     const url = `${this.config.apiUrl}/realtime/events/stream`;
 
@@ -234,11 +245,13 @@ export class FossRealtimeClient {
           ...(token && token !== '__COOKIE_SESSION__' ? { Authorization: `Bearer ${token}` } : {}),
         },
         credentials: 'include',
-        signal: this.abortController.signal,
+        signal: controller.signal,
       });
 
       if (!response.ok) {
-        if (response.status === 401) this.expireSession();
+        if (response.status === 401 && !controller.signal.aborted && seq === this.disconnectSeq) {
+          this.expireSession();
+        }
         throw new Error(`SSE connection error: HTTP ${response.status}`);
       }
 
@@ -350,6 +363,7 @@ export class FossRealtimeClient {
       url.searchParams.set('sinceVersion', String(this.lastVersion));
     }
 
+    const seq = this.disconnectSeq;
     const response = await fetch(url.toString(), {
       headers: {
         ...(this.config.sessionToken && this.config.sessionToken !== '__COOKIE_SESSION__'
@@ -361,9 +375,13 @@ export class FossRealtimeClient {
     });
 
     if (!response.ok) {
-      if (response.status === 401) this.expireSession();
+      if (response.status === 401 && seq === this.disconnectSeq) {
+        this.expireSession();
+      }
       throw new Error(`Polling failed with status ${response.status}`);
     }
+
+    if (seq !== this.disconnectSeq) return;
 
     const body = (await response.json()) as PollEventsResponse;
     if (body.recommendedPollIntervalMs) {
@@ -388,7 +406,12 @@ export class FossRealtimeClient {
     if (typeof window !== 'undefined') {
       window.dispatchEvent(
         new CustomEvent(FOSS_SESSION_EXPIRED_EVENT, {
-          detail: { token: this.config.sessionToken },
+          detail: {
+            token: this.config.sessionToken,
+            bookingId: this.config.bookingId,
+            roomNumber: this.config.roomNumber,
+            sessionId: this.config.sessionId,
+          },
         }),
       );
     }

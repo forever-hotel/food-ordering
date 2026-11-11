@@ -109,14 +109,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Generation counter to eliminate asynchronous race conditions
   const requestIdRef = useRef<number>(0);
+  const skipHydrationReqIdRef = useRef<number | null>(null);
 
   const sessionToken = explicitToken ?? initialToken;
 
   useEffect(() => {
     const expire = (event: Event) => {
-      const token = (event as CustomEvent<{ token?: unknown }>).detail?.token;
-      if (!sessionToken || token !== sessionToken) return;
+      const detail = (
+        event as CustomEvent<{
+          token?: unknown;
+          bookingId?: unknown;
+          roomNumber?: unknown;
+          sessionId?: unknown;
+        }>
+      ).detail;
+      const token = detail?.token;
+      if (!sessionToken || token !== sessionToken || status !== 'authenticated' || !guest) return;
+      if (detail?.bookingId && guest.bookingId && detail.bookingId !== guest.bookingId) return;
+      if (detail?.roomNumber && guest.roomNumber && detail.roomNumber !== guest.roomNumber) return;
+      if (detail?.sessionId && guest.sessionId && detail.sessionId !== guest.sessionId) return;
       ++requestIdRef.current;
+      skipHydrationReqIdRef.current = null;
       disconnectAllRealtimeClients();
       safelyClearSession();
       setExplicitToken(null);
@@ -127,7 +140,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
     window.addEventListener(FOSS_SESSION_EXPIRED_EVENT, expire);
     return () => window.removeEventListener(FOSS_SESSION_EXPIRED_EVENT, expire);
-  }, [sessionToken]);
+  }, [sessionToken, status, guest]);
 
   // Load demo tokens in background only in demo mode
   useEffect(() => {
@@ -181,6 +194,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!sessionToken) {
       return;
     }
+    if (skipHydrationReqIdRef.current === requestIdRef.current) {
+      return;
+    }
 
     let isSubscribed = true;
     const currentReqId = ++requestIdRef.current;
@@ -232,6 +248,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const loginWithQr = useCallback(async (qrToken: string): Promise<boolean> => {
     const currentReqId = ++requestIdRef.current;
+    disconnectAllRealtimeClients?.();
     setStatus('loading');
     setError(null);
 
@@ -241,6 +258,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return false;
       }
 
+      skipHydrationReqIdRef.current = currentReqId;
       setExplicitToken(response.sessionToken);
       setExpiresAt(response.expiresAt);
       setGuest({

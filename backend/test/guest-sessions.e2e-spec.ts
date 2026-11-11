@@ -98,7 +98,7 @@ describe('Guest Sessions Lifecycle (e2e)', () => {
       expect(response.headers['set-cookie']).toBeDefined();
       expect(
         response.headers['set-cookie'].some((c: string) =>
-          c.includes('foss_guest_session='),
+          c.includes('foss_session='),
         ),
       ).toBe(true);
       expect(response.body.guestName).toBe('John Doe');
@@ -209,7 +209,7 @@ describe('Guest Sessions Lifecycle (e2e)', () => {
       const cookieHeader = res.headers['set-cookie'] || [];
       const match = (
         Array.isArray(cookieHeader) ? cookieHeader.join(';') : cookieHeader
-      ).match(/foss_guest_session=([^;]+)/);
+      ).match(/foss_session=([^;]+)/);
       bearerToken = match ? match[1] : res.body.sessionToken;
     });
 

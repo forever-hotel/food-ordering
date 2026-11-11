@@ -28,7 +28,7 @@ describe('FDS Checkout, Session Revocation & Room Reassignment (e2e)', () => {
       ? (Array.isArray(cookieHeader)
           ? cookieHeader.join(';')
           : cookieHeader
-        ).match(/foss_guest_session=([^;]+)/)
+        ).match(/foss_session=([^;]+)/)
       : null;
     return match ? match[1] : res.body.sessionToken;
   }

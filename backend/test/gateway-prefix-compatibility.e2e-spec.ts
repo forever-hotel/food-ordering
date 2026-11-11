@@ -152,7 +152,7 @@ describe('Gateway Ingress Prefix Compatibility (e2e)', () => {
     const cookieHeader = loginRes.headers['set-cookie'] || [];
     const match = (
       Array.isArray(cookieHeader) ? cookieHeader.join(';') : cookieHeader
-    ).match(/foss_guest_session=([^;]+)/);
+    ).match(/foss_session=([^;]+)/);
     room101Token = match ? match[1] : loginRes.body.sessionToken;
   });
 
@@ -237,7 +237,7 @@ describe('Gateway Ingress Prefix Compatibility (e2e)', () => {
       const cookieHeader = res.headers['set-cookie'] || [];
       const match = (
         Array.isArray(cookieHeader) ? cookieHeader.join(';') : cookieHeader
-      ).match(/foss_guest_session=([^;]+)/);
+      ).match(/foss_session=([^;]+)/);
       expect(match).toBeTruthy();
       expect(res.body.bookingId).toBe('b1010000-0000-4000-8000-000000000101');
       expect(res.body.roomNumber).toBe('101');
@@ -427,6 +427,175 @@ describe('Gateway Ingress Prefix Compatibility (e2e)', () => {
         .expect(200);
 
       expect(res.text).toContain('swagger');
+    });
+  });
+
+  // 12. API Gateway cookie forwarding, HttpOnly persistence, and lifecycle rejection regression
+  describe('12. Gateway Cookie Forwarding & Stay Persistence Regression', () => {
+    function simulateGatewayResponseCookies(
+      setCookieHeaders: string[] | string | undefined,
+      allowedNames: string[],
+    ): string[] {
+      const rawList = Array.isArray(setCookieHeaders)
+        ? setCookieHeaders
+        : setCookieHeaders
+          ? [setCookieHeaders]
+          : [];
+      const forwarded: string[] = [];
+      for (const header of rawList) {
+        const parts = header.split(';').map((p) => p.trim());
+        const [nameVal, ...attrs] = parts;
+        const eqIdx = nameVal.indexOf('=');
+        if (eqIdx <= 0) continue;
+        const name = nameVal.slice(0, eqIdx).trim();
+        if (!allowedNames.includes(name)) continue;
+        const cleanedAttrs = attrs.filter(
+          (a) =>
+            !/^path=/i.test(a) &&
+            !/^domain=/i.test(a) &&
+            !/^samesite=/i.test(a),
+        );
+        cleanedAttrs.push('Path=/foss', 'SameSite=Lax');
+        forwarded.push(`${nameVal}; ${cleanedAttrs.join('; ')}`);
+      }
+      return forwarded;
+    }
+
+    function simulateGatewayRequestCookieHeader(
+      cookies: Record<string, string>,
+      allowedNames: string[],
+    ): string {
+      return Object.entries(cookies)
+        .filter(([name]) => allowedNames.includes(name))
+        .map(([name, val]) => `${name}=${val}`)
+        .join('; ');
+    }
+
+    it('issues gateway-compatible foss_session HttpOnly cookie, authenticates /me, /menu, /renew, and /realtime-ticket, and rejects after logout', async () => {
+      const gatewayAllowedCookies = ['foss_session', 'foss_csrf'];
+      const qrToken = qrTokenService.createToken(
+        'b1030000-0000-4000-8000-000000000103',
+        '103',
+      );
+
+      // 1. Redeem QR through gateway-prefixed route
+      const qrRes = await request(app.getHttpServer())
+        .post('/foss/guest-sessions/qr')
+        .send({ qrToken })
+        .expect(200);
+
+      expect(qrRes.body.sessionToken).toBeUndefined();
+      const rawSetCookies = qrRes.headers['set-cookie'];
+      expect(rawSetCookies).toBeDefined();
+
+      // Verify raw cookie attributes directly from FOSS
+      const rawCookieStr = Array.isArray(rawSetCookies)
+        ? rawSetCookies.join(';')
+        : String(rawSetCookies);
+      expect(rawCookieStr).toContain('foss_session=');
+      expect(rawCookieStr).toContain('HttpOnly');
+      expect(rawCookieStr).toContain('SameSite=Lax');
+      expect(rawCookieStr).toContain('Path=/');
+      expect(rawCookieStr).toMatch(/Max-Age=\d+|Expires=/);
+
+      // 2. Verify cookie survives API Gateway allowlist filtering (cookieNames: ["foss_session", "foss_csrf"])
+      const gatewayForwardedSetCookies = simulateGatewayResponseCookies(
+        rawSetCookies,
+        gatewayAllowedCookies,
+      );
+      expect(gatewayForwardedSetCookies.length).toBe(1);
+      expect(gatewayForwardedSetCookies[0]).toContain('foss_session=');
+      expect(gatewayForwardedSetCookies[0]).toContain('Path=/foss');
+
+      const tokenMatch = gatewayForwardedSetCookies[0].match(
+        /^foss_session=([^;]+)/,
+      );
+      expect(tokenMatch).toBeTruthy();
+      const cookieToken = tokenMatch![1];
+
+      const outboundCookieHeader = simulateGatewayRequestCookieHeader(
+        { foss_session: cookieToken, ignored_cookie: 'drop-me' },
+        gatewayAllowedCookies,
+      );
+      expect(outboundCookieHeader).toContain('foss_session=');
+      expect(outboundCookieHeader).not.toContain('ignored_cookie');
+
+      // 3. Cookie-only authentication against /foss/guest-sessions/me (no Authorization header)
+      const meRes = await request(app.getHttpServer())
+        .get('/foss/guest-sessions/me')
+        .set('Cookie', outboundCookieHeader)
+        .expect(200);
+      expect(meRes.body.bookingId).toBe('b1030000-0000-4000-8000-000000000103');
+      expect(meRes.body.roomNumber).toBe('103');
+      expect(meRes.body.sessionToken).toBeUndefined();
+
+      // 4. Cookie-only authentication against /foss/menu
+      const menuRes = await request(app.getHttpServer())
+        .get('/foss/menu')
+        .set('Cookie', outboundCookieHeader)
+        .expect(200);
+      expect(Array.isArray(menuRes.body.items)).toBe(true);
+
+      // 5. Cookie-only session renewal (/foss/guest-sessions/renew):
+      // Rejects missing Origin/custom header with 403 CSRF check, succeeds with browser Origin header and returns no JSON sessionToken
+      await request(app.getHttpServer())
+        .post('/foss/guest-sessions/renew')
+        .set('Cookie', outboundCookieHeader)
+        .expect(403);
+
+      const renewRes = await request(app.getHttpServer())
+        .post('/foss/guest-sessions/renew')
+        .set('Cookie', outboundCookieHeader)
+        .set('Origin', 'http://localhost:3000')
+        .expect(200);
+      expect(renewRes.body.sessionToken).toBeUndefined();
+      expect(renewRes.body.active).toBe(true);
+
+      // 6. Cookie-only realtime ticket (/foss/guest-sessions/realtime-ticket) passes auth with browser Origin
+      const prevRelayUrl = process.env.SHARED_WEBSOCKET_URL;
+      const prevRelayKey = process.env.WEBSOCKET_RELAY_KEY;
+      process.env.SHARED_WEBSOCKET_URL = 'https://relay.example.invalid';
+      process.env.WEBSOCKET_RELAY_KEY = 'test-relay-key';
+      const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ ticket: 'a'.repeat(43) }),
+      } as any);
+      try {
+        const ticketRes = await request(app.getHttpServer())
+          .post('/foss/guest-sessions/realtime-ticket')
+          .set('Cookie', outboundCookieHeader)
+          .set('Origin', 'http://localhost:3000')
+          .expect(200);
+        expect(ticketRes.body.ticket).toBe('a'.repeat(43));
+      } finally {
+        fetchSpy.mockRestore();
+        if (prevRelayUrl === undefined) delete process.env.SHARED_WEBSOCKET_URL;
+        else process.env.SHARED_WEBSOCKET_URL = prevRelayUrl;
+        if (prevRelayKey === undefined) delete process.env.WEBSOCKET_RELAY_KEY;
+        else process.env.WEBSOCKET_RELAY_KEY = prevRelayKey;
+      }
+
+      // 7. Logout revokes session and clears foss_session cookie; subsequent requests return 401
+      const logoutRes = await request(app.getHttpServer())
+        .post('/foss/guest-sessions/logout')
+        .set('Cookie', outboundCookieHeader)
+        .set('Origin', 'http://localhost:3000')
+        .expect(200);
+      expect(logoutRes.body.success).toBe(true);
+
+      await request(app.getHttpServer())
+        .get('/foss/guest-sessions/me')
+        .set('Cookie', outboundCookieHeader)
+        .expect(401);
+      await request(app.getHttpServer())
+        .get('/foss/menu')
+        .set('Cookie', outboundCookieHeader)
+        .expect(401);
+      await request(app.getHttpServer())
+        .post('/foss/guest-sessions/realtime-ticket')
+        .set('Cookie', outboundCookieHeader)
+        .set('Origin', 'http://localhost:3000')
+        .expect(401);
     });
   });
 });

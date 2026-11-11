@@ -522,7 +522,7 @@ describe('FOSS Guest Session Persistence & Security Review (PR #137, Issue #136)
           status: 200,
           headers: {
             'Content-Type': 'application/json',
-            'Set-Cookie': 'foss_guest_session=secret-cookie-val; HttpOnly; Path=/',
+            'Set-Cookie': 'foss_session=secret-cookie-val; HttpOnly; Path=/',
           },
         },
       );
@@ -616,6 +616,102 @@ describe('FOSS Guest Session Persistence & Security Review (PR #137, Issue #136)
       // Frontend purges stale persistent metadata on 401
       clearPersistentSession('api');
       assert.equal(loadPersistentSession('api'), null);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('Cookie-backed API journey: QR redemption -> /guest-sessions/me -> /menu sends credentials: include without raw bearer leakage', async () => {
+    const originalFetch = globalThis.fetch;
+    const calls: { url: string; method?: string; authHeader?: string; credentials?: any }[] = [];
+
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      const headers = (init?.headers as Record<string, string>) || {};
+      const reqUrl = String(url);
+      calls.push({
+        url: reqUrl,
+        method: init?.method || 'GET',
+        authHeader: headers.Authorization || headers.authorization,
+        credentials: init?.credentials,
+      });
+
+      if (reqUrl.includes('/guest-sessions/qr')) {
+        return new Response(
+          JSON.stringify({
+            sessionId: 'sess-gateway-101',
+            bookingId: 'book-gateway-101',
+            roomNumber: '101',
+            guestName: 'Gateway Guest',
+            stayStart: '2026-11-11T10:00:00.000Z',
+            stayEnd: '2026-11-13T11:00:00.000Z',
+            expiresAt: '2026-11-13T11:00:00.000Z',
+            active: true,
+          }),
+          {
+            status: 200,
+            headers: {
+              'Content-Type': 'application/json',
+              'Set-Cookie': 'foss_session=gateway-cookie-token; HttpOnly; Path=/foss; SameSite=Lax',
+            },
+          },
+        );
+      }
+
+      if (reqUrl.includes('/guest-sessions/me')) {
+        return new Response(
+          JSON.stringify({
+            sessionId: 'sess-gateway-101',
+            bookingId: 'book-gateway-101',
+            roomNumber: '101',
+            guestName: 'Gateway Guest',
+            stayEnd: '2026-11-13T11:00:00.000Z',
+            expiresAt: '2026-11-13T11:00:00.000Z',
+            active: true,
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
+
+      if (reqUrl.includes('/menu')) {
+        return new Response(
+          JSON.stringify({
+            items: [
+              {
+                id: 'item-1',
+                name: 'Hoppers',
+                category: 'Breakfast',
+                price: 850,
+                isAvailable: true,
+              },
+            ],
+            currentWindow: 'BREAKFAST',
+            hotelTime: '08:30:00',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
+
+      return new Response(JSON.stringify({ message: 'Not found' }), { status: 404 });
+    }) as typeof fetch;
+
+    try {
+      const apiSessionsProvider = new ApiSessionsProvider();
+      const apiMenuProvider = new ApiMenuProvider();
+
+      const qrSession = await apiSessionsProvider.redeemQrToken('valid-gateway-qr');
+      assert.equal(qrSession.sessionToken, '__COOKIE_SESSION__');
+
+      const me = await apiSessionsProvider.fetchCurrentSession(qrSession.sessionToken);
+      assert.equal(me.bookingId, 'book-gateway-101');
+
+      const menu = await apiMenuProvider.fetchGuestMenu(qrSession.sessionToken);
+      assert.equal(menu.items.length, 1);
+
+      assert.equal(calls.length, 3);
+      for (const call of calls) {
+        assert.equal(call.credentials, 'include');
+        assert.equal(call.authHeader, undefined);
+      }
     } finally {
       globalThis.fetch = originalFetch;
     }
