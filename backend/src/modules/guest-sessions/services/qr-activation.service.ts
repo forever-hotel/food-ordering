@@ -314,12 +314,9 @@ export class QrActivationService {
       );
     }
 
-    const sessionTtlMs = this.sessionTtlHours * 60 * 60 * 1000;
-    const computedExpiryTime = Math.min(
-      now.getTime() + sessionTtlMs,
-      stayEndTime,
-    );
-    const sessionExpiresAt = new Date(computedExpiryTime);
+    // 3. Stay-bound session lifetime: session is valid until the authoritative checkout timestamp (stayEnd)
+    // Guests remain authenticated throughout their stay without an artificial 24-hour idle cutoff
+    const sessionExpiresAt = new Date(stayEndTime);
 
     // 4. Generate high-entropy bearer token and store its SHA-256 hash
     const rawBearerToken = crypto.randomBytes(32).toString('hex');

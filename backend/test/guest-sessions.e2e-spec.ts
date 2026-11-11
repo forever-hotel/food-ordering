@@ -94,7 +94,13 @@ describe('Guest Sessions Lifecycle (e2e)', () => {
         'b1010000-0000-4000-8000-000000000101',
       );
       expect(response.body.roomNumber).toBe('101');
-      expect(response.body.sessionToken).toBeDefined();
+      expect(response.body.sessionToken).toBeUndefined();
+      expect(response.headers['set-cookie']).toBeDefined();
+      expect(
+        response.headers['set-cookie'].some((c: string) =>
+          c.includes('foss_guest_session='),
+        ),
+      ).toBe(true);
       expect(response.body.guestName).toBe('John Doe');
       expect(response.body.active).toBe(true);
       expect(response.body.sessionId).toBeDefined();
@@ -200,7 +206,11 @@ describe('Guest Sessions Lifecycle (e2e)', () => {
         .send({ qrToken: token })
         .expect(200);
 
-      bearerToken = res.body.sessionToken;
+      const cookieHeader = res.headers['set-cookie'] || [];
+      const match = (
+        Array.isArray(cookieHeader) ? cookieHeader.join(';') : cookieHeader
+      ).match(/foss_guest_session=([^;]+)/);
+      bearerToken = match ? match[1] : res.body.sessionToken;
     });
 
     it('TC-DDP-123-AC1: retrieves authenticated guest context with valid Bearer token', async () => {

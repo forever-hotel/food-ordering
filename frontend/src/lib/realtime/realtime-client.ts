@@ -156,7 +156,13 @@ export class FossRealtimeClient {
     try {
       const response = await fetch(`${this.config.apiUrl}/guest-sessions/realtime-ticket`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${this.config.sessionToken}` },
+        headers: {
+          ...(this.config.sessionToken && this.config.sessionToken !== '__COOKIE_SESSION__'
+            ? { Authorization: `Bearer ${this.config.sessionToken}` }
+            : {}),
+          'x-foss-client': 'foss-web',
+        },
+        credentials: 'include',
         signal: controller.signal,
       });
       if (response.status === 401) this.expireSession();
@@ -224,8 +230,10 @@ export class FossRealtimeClient {
         method: 'GET',
         headers: {
           Accept: 'text/event-stream',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          'x-foss-client': 'foss-web',
+          ...(token && token !== '__COOKIE_SESSION__' ? { Authorization: `Bearer ${token}` } : {}),
         },
+        credentials: 'include',
         signal: this.abortController.signal,
       });
 
@@ -344,8 +352,12 @@ export class FossRealtimeClient {
 
     const response = await fetch(url.toString(), {
       headers: {
-        Authorization: `Bearer ${this.config.sessionToken}`,
+        ...(this.config.sessionToken && this.config.sessionToken !== '__COOKIE_SESSION__'
+          ? { Authorization: `Bearer ${this.config.sessionToken}` }
+          : {}),
+        'x-foss-client': 'foss-web',
       },
+      credentials: 'include',
     });
 
     if (!response.ok) {
@@ -401,7 +413,7 @@ export class FossRealtimeClient {
 
     // 4. Handle session revocation
     if (event.eventType === RealtimeEventType.SESSION_REVOKED) {
-      this.disconnect();
+      this.expireSession();
     }
 
     // 5. Notify listener

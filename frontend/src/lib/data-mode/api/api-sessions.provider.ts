@@ -16,7 +16,9 @@ export class ApiSessionsProvider implements SessionsProvider {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'x-foss-client': 'foss-web',
       },
+      credentials: 'include',
       body: JSON.stringify({ qrToken: qrToken.trim() }),
     });
 
@@ -29,7 +31,7 @@ export class ApiSessionsProvider implements SessionsProvider {
     }
 
     return {
-      sessionToken: body.sessionToken,
+      sessionToken: body.sessionToken || '__COOKIE_SESSION__',
       expiresAt: body.expiresAt,
       guest: {
         guestId:
@@ -55,22 +57,30 @@ export class ApiSessionsProvider implements SessionsProvider {
     };
   }
 
-  async fetchCurrentSession(sessionToken: string): Promise<GuestContext> {
-    if (!sessionToken || sessionToken.trim() === '') {
-      throw new ApiError('Guest session token is required to fetch session context.', 401);
-    }
-    if (sessionToken.startsWith('demo-token-')) {
+  async fetchCurrentSession(
+    sessionToken?: string,
+  ): Promise<GuestContext & { sessionToken?: string; expiresAt?: string }> {
+    const isSentinel = sessionToken === '__COOKIE_SESSION__';
+    const effectiveToken = isSentinel ? undefined : sessionToken?.trim();
+
+    if (effectiveToken && effectiveToken.startsWith('demo-token-')) {
       throw new ApiError(
         'Demonstration session tokens cannot be transmitted to real API endpoints.',
         401,
       );
     }
 
+    const headers: Record<string, string> = {
+      'x-foss-client': 'foss-web',
+    };
+    if (effectiveToken) {
+      headers.Authorization = `Bearer ${effectiveToken}`;
+    }
+
     const response = await fetch(`${API_URL}/guest-sessions/me`, {
       method: 'GET',
-      headers: {
-        Authorization: `Bearer ${sessionToken}`,
-      },
+      headers,
+      credentials: 'include',
     });
 
     const body = await response.json().catch(() => null);
@@ -80,15 +90,74 @@ export class ApiSessionsProvider implements SessionsProvider {
       throw new ApiError(errorMsg, response.status, body);
     }
 
-    return body as GuestContext;
+    return body;
   }
 
-  async logoutSession(sessionToken: string): Promise<{ success: boolean; message: string }> {
+  async renewSession(sessionToken?: string): Promise<GuestSessionResponse> {
+    const isSentinel = sessionToken === '__COOKIE_SESSION__';
+    const effectiveToken = isSentinel ? undefined : sessionToken?.trim();
+
+    if (effectiveToken && effectiveToken.startsWith('demo-token-')) {
+      throw new ApiError(
+        'Demonstration session tokens cannot be transmitted to real API endpoints.',
+        401,
+      );
+    }
+
+    const headers: Record<string, string> = {
+      'x-foss-client': 'foss-web',
+    };
+    if (effectiveToken) {
+      headers.Authorization = `Bearer ${effectiveToken}`;
+    }
+
+    const response = await fetch(`${API_URL}/guest-sessions/renew`, {
+      method: 'POST',
+      headers,
+      credentials: 'include',
+    });
+
+    const body = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      const errorMsg = body?.message || 'Session renewal failed or stay concluded.';
+      throw new ApiError(errorMsg, response.status, body);
+    }
+
+    return {
+      sessionToken: body.sessionToken || '__COOKIE_SESSION__',
+      expiresAt: body.expiresAt,
+      guest: {
+        guestId:
+          body.sessionId ||
+          body.guestId ||
+          body.guest?.guestId ||
+          `guest-${body.roomNumber || body.guest?.roomNumber}`,
+        bookingId: body.bookingId || body.guest?.bookingId,
+        roomNumber: body.roomNumber || body.guest?.roomNumber,
+        guestName: body.guestName || body.guest?.guestName,
+        role: 'GUEST',
+        stayStart: body.stayStart,
+        stayEnd: body.stayEnd,
+      },
+    };
+  }
+
+  async logoutSession(sessionToken?: string): Promise<{ success: boolean; message: string }> {
+    const isSentinel = sessionToken === '__COOKIE_SESSION__';
+    const effectiveToken = isSentinel ? undefined : sessionToken?.trim();
+
+    const headers: Record<string, string> = {
+      'x-foss-client': 'foss-web',
+    };
+    if (effectiveToken) {
+      headers.Authorization = `Bearer ${effectiveToken}`;
+    }
+
     const response = await fetch(`${API_URL}/guest-sessions/logout`, {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${sessionToken}`,
-      },
+      headers,
+      credentials: 'include',
     });
 
     const body = await response.json().catch(() => null);

@@ -87,7 +87,7 @@ export function createMockOrderResponse(
  * Uses client-generated idempotency key to prevent duplicate orders across network retries.
  */
 export async function placeFoodOrder(
-  sessionToken: string,
+  sessionToken: string | undefined,
   payload: CreateFoodOrderPayload,
   idempotencyKey: string,
 ): Promise<FoodOrderResponse> {
@@ -301,7 +301,7 @@ export const FALLBACK_STAY_ORDERS: FoodOrderResponse[] = [
  * Retrieves a food order by its identifier scoped to the active guest stay.
  */
 export async function fetchGuestOrderById(
-  sessionToken: string,
+  sessionToken: string | undefined,
   orderId: string,
 ): Promise<FoodOrderResponse> {
   const normalizedId = orderId.replace(/^#/, '');
@@ -311,7 +311,7 @@ export async function fetchGuestOrderById(
 /**
  * Lists all food orders placed during the current stay.
  */
-export async function fetchGuestOrders(sessionToken: string): Promise<FoodOrderResponse[]> {
+export async function fetchGuestOrders(sessionToken?: string): Promise<FoodOrderResponse[]> {
   return getOrdersProvider().fetchGuestOrders(sessionToken);
 }
 
@@ -319,7 +319,7 @@ export async function fetchGuestOrders(sessionToken: string): Promise<FoodOrderR
  * Cancels an order within the 10-minute cancellation window.
  */
 export async function cancelFoodOrder(
-  sessionToken: string,
+  sessionToken: string | undefined,
   orderId: string,
   reason?: string,
 ): Promise<FoodOrderResponse> {

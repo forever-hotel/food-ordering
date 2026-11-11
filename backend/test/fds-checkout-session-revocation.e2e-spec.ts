@@ -22,6 +22,17 @@ describe('FDS Checkout, Session Revocation & Room Reassignment (e2e)', () => {
   let bookingAdapter: MockBookingAdapter;
   const inMemorySessions = new Map<string, FossSession>();
 
+  function extractSessionToken(res: request.Response): string {
+    const cookieHeader = res.headers['set-cookie'];
+    const match = cookieHeader
+      ? (Array.isArray(cookieHeader)
+          ? cookieHeader.join(';')
+          : cookieHeader
+        ).match(/foss_guest_session=([^;]+)/)
+      : null;
+    return match ? match[1] : res.body.sessionToken;
+  }
+
   const internalKey = 'test-internal-fds-secret-32-chars';
   const qrSecret = 'test-qr-signing-secret-at-least-32-chars';
 
@@ -110,7 +121,7 @@ describe('FDS Checkout, Session Revocation & Room Reassignment (e2e)', () => {
       .send({ qrToken })
       .expect(200);
 
-    const bearerToken = authRes.body.sessionToken;
+    const bearerToken = extractSessionToken(authRes);
 
     // 2. Verify active access works
     const meRes = await request(app.getHttpServer())
@@ -159,7 +170,7 @@ describe('FDS Checkout, Session Revocation & Room Reassignment (e2e)', () => {
       .send({ qrToken })
       .expect(200);
 
-    const oldBearerToken = authRes.body.sessionToken;
+    const oldBearerToken = extractSessionToken(authRes);
 
     // 2. FDS emits room reassignment event from 101 to 105
     const reassignRes = await request(app.getHttpServer())
@@ -270,7 +281,7 @@ describe('FDS Checkout, Session Revocation & Room Reassignment (e2e)', () => {
       .send({ qrToken })
       .expect(200);
 
-    const bearerToken = authRes.body.sessionToken;
+    const bearerToken = extractSessionToken(authRes);
 
     // 2. Simulate FDS status changed to CHECKED_OUT directly in upstream authority (simulating missed event webhook)
     await bookingAdapter.checkoutBooking(
@@ -299,7 +310,7 @@ describe('FDS Checkout, Session Revocation & Room Reassignment (e2e)', () => {
       .send({ qrToken })
       .expect(200);
 
-    const bearerToken = authRes.body.sessionToken;
+    const bearerToken = extractSessionToken(authRes);
 
     // 2. Expire the stay on provider
     const fixture = (bookingAdapter as any).fixtures.get(

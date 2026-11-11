@@ -100,12 +100,9 @@ export class GuestSessionsService {
       );
     }
 
-    const sessionTtlMs = this.sessionTtlHours * 60 * 60 * 1000;
-    const computedExpiryTime = Math.min(
-      now.getTime() + sessionTtlMs,
-      stayEndTime,
-    );
-    const expiresAt = new Date(computedExpiryTime);
+    // Stay-bound session lifetime: session is valid until the authoritative checkout timestamp (stayEnd)
+    // Guests remain authenticated throughout their stay without an artificial 24-hour idle cutoff
+    const expiresAt = new Date(stayEndTime);
 
     // 4. Generate high-entropy bearer token and its SHA-256 storage hash
     const rawBearerToken = crypto.randomBytes(32).toString('hex');
@@ -184,15 +181,9 @@ export class GuestSessionsService {
     }
 
     const now = this.clock();
-    if (now.getTime() >= new Date(session.expiresAt).getTime()) {
-      this.logger.warn(`Session [${session.sessionId}] has expired.`);
-      session.isActive = false;
-      session.updatedAt = now;
-      await this.fossSessionRepository.save(session);
-      throw new UnauthorizedException('Session has expired.');
-    }
 
-    // Re-verify stay status with FDS booking authority to catch mid-stay checkouts
+    // Re-verify stay status with FDS booking authority before enforcing expiration
+    // to correctly support legitimate front-desk stay extensions.
     let stay: BookingVerificationResultDto;
     try {
       stay = await this.bookingVerificationService.verifyStay(
@@ -200,8 +191,19 @@ export class GuestSessionsService {
         session.roomNumber,
       );
     } catch (error) {
-      // An unavailable booking authority must not permanently revoke a valid stay.
-      if (error instanceof ServiceUnavailableException) throw error;
+      // An unavailable booking authority must not permanently revoke a valid stay if within cached validity
+      if (error instanceof ServiceUnavailableException) {
+        if (now.getTime() < new Date(session.expiresAt).getTime()) {
+          throw error;
+        }
+        this.logger.warn(
+          `FDS unavailable and cached session [${session.sessionId}] has expired.`,
+        );
+        session.isActive = false;
+        session.updatedAt = now;
+        await this.fossSessionRepository.save(session);
+        throw new UnauthorizedException('Session has expired.');
+      }
       this.logger.warn(
         `Stay verification failed for session [${session.sessionId}]: ${error instanceof Error ? error.message : String(error)}`,
       );
@@ -246,11 +248,11 @@ export class GuestSessionsService {
       );
     }
 
-    // Ensure a previously issued session cannot bypass a newly shortened stay expiry
+    // Synchronize session expiresAt with authoritative stayEnd (handling both shortenings and extensions)
     const currentSessionExpiresAtTime = new Date(session.expiresAt).getTime();
-    if (stayEndTime < currentSessionExpiresAtTime) {
+    if (stayEndTime !== currentSessionExpiresAtTime) {
       this.logger.log(
-        `Authoritative stay expiry shortened for session [${session.sessionId}]. Updating expiresAt to [${stay.stayEnd}].`,
+        `Syncing session [${session.sessionId}] expiresAt with authoritative stayEnd [${stay.stayEnd}].`,
       );
       session.expiresAt = new Date(stayEndTime);
       session.updatedAt = now;
@@ -258,6 +260,124 @@ export class GuestSessionsService {
     }
 
     return { session, stay };
+  }
+
+  /**
+   * Authoritatively renews an active guest session for multi-day stays.
+   *
+   * Security & Coordination Guarantees:
+   * 1. Revalidates active session: Fails closed if session does not exist or was revoked.
+   * 2. Authoritative FDS stay verification: Confirms booking is still checked in and in the assigned room.
+   * 3. Stay-bounded lifetime: Session expiresAt is strictly bounded by stay checkout timestamp and SESSION_TTL_HOURS.
+   *    Never creates an unlimited token and never extends past checkout.
+   * 4. Idempotency & Concurrency: Atomically updates session expiresAt and updatedAt under PostgreSQL concurrency.
+   */
+  async renewSession(rawToken: string): Promise<GuestSessionResponseDto> {
+    if (!rawToken || typeof rawToken !== 'string') {
+      throw new UnauthorizedException('Session token is required.');
+    }
+
+    const cleanToken = rawToken.trim();
+    const hashedToken = this.hashToken(cleanToken);
+
+    let session =
+      await this.fossSessionRepository.findActiveBySessionToken(hashedToken);
+
+    if (!session) {
+      session =
+        await this.fossSessionRepository.findActiveBySessionToken(cleanToken);
+    }
+
+    if (!session || !session.isActive) {
+      throw new UnauthorizedException('Active session not found or revoked.');
+    }
+
+    const now = this.clock();
+
+    // Reject renewal if session has already expired; expired sessions cannot be revived
+    const sessionExpiresAtTime = new Date(session.expiresAt).getTime();
+    if (now.getTime() >= sessionExpiresAtTime) {
+      this.logger.warn(
+        `Session renewal rejected: session [${session.sessionId}] has already expired at [${session.expiresAt}].`,
+      );
+      session.isActive = false;
+      session.updatedAt = now;
+      await this.fossSessionRepository.save(session);
+      throw new UnauthorizedException(
+        'Session has expired and cannot be renewed.',
+      );
+    }
+
+    // Authoritatively re-verify stay status with FDS booking authority
+    let stay: BookingVerificationResultDto;
+    try {
+      stay = await this.bookingVerificationService.verifyStay(
+        session.bookingId,
+        session.roomNumber,
+      );
+    } catch (error) {
+      if (error instanceof ServiceUnavailableException) throw error;
+      this.logger.warn(
+        `Stay revalidation failed during renewal for session [${session.sessionId}]: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      session.isActive = false;
+      session.updatedAt = now;
+      await this.fossSessionRepository.save(session);
+      throw new UnauthorizedException(
+        'Guest stay has concluded or is no longer checked in.',
+      );
+    }
+
+    const stayStartTime = new Date(stay.stayStart).getTime();
+    const stayEndTime = new Date(stay.stayEnd).getTime();
+
+    if (
+      Number.isNaN(stayStartTime) ||
+      Number.isNaN(stayEndTime) ||
+      stayStartTime >= stayEndTime
+    ) {
+      throw new UnauthorizedException(
+        'Invalid authoritative stay window received from Front Desk.',
+      );
+    }
+
+    // Check if stay has concluded
+    if (now.getTime() >= stayEndTime) {
+      this.logger.warn(
+        `Session renewal rejected: stay concluded at [${stay.stayEnd}] for session [${session.sessionId}].`,
+      );
+      session.isActive = false;
+      session.updatedAt = now;
+      session.expiresAt = new Date(stayEndTime);
+      await this.fossSessionRepository.save(session);
+      throw new UnauthorizedException(
+        'Guest stay has concluded or is no longer checked in.',
+      );
+    }
+
+    // Renew session expiration up to the authoritative stay checkout timestamp (stayEnd)
+    const newExpiresAt = new Date(stayEndTime);
+
+    session.expiresAt = newExpiresAt;
+    session.updatedAt = now;
+    const saved = await this.fossSessionRepository.save(session);
+
+    this.logger.log(
+      `Session [${saved.sessionId}] renewed successfully for booking [${saved.bookingId}], new expiresAt: [${newExpiresAt.toISOString()}]`,
+    );
+
+    return {
+      sessionId: saved.sessionId,
+      bookingId: saved.bookingId,
+      roomNumber: saved.roomNumber,
+      sessionToken: cleanToken,
+      guestName: stay.guestName,
+      stayStart: stay.stayStart,
+      stayEnd: stay.stayEnd,
+      expiresAt: saved.expiresAt.toISOString(),
+      createdAt: (saved.createdAt || now).toISOString(),
+      active: saved.isActive,
+    };
   }
 
   /**

@@ -1,3 +1,4 @@
+import * as crypto from 'node:crypto';
 import {
   BadRequestException,
   Body,
@@ -10,11 +11,13 @@ import {
   Param,
   Post,
   Req,
+  Res,
   ServiceUnavailableException,
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
-import type { Request } from 'express';
+import { ConfigService } from '@nestjs/config';
+import type { Request, Response } from 'express';
 
 import { InternalServiceGuard } from '../../common/auth/internal-service.guard.js';
 import { RoomOwnershipGuard } from '../../common/auth/room-ownership.guard.js';
@@ -38,12 +41,99 @@ interface AuthenticatedRequest extends Request {
   sessionToken: string;
 }
 
+function setSessionCookie(
+  res?: Response,
+  token?: string,
+  expiresAt?: string | Date,
+): void {
+  if (!res || !token || typeof res.cookie !== 'function') return;
+  const isSecure =
+    process.env.NODE_ENV === 'production' ||
+    process.env.COOKIE_SECURE === 'true';
+  const sameSite =
+    (process.env.COOKIE_SAMESITE as 'lax' | 'strict' | 'none') || 'lax';
+  const maxAge = expiresAt
+    ? Math.max(0, new Date(expiresAt).getTime() - Date.now())
+    : 24 * 60 * 60 * 1000;
+  res.cookie('foss_guest_session', token, {
+    httpOnly: true,
+    secure: isSecure,
+    sameSite,
+    path: '/',
+    maxAge,
+  });
+}
+
+function clearSessionCookie(res?: Response): void {
+  if (!res || typeof res.clearCookie !== 'function') return;
+  const isSecure =
+    process.env.NODE_ENV === 'production' ||
+    process.env.COOKIE_SECURE === 'true';
+  const sameSite =
+    (process.env.COOKIE_SAMESITE as 'lax' | 'strict' | 'none') || 'lax';
+  res.clearCookie('foss_guest_session', {
+    httpOnly: true,
+    secure: isSecure,
+    sameSite,
+    path: '/',
+  });
+}
+
+function isVerifiedInternalCaller(
+  req?: Request,
+  configService?: ConfigService,
+): boolean {
+  if (!req || !configService) return false;
+  const headerKey =
+    req.headers?.['x-internal-service-key'] || req.headers?.['x-fds-signature'];
+  if (!headerKey || typeof headerKey !== 'string') return false;
+
+  const configuredSecret =
+    configService.get<string>('INTERNAL_SERVICE_KEY') ||
+    configService.get<string>('INTERNAL_SERVICE_SECRET') ||
+    configService.get<string>('FDS_WEBHOOK_SECRET');
+
+  const demoMode =
+    configService.get<string>('DEMO_MODE') === 'true' ||
+    configService.get<string>('MOCK_EXTERNAL_SERVICES') === 'true';
+  const isProduction = configService.get<string>('NODE_ENV') === 'production';
+  const expectedSecret =
+    configuredSecret || (demoMode ? 'fds-internal-secret-demo' : null);
+
+  if (!expectedSecret) return false;
+  if (isProduction && expectedSecret === 'fds-internal-secret-demo')
+    return false;
+
+  const provided = headerKey.trim();
+  try {
+    const hashProvided = crypto.createHash('sha256').update(provided).digest();
+    const hashExpected = crypto
+      .createHash('sha256')
+      .update(expectedSecret)
+      .digest();
+    if (crypto.timingSafeEqual(hashProvided, hashExpected)) {
+      return true;
+    }
+    if (demoMode && !isProduction) {
+      const hashDemo = crypto
+        .createHash('sha256')
+        .update('fds-internal-secret-demo')
+        .digest();
+      return crypto.timingSafeEqual(hashProvided, hashDemo);
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
 @Controller('guest-sessions')
 export class GuestSessionsController {
   constructor(
     private readonly guestSessionsService: GuestSessionsService,
     private readonly qrTokenService: QrTokenService,
     @Optional() private readonly qrActivationService?: QrActivationService,
+    @Optional() private readonly configService?: ConfigService,
   ) {}
 
   /**
@@ -101,12 +191,15 @@ export class GuestSessionsController {
   @Header('Cache-Control', 'no-store')
   async authenticateWithQr(
     @Body() body: VerifyQrDto,
+    @Req() req?: Request,
+    @Res({ passthrough: true }) res?: Response,
   ): Promise<GuestSessionResponseDto> {
     if (!body || typeof body !== 'object' || !body.qrToken) {
       throw new BadRequestException('Request body with qrToken is required.');
     }
 
     const token = body.qrToken.trim();
+    let sessionResponse: GuestSessionResponseDto;
 
     // Differentiate between opaque single-use activation credentials and signed development tokens
     if (!token.includes('.')) {
@@ -115,17 +208,42 @@ export class GuestSessionsController {
           'QR activation service is unconfigured.',
         );
       }
-      return this.qrActivationService.redeemActivationCredential(token);
+      sessionResponse =
+        await this.qrActivationService.redeemActivationCredential(token);
+    } else {
+      // Signed tokens (strictly prohibited in production environments; overrides forbidden)
+      if (process.env.NODE_ENV === 'production') {
+        throw new UnauthorizedException(
+          'Legacy signed QR tokens are strictly disabled in production. Authoritative single-use FDS-issued QR activation credentials are required.',
+        );
+      }
+      sessionResponse =
+        await this.guestSessionsService.authenticateWithQr(token);
     }
 
-    // Signed tokens (strictly prohibited in production environments; overrides forbidden)
-    if (process.env.NODE_ENV === 'production') {
-      throw new UnauthorizedException(
-        'Legacy signed QR tokens are strictly disabled in production. Authoritative single-use FDS-issued QR activation credentials are required.',
-      );
+    setSessionCookie(
+      res,
+      sessionResponse.sessionToken,
+      sessionResponse.expiresAt,
+    );
+
+    const isVerifiedInternal = isVerifiedInternalCaller(
+      req,
+      this.configService,
+    );
+
+    // Security Hardening: Never return the raw sessionToken from the public QR activation endpoint
+    // to unauthenticated callers, regardless of request headers. Browser-header presence or absence
+    // must NEVER be used to determine credential exposure. Authentication is established exclusively
+    // through the secure HttpOnly cookie. Only genuinely trusted internal callers with cryptographically
+    // verified service credentials receive raw bearer tokens.
+    if (!isVerifiedInternal) {
+      const sanitized: GuestSessionResponseDto = { ...sessionResponse };
+      delete (sanitized as any).sessionToken;
+      return sanitized;
     }
 
-    return this.guestSessionsService.authenticateWithQr(token);
+    return sessionResponse;
   }
 
   /**
@@ -136,11 +254,39 @@ export class GuestSessionsController {
   @UseGuards(GuestAuthGuard)
   getMe(
     @CurrentGuest() guest: GuestContext,
-  ): GuestContext & { active: boolean } {
-    return {
+    @Req() req?: AuthenticatedRequest,
+    @Res({ passthrough: true }) res?: Response,
+  ): GuestContext & {
+    active: boolean;
+    expiresAt?: string;
+    sessionToken?: string;
+  } {
+    const record = (
+      req as AuthenticatedRequest & { sessionRecord?: { expiresAt: Date } }
+    )?.sessionRecord;
+    const result: GuestContext & {
+      active: boolean;
+      expiresAt?: string;
+      sessionToken?: string;
+    } = {
       ...guest,
       active: true,
     };
+    if (record?.expiresAt) {
+      result.expiresAt = new Date(record.expiresAt).toISOString();
+    }
+    if (req?.sessionToken) {
+      setSessionCookie(
+        res,
+        req.sessionToken,
+        record?.expiresAt || guest?.stayEnd,
+      );
+      // Only expose sessionToken in JSON when requested via explicit Bearer header
+      if ((req as any)?.authSource === 'bearer') {
+        result.sessionToken = req.sessionToken;
+      }
+    }
+    return result;
   }
 
   @Get('realtime-session')
@@ -234,8 +380,42 @@ export class GuestSessionsController {
   @UseGuards(GuestAuthGuard)
   async logout(
     @Req() req: AuthenticatedRequest,
+    @Res({ passthrough: true }) res?: Response,
   ): Promise<{ success: boolean; message: string }> {
+    clearSessionCookie(res);
     return this.guestSessionsService.logout(req.sessionToken);
+  }
+
+  /**
+   * Renews an active guest session for multi-day stays without requiring a new QR scan.
+   */
+  @Post('renew')
+  @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'no-store')
+  @UseGuards(GuestAuthGuard)
+  async renewSession(
+    @Req() req: AuthenticatedRequest,
+    @Res({ passthrough: true }) res?: Response,
+  ): Promise<GuestSessionResponseDto> {
+    const renewed = await this.guestSessionsService.renewSession(
+      req.sessionToken,
+    );
+    setSessionCookie(res, renewed.sessionToken, renewed.expiresAt);
+
+    const isVerifiedInternal = isVerifiedInternalCaller(
+      req,
+      this.configService,
+    );
+
+    // Only return sessionToken in JSON when verified via explicit Bearer authorization header or verified internal service credential.
+    // For cookie-authenticated sessions, credentials are bound to the HttpOnly cookie and never exposed to JSON.
+    if ((req as any)?.authSource !== 'bearer' && !isVerifiedInternal) {
+      const sanitized: GuestSessionResponseDto = { ...renewed };
+      delete (sanitized as any).sessionToken;
+      return sanitized;
+    }
+
+    return renewed;
   }
 
   /**

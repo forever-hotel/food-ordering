@@ -82,7 +82,7 @@ export function GuestShell({ children }: PropsWithChildren) {
             <div className="flex items-center gap-2 flex-shrink-0">
               <Popconfirm
                 title="Sign out of room session?"
-                description="You will need to scan your room QR code again to access services."
+                description="Because QR activation slips are single-use, signing out will revoke your active session and a fresh QR slip from the Front Desk may be required to sign back in."
                 onConfirm={logout}
                 okText="Sign out"
                 cancelText="Cancel"

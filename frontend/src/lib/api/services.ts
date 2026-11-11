@@ -39,7 +39,7 @@ export function generateServiceIdempotencyKey(): string {
  * Submits a new room-bound service request atomically to WKMS via the FOSS backend.
  */
 export async function createServiceRequest(
-  sessionToken: string,
+  sessionToken: string | undefined,
   payload: CreateServiceRequestPayload,
   idempotencyKey?: string,
 ): Promise<ServiceRequestResponse> {
@@ -50,7 +50,7 @@ export async function createServiceRequest(
  * Retrieves all service requests for the current guest stay.
  */
 export async function fetchGuestServiceRequests(
-  sessionToken: string,
+  sessionToken?: string,
 ): Promise<ServiceRequestResponse[]> {
   return getServicesProvider().fetchGuestServiceRequests(sessionToken);
 }
@@ -59,7 +59,7 @@ export async function fetchGuestServiceRequests(
  * Retrieves a service request by ID.
  */
 export async function fetchGuestServiceRequestById(
-  sessionToken: string,
+  sessionToken: string | undefined,
   requestId: string,
 ): Promise<ServiceRequestResponse> {
   const normalizedId = requestId.replace(/^#/, '');

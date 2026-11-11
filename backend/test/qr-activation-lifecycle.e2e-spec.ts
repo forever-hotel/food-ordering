@@ -345,7 +345,13 @@ describe('Secure FDS QR Activation Lifecycle (e2e)', () => {
         'b1010000-0000-4000-8000-000000000101',
       );
       expect(redeemRes.body.roomNumber).toBe('101');
-      expect(redeemRes.body.sessionToken).toBeDefined();
+      expect(redeemRes.body.sessionToken).toBeUndefined();
+      expect(redeemRes.headers['set-cookie']).toBeDefined();
+      expect(
+        redeemRes.headers['set-cookie'].some((c: string) =>
+          c.includes('foss_guest_session='),
+        ),
+      ).toBe(true);
       expect(redeemRes.body.active).toBe(true);
 
       // Verify replay attack is rejected immediately

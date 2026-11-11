@@ -7,13 +7,17 @@ import type {
   FoodOrderStatus,
 } from '../../../types/orders.ts';
 
-function assertRealSessionToken(sessionToken: string, actionDesc: string): void {
-  if (!sessionToken || sessionToken.trim() === '') {
-    throw new ApiError(`Guest session token is required to ${actionDesc}.`, 401);
+function assertRealSessionToken(sessionToken: string | undefined, _actionDesc?: string): void {
+  if (sessionToken !== undefined && sessionToken.trim() === '') {
+    throw new ApiError(
+      `Guest session token is required to ${_actionDesc || 'perform action'}.`,
+      401,
+    );
   }
   if (
-    sessionToken.startsWith('demo-token-') ||
-    ['101', '102', '103', '204', '999'].includes(sessionToken)
+    sessionToken &&
+    (sessionToken.startsWith('demo-token-') ||
+      ['101', '102', '103', '204', '999'].includes(sessionToken))
   ) {
     throw new ApiError(
       'Demonstration session tokens cannot be transmitted to real API endpoints.',
@@ -22,16 +26,29 @@ function assertRealSessionToken(sessionToken: string, actionDesc: string): void 
   }
 }
 
+function buildHeaders(
+  sessionToken?: string,
+  extraHeaders: Record<string, string> = {},
+): Record<string, string> {
+  const headers: Record<string, string> = {
+    'x-foss-client': 'foss-web',
+    ...extraHeaders,
+  };
+  if (sessionToken && sessionToken !== '__COOKIE_SESSION__') {
+    headers.Authorization = `Bearer ${sessionToken}`;
+  }
+  return headers;
+}
+
 export class ApiOrdersProvider implements OrdersProvider {
-  async fetchGuestOrders(sessionToken: string): Promise<FoodOrderResponse[]> {
+  async fetchGuestOrders(sessionToken?: string): Promise<FoodOrderResponse[]> {
     assertRealSessionToken(sessionToken, 'fetch orders');
 
     try {
       const response = await fetch(`${API_URL}/food-orders`, {
         method: 'GET',
-        headers: {
-          Authorization: `Bearer ${sessionToken}`,
-        },
+        headers: buildHeaders(sessionToken),
+        credentials: 'include',
       });
 
       const body = await response.json().catch(() => null);
@@ -57,15 +74,17 @@ export class ApiOrdersProvider implements OrdersProvider {
     }
   }
 
-  async fetchGuestOrderById(sessionToken: string, orderId: string): Promise<FoodOrderResponse> {
+  async fetchGuestOrderById(
+    sessionToken: string | undefined,
+    orderId: string,
+  ): Promise<FoodOrderResponse> {
     assertRealSessionToken(sessionToken, 'fetch order details');
 
     try {
       const response = await fetch(`${API_URL}/food-orders/${encodeURIComponent(orderId)}`, {
         method: 'GET',
-        headers: {
-          Authorization: `Bearer ${sessionToken}`,
-        },
+        headers: buildHeaders(sessionToken),
+        credentials: 'include',
       });
 
       const body = await response.json().catch(() => null);
@@ -87,7 +106,7 @@ export class ApiOrdersProvider implements OrdersProvider {
   }
 
   async placeFoodOrder(
-    sessionToken: string,
+    sessionToken: string | undefined,
     payload: CreateFoodOrderPayload,
     idempotencyKey: string,
   ): Promise<FoodOrderResponse> {
@@ -102,12 +121,12 @@ export class ApiOrdersProvider implements OrdersProvider {
     try {
       const response = await fetch(`${API_URL}/food-orders`, {
         method: 'POST',
-        headers: {
+        headers: buildHeaders(sessionToken, {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${sessionToken}`,
           'Idempotency-Key': idempotencyKey,
           'X-Idempotency-Key': idempotencyKey,
-        },
+        }),
+        credentials: 'include',
         body: JSON.stringify(requestBody),
       });
 
@@ -133,7 +152,7 @@ export class ApiOrdersProvider implements OrdersProvider {
   }
 
   async cancelFoodOrder(
-    sessionToken: string,
+    sessionToken: string | undefined,
     orderId: string,
     reason?: string,
   ): Promise<FoodOrderResponse> {
@@ -142,10 +161,10 @@ export class ApiOrdersProvider implements OrdersProvider {
     try {
       const response = await fetch(`${API_URL}/food-orders/${encodeURIComponent(orderId)}/cancel`, {
         method: 'POST',
-        headers: {
+        headers: buildHeaders(sessionToken, {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${sessionToken}`,
-        },
+        }),
+        credentials: 'include',
         body: JSON.stringify({ reason }),
       });
 
@@ -173,10 +192,10 @@ export class ApiOrdersProvider implements OrdersProvider {
   ): Promise<FoodOrderResponse> {
     const response = await fetch(`${API_URL}/food-orders/${encodeURIComponent(orderId)}/status`, {
       method: 'POST',
-      headers: {
+      headers: buildHeaders(sessionToken, {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${sessionToken}`,
-      },
+      }),
+      credentials: 'include',
       body: JSON.stringify({ status: newStatus }),
     });
 

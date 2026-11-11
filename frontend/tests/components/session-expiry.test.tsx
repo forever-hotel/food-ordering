@@ -14,6 +14,9 @@ jest.mock('../../src/lib/data-mode/data-mode', () => ({
   getSessionStorageKey: () => 'session-expiry-test',
   DATA_MODE_CHANGE_EVENT: 'data-mode-change',
   LEGACY_SESSION_STORAGE_KEY: 'legacy-token',
+  savePersistentSession: jest.fn(),
+  loadPersistentSession: jest.fn(),
+  clearPersistentSession: jest.fn(),
 }));
 jest.mock('../../src/lib/realtime/realtime-client', () => ({
   disconnectAllRealtimeClients: jest.fn(),

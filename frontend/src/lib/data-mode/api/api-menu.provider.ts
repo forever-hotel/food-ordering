@@ -16,8 +16,9 @@ export class ApiMenuProvider implements MenuProvider {
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
+      'x-foss-client': 'foss-web',
     };
-    if (sessionToken) {
+    if (sessionToken && sessionToken !== '__COOKIE_SESSION__') {
       headers.Authorization = `Bearer ${sessionToken}`;
     }
 
@@ -25,6 +26,7 @@ export class ApiMenuProvider implements MenuProvider {
       const response = await fetch(endpoint, {
         method: 'GET',
         headers,
+        credentials: 'include',
       });
 
       const body = await response.json().catch(() => null);
@@ -47,8 +49,9 @@ export class ApiMenuProvider implements MenuProvider {
   async fetchGuestMenuItem(itemId: string, sessionToken?: string): Promise<GuestMenuItem | null> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
+      'x-foss-client': 'foss-web',
     };
-    if (sessionToken) {
+    if (sessionToken && sessionToken !== '__COOKIE_SESSION__') {
       headers.Authorization = `Bearer ${sessionToken}`;
     }
 
@@ -56,6 +59,7 @@ export class ApiMenuProvider implements MenuProvider {
       const response = await fetch(`${API_URL}/menu/items/${encodeURIComponent(itemId)}`, {
         method: 'GET',
         headers,
+        credentials: 'include',
       });
 
       if (response.status === 404) {

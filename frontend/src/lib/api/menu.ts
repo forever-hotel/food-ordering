@@ -223,13 +223,19 @@ export async function fetchMenuItem(sessionToken: string, itemId: string): Promi
 /**
  * Fetches meal window schedules and cutoff states.
  */
-export async function fetchMealWindows(sessionToken: string): Promise<MealWindowStatus[]> {
+export async function fetchMealWindows(sessionToken?: string): Promise<MealWindowStatus[]> {
+  const headers: Record<string, string> = {
+    'x-foss-client': 'foss-web',
+  };
+  if (sessionToken && sessionToken !== '__COOKIE_SESSION__') {
+    headers.Authorization = `Bearer ${sessionToken}`;
+  }
+
   try {
     const response = await fetch(`${API_URL}/menu/windows`, {
       method: 'GET',
-      headers: {
-        Authorization: `Bearer ${sessionToken}`,
-      },
+      headers,
+      credentials: 'include',
     });
 
     const body = await response.json().catch(() => null);

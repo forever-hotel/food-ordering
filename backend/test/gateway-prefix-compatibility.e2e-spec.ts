@@ -149,7 +149,11 @@ describe('Gateway Ingress Prefix Compatibility (e2e)', () => {
       .send({ qrToken: qr101 })
       .expect(200);
 
-    room101Token = loginRes.body.sessionToken;
+    const cookieHeader = loginRes.headers['set-cookie'] || [];
+    const match = (
+      Array.isArray(cookieHeader) ? cookieHeader.join(';') : cookieHeader
+    ).match(/foss_guest_session=([^;]+)/);
+    room101Token = match ? match[1] : loginRes.body.sessionToken;
   });
 
   afterAll(async () => {
@@ -229,12 +233,17 @@ describe('Gateway Ingress Prefix Compatibility (e2e)', () => {
         .send({ qrToken })
         .expect(200);
 
-      expect(res.body.sessionToken).toBeDefined();
+      expect(res.body.sessionToken).toBeUndefined();
+      const cookieHeader = res.headers['set-cookie'] || [];
+      const match = (
+        Array.isArray(cookieHeader) ? cookieHeader.join(';') : cookieHeader
+      ).match(/foss_guest_session=([^;]+)/);
+      expect(match).toBeTruthy();
       expect(res.body.bookingId).toBe('b1010000-0000-4000-8000-000000000101');
       expect(res.body.roomNumber).toBe('101');
       expect(res.body.active).toBe(true);
 
-      room101Token = res.body.sessionToken;
+      room101Token = match ? match[1] : res.body.sessionToken;
     });
   });
 

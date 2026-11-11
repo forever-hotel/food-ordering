@@ -9,25 +9,25 @@ import { DemoStateStore } from './demo-state-store.ts';
 export class DemoServicesProvider implements ServicesProvider {
   private readonly store = DemoStateStore.getInstance();
 
-  async fetchGuestServiceRequests(sessionToken: string): Promise<ServiceRequestResponse[]> {
-    const stay = this.store.resolveStayByToken(sessionToken);
+  async fetchGuestServiceRequests(sessionToken?: string): Promise<ServiceRequestResponse[]> {
+    const stay = this.store.resolveStayByToken(sessionToken || '');
     return this.store.getServiceRequestsForStay(stay.bookingId, stay.roomNumber);
   }
 
   async fetchGuestServiceRequestById(
-    sessionToken: string,
+    sessionToken: string | undefined,
     requestId: string,
   ): Promise<ServiceRequestResponse> {
-    const stay = this.store.resolveStayByToken(sessionToken);
+    const stay = this.store.resolveStayByToken(sessionToken || '');
     return this.store.getServiceRequestById(requestId, stay);
   }
 
   async createServiceRequest(
-    sessionToken: string,
+    sessionToken: string | undefined,
     payload: CreateServiceRequestPayload,
     idempotencyKey?: string,
   ): Promise<ServiceRequestResponse> {
-    const stay = this.store.resolveStayByToken(sessionToken);
+    const stay = this.store.resolveStayByToken(sessionToken || '');
     return this.store.createServiceRequest(stay, payload, idempotencyKey);
   }
 

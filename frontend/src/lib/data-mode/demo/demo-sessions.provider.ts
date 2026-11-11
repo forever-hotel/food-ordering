@@ -24,7 +24,7 @@ export class DemoSessionsProvider implements SessionsProvider {
     };
   }
 
-  async fetchCurrentSession(sessionToken: string): Promise<GuestContext> {
+  async fetchCurrentSession(sessionToken?: string): Promise<GuestContext> {
     if (!sessionToken || sessionToken.trim() === '') {
       throw new ApiError('Guest session token is required to fetch session context.', 401);
     }
@@ -39,10 +39,35 @@ export class DemoSessionsProvider implements SessionsProvider {
       guestName: stay.guestName,
       role: 'GUEST',
       active: true,
+      stayStart: stay.checkIn,
+      stayEnd: stay.checkOut,
     };
   }
 
-  async logoutSession(_sessionToken: string): Promise<{ success: boolean; message: string }> {
+  async renewSession(sessionToken?: string): Promise<GuestSessionResponse> {
+    if (!sessionToken || sessionToken.trim() === '') {
+      throw new ApiError('Guest session token is required to renew session.', 401);
+    }
+    if (!sessionToken.startsWith('demo-token-')) {
+      throw new ApiError('Real API tokens cannot be resolved in Demo Mode.', 401);
+    }
+    const stay = this.store.resolveStayByToken(sessionToken);
+    return {
+      sessionToken: stay.sessionToken,
+      expiresAt: stay.checkOut,
+      guest: {
+        guestId: `guest-${stay.roomNumber}`,
+        bookingId: stay.bookingId,
+        roomNumber: stay.roomNumber,
+        guestName: stay.guestName,
+        role: 'GUEST',
+        stayStart: stay.checkIn,
+        stayEnd: stay.checkOut,
+      },
+    };
+  }
+
+  async logoutSession(_sessionToken?: string): Promise<{ success: boolean; message: string }> {
     void _sessionToken;
     return {
       success: true,
