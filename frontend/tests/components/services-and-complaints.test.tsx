@@ -1447,7 +1447,9 @@ describe('ComplaintsTab Component', () => {
     });
     fireEvent.click(findSelectOption(/Request #REQ-LONG-9876543210-XYZ/i)!);
 
-    fireEvent.change(descInput, { target: { value: 'Maintenance issue still persists after visit.' } });
+    fireEvent.change(descInput, {
+      target: { value: 'Maintenance issue still persists after visit.' },
+    });
     fireEvent.click(screen.getByRole('button', { name: /Submit Complaint/i }));
 
     await waitFor(() => {
@@ -1660,9 +1662,9 @@ describe('ComplaintsTab Component', () => {
     fireEvent.mouseDown(refSelect);
 
     await waitFor(() => {
-      const optionTexts = Array.from(
-        document.querySelectorAll('.ant-select-item-option'),
-      ).map((el) => el.textContent ?? '');
+      const optionTexts = Array.from(document.querySelectorAll('.ant-select-item-option')).map(
+        (el) => el.textContent ?? '',
+      );
       expect(optionTexts.some((t) => /Order #ORD-999/i.test(t))).toBe(true);
       expect(optionTexts.some((t) => /Order #ORD-888/i.test(t))).toBe(true);
       expect(optionTexts.some((t) => /Request #REQ-777/i.test(t))).toBe(true);

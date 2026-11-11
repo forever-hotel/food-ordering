@@ -59,8 +59,7 @@ export function OrderDemoSimulationControls({
         onOrderUpdated(nextOrder);
         message.info(`Demo simulation: status set to ${targetStatus}`);
       } else {
-        const errMsg =
-          err instanceof Error ? err.message : 'Demo order simulation is unavailable.';
+        const errMsg = err instanceof Error ? err.message : 'Demo order simulation is unavailable.';
         message.error(errMsg);
       }
     } finally {
