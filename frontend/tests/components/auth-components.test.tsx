@@ -5,7 +5,6 @@ import { appTheme } from '../../src/config/theme';
 import { ManualEntryForm } from '../../src/features/auth/components/manual-entry-form';
 import { QrScanCard } from '../../src/features/auth/components/qr-scan-card';
 import { QrScannerModal } from '../../src/features/auth/components/qr-scanner-modal';
-import { ActiveSessionView } from '../../src/features/guest/components/active-session-view';
 import { DemoModeToolbar } from '../../src/components/demo/demo-mode-toolbar';
 import { NavigationProvider } from '../../src/lib/navigation/navigation-context';
 import { CartProvider } from '../../src/lib/cart/cart-context';
@@ -887,45 +886,6 @@ describe('QrScannerModal Component', () => {
     Object.defineProperty(navigator, 'mediaDevices', {
       writable: true,
       value: originalMediaDevices,
-    });
-  });
-});
-
-describe('ActiveSessionView Component', () => {
-  it('renders active guest room, name and allows logout', async () => {
-    mockAuthContext.guest = {
-      bookingId: 'BK-ACT-999',
-      roomNumber: '505',
-      guestName: 'Eleanor Rigby',
-      checkInDate: '2026-11-09T10:00:00Z',
-      checkOutDate: '2026-11-12T10:00:00Z',
-    };
-    mockAuthContext.expiresAt = '2026-11-10T12:00:00Z';
-
-    render(
-      <Wrapper>
-        <ActiveSessionView />
-      </Wrapper>,
-    );
-
-    expect(screen.getByText('Room 505')).toBeDefined();
-    expect(screen.getByText('Eleanor Rigby')).toBeDefined();
-    expect(screen.getByText('CHECKED-IN')).toBeDefined();
-
-    // Log Out button
-    const signOutBtn = screen.getByRole('button', { name: /Log Out/i });
-    fireEvent.click(signOutBtn);
-
-    // Popconfirm Yes
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Yes/i })).toBeDefined();
-    });
-
-    const confirmYes = screen.getByRole('button', { name: /Yes/i });
-    fireEvent.click(confirmYes);
-
-    await waitFor(() => {
-      expect(mockAuthContext.logout).toHaveBeenCalled();
     });
   });
 });

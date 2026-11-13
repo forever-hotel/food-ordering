@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { Card, Tag, Typography, Button } from 'antd';
 import type { FoodOrderResponse } from '../../../types/orders.ts';
 import {

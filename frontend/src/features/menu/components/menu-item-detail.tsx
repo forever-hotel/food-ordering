@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { App, Button, Card, Input, Tag, Typography } from 'antd';
 import type { GuestMenuItem } from '../../../types/menu.ts';
 import { formatLkrPrice, isValidImageUrl } from '../../../lib/api/menu.ts';

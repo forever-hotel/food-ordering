@@ -1,6 +1,5 @@
 'use client';
 
-import React from 'react';
 import { Layout, Popconfirm, Tag } from 'antd';
 import type { PropsWithChildren } from 'react';
 

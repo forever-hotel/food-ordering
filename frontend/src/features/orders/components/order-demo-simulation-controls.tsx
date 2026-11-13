@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { App, Button } from 'antd';
 import type { FoodOrderResponse, FoodOrderStatus } from '../../../types/orders.ts';
 import { advanceOrderStatusDemo } from '../../../lib/api/orders.ts';

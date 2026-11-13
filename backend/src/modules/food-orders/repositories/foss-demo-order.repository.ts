@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { FossDemoOrder } from '../entities/foss-demo-order.entity.js';
 
 /**
@@ -15,7 +15,6 @@ import { FossDemoOrder } from '../entities/foss-demo-order.entity.js';
  */
 @Injectable()
 export class FossDemoOrderRepository {
-  private readonly logger = new Logger(FossDemoOrderRepository.name);
   private readonly orders: Map<string, FossDemoOrder> = new Map();
 
   public async findById(orderId: string): Promise<FossDemoOrder | null> {

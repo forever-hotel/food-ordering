@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { App, Button } from 'antd';
 import type { GuestMenuItem, GuestMenuResponse, MealPeriod } from '../../../types/menu.ts';
 import { fetchGuestMenu, formatLkrPrice } from '../../../lib/api/menu.ts';

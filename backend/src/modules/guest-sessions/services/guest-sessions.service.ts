@@ -27,7 +27,6 @@ import { QrTokenService } from './qr-token.service.js';
 @Injectable()
 export class GuestSessionsService {
   private readonly logger = new Logger(GuestSessionsService.name);
-  private readonly sessionTtlHours: number;
   private readonly clock: () => Date;
   private readonly processedEventIds = new Map<
     string,
@@ -38,7 +37,7 @@ export class GuestSessionsService {
     private readonly fossSessionRepository: FossSessionRepository,
     private readonly qrTokenService: QrTokenService,
     private readonly bookingVerificationService: BookingVerificationService,
-    private readonly configService: ConfigService,
+    _configService: ConfigService,
     @Optional() private qrActivationService?: QrActivationService,
     @Optional() @Inject('SESSION_CLOCK') clock?: () => Date,
   ) {
@@ -48,9 +47,6 @@ export class GuestSessionsService {
     } else {
       this.clock = clock ?? (() => new Date());
     }
-    this.sessionTtlHours = Number(
-      this.configService.get<string>('SESSION_TTL_HOURS') || 24,
-    );
   }
 
   /**

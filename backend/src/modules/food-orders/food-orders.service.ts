@@ -27,17 +27,11 @@ import type { GuestContext } from '../guest-sessions/interfaces/guest-context.in
 import { HotelClockService } from '../menu/services/hotel-clock.service.js';
 import { MealWindowService } from '../menu/services/meal-window.service.js';
 import { CreateFoodOrderDto } from './dto/create-food-order.dto.js';
-import {
-  FoodOrderResponseDto,
-  OrderTimelineStepDto,
-} from './dto/food-order-response.dto.js';
+import { FoodOrderResponseDto } from './dto/food-order-response.dto.js';
 import { FoodOrderStatus } from './enums/food-order-status.enum.js';
 import { FossDemoOrderItem } from './entities/foss-demo-order-item.entity.js';
 import { FossDemoOrder } from './entities/foss-demo-order.entity.js';
-import {
-  buildFoodOrderTimeline,
-  mapFoodOrderToResponse,
-} from './order-response.mapper.js';
+import { mapFoodOrderToResponse } from './order-response.mapper.js';
 import { OrderDemoSimulationService } from './demo-simulation/order-demo-simulation.service.js';
 import { FossDemoOrderRepository } from './repositories/foss-demo-order.repository.js';
 
@@ -467,19 +461,6 @@ export class FoodOrdersService {
       order,
       this.clockService.now(),
       referenceTime,
-    );
-  }
-
-  private buildTimeline(
-    order: FossDemoOrder,
-    createdAtDate?: Date,
-    updatedAtDate?: Date,
-  ): OrderTimelineStepDto[] {
-    return buildFoodOrderTimeline(
-      order,
-      this.clockService.now(),
-      createdAtDate,
-      updatedAtDate,
     );
   }
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useSyncExternalStore } from 'react';
+import { useSyncExternalStore } from 'react';
 import { Spin } from 'antd';
 
 import { useAuth } from '@/lib/auth/auth-context';

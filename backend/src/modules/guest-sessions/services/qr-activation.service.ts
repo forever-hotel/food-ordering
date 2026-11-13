@@ -24,13 +24,12 @@ import { FossSessionRepository } from '../repositories/foss-session.repository.j
 export class QrActivationService {
   private readonly logger = new Logger(QrActivationService.name);
   private readonly activationTtlMinutes: number;
-  private readonly sessionTtlHours: number;
   private readonly frontendBaseUrl: string;
   private readonly clock: () => Date;
 
   constructor(
     private readonly qrActivationRepository: FossQrActivationRepository,
-    private readonly fossSessionRepository: FossSessionRepository,
+    _fossSessionRepository: FossSessionRepository,
     private readonly bookingVerificationService: BookingVerificationService,
     private readonly configService: ConfigService,
     @Optional() private readonly dataSource?: DataSource,
@@ -44,9 +43,6 @@ export class QrActivationService {
     }
     this.activationTtlMinutes = Number(
       this.configService.get<string>('QR_ACTIVATION_TTL_MINUTES') || 15,
-    );
-    this.sessionTtlHours = Number(
-      this.configService.get<string>('SESSION_TTL_HOURS') || 24,
     );
 
     const configuredFrontend =

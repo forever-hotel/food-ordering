@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { MealPeriod } from '../../../integrations/internal-services/kms/dto/kms-menu.dto.js';
 import { HotelClockService } from './hotel-clock.service.js';
 
@@ -45,7 +45,6 @@ export class MealWindowService {
         valid && window.enabled && now < cutoff ? cutoff - now : 0,
     };
   }
-  private readonly logger = new Logger(MealWindowService.name);
 
   // Authoritative operational meal schedules for Forever Hotel (Asia/Colombo)
   public static readonly WINDOW_DEFINITIONS: MealWindowDefinition[] = [

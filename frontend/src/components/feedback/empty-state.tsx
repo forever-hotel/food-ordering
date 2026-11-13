@@ -1,6 +1,6 @@
 'use client';
 
-import React, { type ReactNode } from 'react';
+import { type ReactNode } from 'react';
 import { Button, Card, Typography } from 'antd';
 
 const { Title, Paragraph } = Typography;

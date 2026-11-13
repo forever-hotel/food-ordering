@@ -135,7 +135,7 @@ function isVerifiedInternalCaller(
 export class GuestSessionsController {
   constructor(
     private readonly guestSessionsService: GuestSessionsService,
-    private readonly qrTokenService: QrTokenService,
+    _qrTokenService: QrTokenService,
     @Optional() private readonly qrActivationService?: QrActivationService,
     @Optional() private readonly configService?: ConfigService,
   ) {}
@@ -357,7 +357,7 @@ export class GuestSessionsController {
   @Get('rooms/:roomNumber')
   @UseGuards(GuestAuthGuard, RoomOwnershipGuard)
   verifyRoomAccess(
-    @Param('roomNumber') roomNumber: string,
+    @Param('roomNumber') _roomNumber: string,
     @CurrentGuest() guest: GuestContext,
   ): { authorized: boolean; roomNumber: string; sessionId: string } {
     return {
@@ -374,7 +374,7 @@ export class GuestSessionsController {
   @Get('bookings/:bookingId')
   @UseGuards(GuestAuthGuard, RoomOwnershipGuard)
   verifyBookingAccess(
-    @Param('bookingId') bookingId: string,
+    @Param('bookingId') _bookingId: string,
     @CurrentGuest() guest: GuestContext,
   ): { authorized: boolean; bookingId: string; sessionId: string } {
     return {

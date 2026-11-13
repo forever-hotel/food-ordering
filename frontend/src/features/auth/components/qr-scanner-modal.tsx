@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Button, Modal, Spin, Typography } from 'antd';
 import { BrowserQRCodeReader, type IScannerControls } from '@zxing/browser';
 

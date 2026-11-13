@@ -15,6 +15,7 @@ import { CreateFoodOrderDto } from './dto/create-food-order.dto.js';
 import { FoodOrderStatus } from './enums/food-order-status.enum.js';
 import { FossDemoOrder } from './entities/foss-demo-order.entity.js';
 import { FoodOrdersService } from './food-orders.service.js';
+import { buildFoodOrderTimeline } from './order-response.mapper.js';
 import { FossDemoOrderRepository } from './repositories/foss-demo-order.repository.js';
 
 describe('FoodOrdersService', () => {
@@ -1264,13 +1265,13 @@ describe('FoodOrdersService', () => {
       order.updatedAt = '2026-10-28T07:30:00.000Z' as any;
       order.items = null as any;
 
-      const timeline = (service as any).buildTimeline(order);
+      const timeline = buildFoodOrderTimeline(order, clockService.now());
       expect(timeline).toBeDefined();
       expect(timeline.length).toBeGreaterThan(0);
 
       order.createdAt = clockService.now();
       order.updatedAt = undefined as any;
-      const timeline2 = (service as any).buildTimeline(order);
+      const timeline2 = buildFoodOrderTimeline(order, clockService.now());
       expect(timeline2).toBeDefined();
     });
   });

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Alert, Button } from 'antd';
 
 import { useAuth } from '../../../lib/auth/auth-context';

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { App, Button, Card, Input, Select, Tag, Typography } from 'antd';
 function CheckIcon({ className }: { className?: string }) {
   return (
