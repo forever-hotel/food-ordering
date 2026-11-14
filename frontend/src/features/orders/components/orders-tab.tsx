@@ -319,14 +319,14 @@ export function OrdersTab() {
       {todayOrders.length > 0 && (
         <div>
           <div className="flex items-center justify-between mb-2 px-1">
-            <Text className="text-xs font-bold text-slate-500 uppercase tracking-wider block">
+            <Text className="text-xs font-semibold text-[#5a5650] uppercase tracking-wider block">
               {todayHeader}
             </Text>
             <Button
               type="link"
               size="small"
               onClick={loadOrders}
-              className="text-[11px] text-[#1D3557] font-semibold !p-0 !h-auto"
+              className="text-[11px] text-[#1a3c5e] font-semibold !p-0 !h-auto"
             >
               Refresh
             </Button>
@@ -340,28 +340,28 @@ export function OrdersTab() {
                 <Card
                   key={order.orderId}
                   onClick={() => setSelectedOrderId(order.orderId)}
-                  className="!rounded-2xl !border-slate-100 !bg-white !shadow-xs hover:border-slate-200 active:scale-[0.99] transition-all cursor-pointer"
+                  className="!rounded-[10px] !border-[#ddd8cf] !bg-white !shadow-none hover:border-[#ddd8cf] active:scale-[0.99] transition-all cursor-pointer"
                   styles={{ body: { padding: '14px 16px' } }}
                 >
                   <div className="flex items-start justify-between">
                     <div>
-                      <span className="text-xs font-semibold text-slate-400 block mb-0.5">
+                      <span className="text-xs font-semibold text-[#5a5650] block mb-0.5">
                         {displayId}
                       </span>
                       <Title
                         level={4}
-                        className="!text-sm !font-bold !text-[#1E293B] !mb-1 truncate max-w-[220px]"
+                        className="!text-sm !font-semibold !text-[#1a1a18] !mb-1 truncate max-w-[220px]"
                       >
                         {formatSummary(order)}
                       </Title>
-                      <Text strong className="text-sm font-bold text-[#1D3557]">
+                      <Text strong className="text-sm font-semibold text-[#1a3c5e]">
                         {formatLkrPrice(order.totalAmount)}
                       </Text>
                     </div>
 
                     <div className="flex flex-col items-end gap-1.5">
                       {getStatusTag(order.status)}
-                      <span className="text-[11px] text-slate-400 font-medium">
+                      <span className="text-[11px] text-[#5a5650] font-medium">
                         {formatOrderTime(order.createdAt)}
                       </span>
                     </div>
@@ -376,7 +376,7 @@ export function OrdersTab() {
       {/* Date Section 2: YESTERDAY, APR 7 (Figure 37) */}
       {pastOrders.length > 0 && (
         <div>
-          <Text className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2 px-1">
+          <Text className="text-xs font-semibold text-[#5a5650] uppercase tracking-wider block mb-2 px-1">
             YESTERDAY & EARLIER
           </Text>
 
@@ -388,28 +388,28 @@ export function OrdersTab() {
                 <Card
                   key={order.orderId}
                   onClick={() => setSelectedOrderId(order.orderId)}
-                  className="!rounded-2xl !border-slate-100 !bg-white !shadow-xs hover:border-slate-200 active:scale-[0.99] transition-all cursor-pointer"
+                  className="!rounded-[10px] !border-[#ddd8cf] !bg-white !shadow-none hover:border-[#ddd8cf] active:scale-[0.99] transition-all cursor-pointer"
                   styles={{ body: { padding: '14px 16px' } }}
                 >
                   <div className="flex items-start justify-between">
                     <div>
-                      <span className="text-xs font-semibold text-slate-400 block mb-0.5">
+                      <span className="text-xs font-semibold text-[#5a5650] block mb-0.5">
                         {displayId}
                       </span>
                       <Title
                         level={4}
-                        className="!text-sm !font-bold !text-[#1E293B] !mb-1 truncate max-w-[220px]"
+                        className="!text-sm !font-semibold !text-[#1a1a18] !mb-1 truncate max-w-[220px]"
                       >
                         {formatSummary(order)}
                       </Title>
-                      <Text strong className="text-sm font-bold text-[#1D3557]">
+                      <Text strong className="text-sm font-semibold text-[#1a3c5e]">
                         {formatLkrPrice(order.totalAmount)}
                       </Text>
                     </div>
 
                     <div className="flex flex-col items-end gap-1.5">
                       {getStatusTag(order.status)}
-                      <span className="text-[11px] text-slate-400 font-medium">
+                      <span className="text-[11px] text-[#5a5650] font-medium">
                         {formatOrderTime(order.createdAt)}
                       </span>
                     </div>
@@ -422,7 +422,7 @@ export function OrdersTab() {
       )}
 
       {/* Folio notice matching Figure 37 */}
-      <Paragraph className="!text-xs !text-slate-400 text-center !mt-6 leading-normal">
+      <Paragraph className="!text-xs !text-[#5a5650] text-center !mt-6 leading-normal">
         All charges added to room folio at checkout
       </Paragraph>
     </div>

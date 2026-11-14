@@ -355,7 +355,7 @@ export function MenuTab({ isDemoMode }: MenuTabProps = {}) {
       <div
         role="tablist"
         aria-label="Meal periods"
-        className="flex items-center justify-between border-b border-slate-200 bg-white -mx-4 px-3 py-0.5 select-none shadow-xs"
+        className="flex items-center justify-between border-b border-[#ddd8cf] bg-white -mx-4 px-3 py-0.5 select-none shadow-none"
       >
         {CATEGORIES.map((cat) => {
           const isSelected = selectedCategory === cat.key;
@@ -369,10 +369,10 @@ export function MenuTab({ isDemoMode }: MenuTabProps = {}) {
                 setSelectedCategory(cat.key);
                 setSelectedCourse('All');
               }}
-              className={`flex-1 py-2 text-center text-xs font-bold transition-all relative ${
+              className={`flex-1 py-2 text-center text-xs font-semibold transition-all relative ${
                 isSelected
-                  ? 'text-[#1D3557] after:absolute after:bottom-0 after:left-4 after:right-4 after:h-[2.5px] after:bg-[#1D3557] after:rounded-full'
-                  : 'text-slate-400 hover:text-slate-700'
+                  ? 'text-[#1a3c5e] after:absolute after:bottom-0 after:left-4 after:right-4 after:h-[2.5px] after:bg-[#1a3c5e] after:rounded-full'
+                  : 'text-[#5a5650] hover:text-[#1a1a18]'
               }`}
             >
               {cat.label}
@@ -385,16 +385,16 @@ export function MenuTab({ isDemoMode }: MenuTabProps = {}) {
       <div
         role="status"
         aria-live="polite"
-        className={`w-full rounded-xl px-3.5 py-2.5 flex items-center gap-2.5 shadow-xs transition-colors ${
+        className={`w-full rounded-[10px] px-3.5 py-2.5 flex items-center gap-2.5 shadow-none transition-colors ${
           windowEvaluation.state === 'open'
-            ? 'bg-[#FFFBEB] border-l-4 border-[#F59E0B] text-amber-950'
+            ? 'bg-[#FFFBEB] border-l-4 border-[#c9920d] text-amber-950'
             : windowEvaluation.state === 'upcoming'
               ? 'bg-[#F0F7FF] border-l-4 border-[#3B82F6] text-[#1E3A8A]'
               : windowEvaluation.state === 'closed'
-                ? 'bg-[#F8FAFC] border-l-4 border-[#94A3B8] text-slate-700'
+                ? 'bg-[#f5f3ef] border-l-4 border-[#94A3B8] text-[#1a1a18]'
                 : selectedCategory === 'Tea'
                   ? 'bg-[#F0FDF4] border-l-4 border-[#22C55E] text-emerald-950'
-                  : 'bg-[#FFFDF5] border-l-4 border-[#CBD5E1] text-slate-600'
+                  : 'bg-[#FFFDF5] border-l-4 border-[#CBD5E1] text-[#5a5650]'
         }`}
       >
         <span className="text-base select-none flex-shrink-0" aria-hidden="true">
@@ -474,7 +474,7 @@ export function MenuTab({ isDemoMode }: MenuTabProps = {}) {
               size="large"
               aria-label={`View Cart with ${totalCount} items, total ${formatLkrPrice(totalAmount)}`}
               onClick={handleOpenCart}
-              className="!h-11 !rounded-full !bg-[#1D3557] hover:!bg-[#162A45] active:scale-[0.99] !font-bold text-xs shadow-xl flex items-center justify-center gap-2 text-white"
+              className="!h-11 !rounded-full !bg-[#1a3c5e] hover:!bg-[#12263a] active:scale-[0.99] !font-semibold text-xs shadow-none flex items-center justify-center gap-2 text-white"
             >
               <span>
                 View Cart · {totalCount} {totalCount === 1 ? 'item' : 'items'} ·{' '}

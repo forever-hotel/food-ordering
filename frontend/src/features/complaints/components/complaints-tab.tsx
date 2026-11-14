@@ -40,7 +40,7 @@ function ClockIcon({ className }: { className?: string }) {
 function ShieldAlertIcon({ className }: { className?: string }) {
   return (
     <svg
-      className={className || 'w-4 h-4 text-slate-700'}
+      className={className || 'w-4 h-4 text-[#1a1a18]'}
       fill="none"
       viewBox="0 0 24 24"
       stroke="currentColor"
@@ -680,13 +680,13 @@ export function ComplaintsTab() {
         );
       case 'HIGH':
         return (
-          <Tag className="!border-red-200 !bg-red-50 !text-red-700 !font-bold !rounded-md text-[11px]">
+          <Tag className="!border-red-200 !bg-red-50 !text-red-700 !font-semibold !rounded-md text-[11px]">
             High Severity ✓
           </Tag>
         );
       case 'URGENT':
         return (
-          <Tag className="!border-rose-300 !bg-rose-100 !text-rose-900 !font-extrabold !rounded-md text-[11px]">
+          <Tag className="!border-rose-300 !bg-rose-100 !text-rose-900 !font-semibold !rounded-md text-[11px]">
             ⚠️ Urgent Severity
           </Tag>
         );
@@ -724,12 +724,12 @@ export function ComplaintsTab() {
 
       {/* Main Complaint Form Card (Figure 39) */}
       <Card
-        className="!rounded-2xl !border-slate-100 !bg-white !shadow-xs"
+        className="!rounded-[10px] !border-[#ddd8cf] !bg-white !shadow-none"
         styles={{ body: { padding: '20px 16px' } }}
       >
         {/* 1. Category Selector */}
         <div className="mb-4">
-          <Text className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
+          <Text className="text-xs font-semibold text-[#5a5650] uppercase tracking-wider block mb-1.5">
             COMPLAINT CATEGORY
           </Text>
           <Select
@@ -748,7 +748,7 @@ export function ComplaintsTab() {
                 if (opt) setSubject(`${opt.label} concern`);
               }
             }}
-            className="w-full !rounded-xl !h-10 text-xs"
+            className="w-full !rounded-[10px] !h-10 text-xs"
             options={COMPLAINT_CATEGORY_OPTIONS.map((opt) => ({
               value: opt.value,
               label: opt.label,
@@ -758,7 +758,7 @@ export function ComplaintsTab() {
 
         {/* 2. Severity Level Selector (Figure 39) */}
         <div className="mb-4">
-          <Text className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
+          <Text className="text-xs font-semibold text-[#5a5650] uppercase tracking-wider block mb-1.5">
             SEVERITY LEVEL
           </Text>
           <div className="grid grid-cols-3 gap-2">
@@ -770,10 +770,10 @@ export function ComplaintsTab() {
                   key={s.level}
                   type="button"
                   onClick={() => setSeverity(s.level)}
-                  className={`touch-target py-2 rounded-xl text-xs font-bold transition-all border focus-visible:outline-2 focus-visible:outline-[#1D3557] ${
+                  className={`touch-target py-2 rounded-[10px] text-xs font-semibold transition-all border focus-visible:outline-2 focus-visible:outline-[#1a3c5e] ${
                     isSelected
-                      ? `${s.activeBg} ${s.activeText} shadow-xs border-transparent`
-                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                      ? `${s.activeBg} ${s.activeText} shadow-none border-transparent`
+                      : 'bg-white text-[#5a5650] border-[#ddd8cf] hover:bg-[#f9f7f4]'
                   }`}
                   aria-pressed={isSelected}
                 >
@@ -788,7 +788,7 @@ export function ComplaintsTab() {
         <div className="mb-4 min-w-0">
           <label
             htmlFor="complaint-reference-select"
-            className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1.5"
+            className="text-xs font-semibold text-[#5a5650] uppercase tracking-wider block mb-1.5"
           >
             LINK TO ORDER OR REQUEST (OPTIONAL)
           </label>
@@ -799,7 +799,7 @@ export function ComplaintsTab() {
             onChange={(val) => setReference(val as string)}
             loading={referencesLoading}
             popupMatchSelectWidth={true}
-            className="w-full !rounded-xl !h-10 text-xs [&_.ant-select-selection-item]:truncate"
+            className="w-full !rounded-[10px] !h-10 text-xs [&_.ant-select-selection-item]:truncate"
             optionRender={(option) => (
               <span className="block whitespace-normal break-words text-xs leading-snug py-0.5">
                 {option.label}
@@ -815,10 +815,10 @@ export function ComplaintsTab() {
         {/* 4. Description Textarea (Figure 39) */}
         <div className="mb-5">
           <div className="flex items-center justify-between mb-1.5">
-            <Text className="text-xs font-bold text-slate-500 uppercase tracking-wider block">
+            <Text className="text-xs font-semibold text-[#5a5650] uppercase tracking-wider block">
               DESCRIPTION
             </Text>
-            <span className="text-[11px] text-slate-400">{description.length}/1000</span>
+            <span className="text-[11px] text-[#5a5650]">{description.length}/1000</span>
           </div>
           <TextArea
             rows={4}
@@ -826,7 +826,7 @@ export function ComplaintsTab() {
             onChange={(e) => setDescription(e.target.value)}
             maxLength={1000}
             placeholder="Please detail your experience so management can resolve it promptly..."
-            className="!rounded-xl text-xs !bg-slate-50 !border-slate-200"
+            className="!rounded-[10px] text-xs !bg-[#f9f7f4] !border-[#ddd8cf]"
           />
         </div>
 
@@ -838,15 +838,15 @@ export function ComplaintsTab() {
           loading={submitting}
           disabled={submitting}
           onClick={handleSubmit}
-          className="!h-11 !rounded-xl !bg-[#1D3557] hover:!bg-[#162a45] !font-bold text-sm shadow-xs"
+          className="!h-11 !rounded-[10px] !bg-[#1a3c5e] hover:!bg-[#12263a] !font-semibold text-sm shadow-none"
         >
           {submitting ? 'Submitting to Management...' : 'Submit Complaint'}
         </Button>
       </Card>
 
       {/* Informational Disclaimer Banner (Figure 39) */}
-      <div className="p-3 bg-slate-100 rounded-xl border border-slate-200 text-center">
-        <Paragraph className="!text-[11px] !text-slate-500 !mb-0 leading-relaxed">
+      <div className="p-3 bg-[#e8eef4] rounded-[10px] border border-[#ddd8cf] text-center">
+        <Paragraph className="!text-[11px] !text-[#5a5650] !mb-0 leading-relaxed">
           A unique complaint reference will be generated. The hotel manager will review and respond
           directly to your stay.
         </Paragraph>
@@ -856,8 +856,8 @@ export function ComplaintsTab() {
       <div className="pt-2">
         <div className="flex items-center justify-between mb-2 px-1">
           <div className="flex items-center gap-1.5">
-            <ShieldAlertIcon className="w-4 h-4 text-slate-700" />
-            <Text className="text-xs font-bold uppercase tracking-wider text-slate-700">
+            <ShieldAlertIcon className="w-4 h-4 text-[#1a1a18]" />
+            <Text className="text-xs font-semibold uppercase tracking-wider text-[#1a1a18]">
               Stay Complaints & Tracking
             </Text>
           </div>
@@ -869,7 +869,7 @@ export function ComplaintsTab() {
               void loadComplaints(true);
               void loadReferences();
             }}
-            className="!text-slate-500 text-xs"
+            className="!text-[#5a5650] text-xs"
           >
             Refresh
           </Button>
@@ -900,19 +900,19 @@ export function ComplaintsTab() {
               return (
                 <Card
                   key={item.complaintId}
-                  className="!rounded-2xl !border-slate-100 !bg-white !shadow-xs overflow-hidden"
+                  className="!rounded-[10px] !border-[#ddd8cf] !bg-white !shadow-none overflow-hidden"
                   styles={{ body: { padding: '16px' } }}
                 >
                   {/* Complaint Card Header */}
                   <div className="flex items-start justify-between gap-2 mb-2">
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs font-bold text-slate-900">
+                        <span className="font-mono text-xs font-semibold text-[#1a1a18]">
                           {item.complaintId}
                         </span>
                         {renderSeverityBadge(item.severity)}
                       </div>
-                      <span className="text-[11px] text-slate-400">
+                      <span className="text-[11px] text-[#5a5650]">
                         Room {item.roomNumber} ·{' '}
                         {new Date(item.createdAt).toLocaleTimeString([], {
                           hour: '2-digit',
@@ -925,11 +925,11 @@ export function ComplaintsTab() {
 
                   {/* Subject and Description */}
                   <div className="mb-2.5">
-                    <Text className="text-xs font-bold text-slate-800 block mb-0.5">
+                    <Text className="text-xs font-semibold text-[#1a1a18] block mb-0.5">
                       {item.subject}
                     </Text>
                     <Paragraph
-                      className="!text-xs !text-slate-600 !mb-0 leading-relaxed"
+                      className="!text-xs !text-[#5a5650] !mb-0 leading-relaxed"
                       ellipsis={isExpanded ? false : { rows: 2 }}
                     >
                       {item.description}
@@ -937,19 +937,19 @@ export function ComplaintsTab() {
                   </div>
 
                   {/* Linked Reference & Manager Subtext */}
-                  <div className="flex flex-wrap items-center gap-2 pt-1.5 border-t border-slate-100 text-[11px] text-slate-500">
+                  <div className="flex flex-wrap items-center gap-2 pt-1.5 border-t border-[#ddd8cf] text-[11px] text-[#5a5650]">
                     {item.relatedOrderId && (
-                      <span className="bg-slate-50 border border-slate-200 px-2 py-0.5 rounded-md">
+                      <span className="bg-[#f9f7f4] border border-[#ddd8cf] px-2 py-0.5 rounded-md">
                         Linked Order: #{item.relatedOrderId}
                       </span>
                     )}
                     {item.relatedRequestId && (
-                      <span className="bg-slate-50 border border-slate-200 px-2 py-0.5 rounded-md">
+                      <span className="bg-[#f9f7f4] border border-[#ddd8cf] px-2 py-0.5 rounded-md">
                         Linked Request: #{item.relatedRequestId}
                       </span>
                     )}
                     {item.assignedManager && (
-                      <span className="text-slate-600 font-medium">
+                      <span className="text-[#5a5650] font-medium">
                         Assigned: {item.assignedManager}
                       </span>
                     )}
@@ -957,8 +957,8 @@ export function ComplaintsTab() {
 
                   {/* Resolution Notes if Resolved */}
                   {item.resolutionNotes && (
-                    <div className="mt-2.5 p-2.5 bg-emerald-50 rounded-xl border border-emerald-100 text-xs text-emerald-800">
-                      <span className="font-bold block mb-0.5">Manager Resolution:</span>
+                    <div className="mt-2.5 p-2.5 bg-emerald-50 rounded-[10px] border border-emerald-100 text-xs text-emerald-800">
+                      <span className="font-semibold block mb-0.5">Manager Resolution:</span>
                       <span>{item.resolutionNotes}</span>
                     </div>
                   )}
@@ -968,7 +968,7 @@ export function ComplaintsTab() {
                     <button
                       type="button"
                       onClick={() => setExpandedComplaintId(isExpanded ? null : item.complaintId)}
-                      className="text-[11px] font-semibold text-[#1D3557] hover:underline flex items-center gap-1"
+                      className="text-[11px] font-semibold text-[#1a3c5e] hover:underline flex items-center gap-1"
                     >
                       {isExpanded ? (
                         <>
@@ -1002,8 +1002,8 @@ export function ComplaintsTab() {
 
                   {/* Expandable 4-Stage Progression Timeline */}
                   {isExpanded && item.timeline && (
-                    <div className="mt-4 pt-3 border-t border-slate-100">
-                      <Text className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-2">
+                    <div className="mt-4 pt-3 border-t border-[#ddd8cf]">
+                      <Text className="text-[11px] font-semibold text-[#5a5650] uppercase tracking-wider block mb-2">
                         Resolution Progress
                       </Text>
                       <div className="space-y-3">
@@ -1019,7 +1019,7 @@ export function ComplaintsTab() {
                                 ) : isCurrent ? (
                                   <ClockIcon className="w-4 h-4 text-amber-500 animate-pulse" />
                                 ) : (
-                                  <div className="w-3.5 h-3.5 rounded-full border-2 border-slate-300" />
+                                  <div className="w-3.5 h-3.5 rounded-full border-2 border-[#ddd8cf]" />
                                 )}
                               </div>
                               <div className="flex-1 text-xs">
@@ -1029,14 +1029,14 @@ export function ComplaintsTab() {
                                       isCurrent
                                         ? 'text-amber-800'
                                         : isDone
-                                          ? 'text-slate-800'
-                                          : 'text-slate-400'
+                                          ? 'text-[#1a1a18]'
+                                          : 'text-[#5a5650]'
                                     }`}
                                   >
                                     {step.label}
                                   </span>
                                   {step.timestamp && (
-                                    <span className="text-[11px] text-slate-400">
+                                    <span className="text-[11px] text-[#5a5650]">
                                       {step.timestamp}
                                     </span>
                                   )}

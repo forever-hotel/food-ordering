@@ -26,7 +26,7 @@ export function LoadingSkeleton({
       {Array.from({ length: count }).map((_, index) => (
         <Card
           key={index}
-          className="!rounded-2xl !border-slate-100 !shadow-xs !bg-white"
+          className="!rounded-[10px] !border-[#ddd8cf] !shadow-none !bg-white"
           styles={{ body: { padding: '16px' } }}
         >
           {type === 'header' && (

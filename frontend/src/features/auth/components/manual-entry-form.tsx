@@ -62,13 +62,13 @@ export function ManualEntryForm({ loading, onSubmit, demoTokens = {} }: ManualEn
           value={code}
           onChange={(e) => setCode(e.target.value)}
           disabled={loading}
-          className="flex-1 !bg-slate-100 !border-slate-200/90 !text-slate-800 placeholder:!text-slate-400 !rounded-xl text-xs !h-11"
+          className="flex-1 !bg-[#e8eef4] !border-[#ddd8cf]/90 !text-[#1a1a18] placeholder:!text-[#5a5650] !rounded-[10px] text-xs !h-11"
         />
         <Button
           type="primary"
           htmlType="submit"
           loading={loading}
-          className="!bg-[#1D3557] hover:!bg-[#162A45] !rounded-xl !h-11 px-5 font-bold text-xs shadow-xs"
+          className="!bg-[#1a3c5e] hover:!bg-[#12263a] !rounded-[10px] !h-11 px-5 font-semibold text-xs shadow-none"
         >
           Go
         </Button>
@@ -80,7 +80,7 @@ export function ManualEntryForm({ loading, onSubmit, demoTokens = {} }: ManualEn
           <button
             type="button"
             onClick={() => setShowDemoChips(!showDemoChips)}
-            className="text-xs text-slate-500 hover:text-slate-700 underline focus:outline-none"
+            className="text-xs text-[#5a5650] hover:text-[#1a1a18] underline focus:outline-none"
           >
             {showDemoChips ? 'Hide demo codes' : 'Quick demo access codes'}
           </button>
@@ -92,7 +92,7 @@ export function ManualEntryForm({ loading, onSubmit, demoTokens = {} }: ManualEn
                   key={key}
                   type="button"
                   onClick={() => handleSelectDemo(key)}
-                  className="text-[11px] bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-1 rounded border border-slate-200 transition-colors"
+                  className="text-[11px] bg-[#e8eef4] hover:bg-slate-200 text-[#1a1a18] px-2 py-1 rounded border border-[#ddd8cf] transition-colors"
                 >
                   {key}
                 </button>

@@ -47,7 +47,7 @@ jest.mock('../../src/lib/navigation/navigation-context', () => {
 });
 
 jest.mock('next/font/google', () => ({
-  Geist: () => ({ variable: 'mock-geist' }),
+  Inter: () => ({ variable: 'mock-inter' }),
   Geist_Mono: () => ({ variable: 'mock-geist-mono' }),
 }));
 

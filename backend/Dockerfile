@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # Multi-stage Dockerfile for Forever Hotel FOSS Backend (NestJS)
 # Stage 1: Build stage
 FROM node:24-alpine AS builder
@@ -5,7 +6,8 @@ FROM node:24-alpine AS builder
 WORKDIR /usr/src/app
 
 COPY package.json package-lock.json ./
-RUN npm ci --ignore-scripts --no-fund
+RUN --mount=type=cache,id=foss-backend-npm,target=/root/.npm,sharing=locked \
+    npm ci --ignore-scripts --no-fund --prefer-offline
 
 COPY tsconfig.json tsconfig.build.json nest-cli.json ./
 COPY src/ ./src/
@@ -21,7 +23,8 @@ ENV NODE_ENV=production
 ENV PORT=4300
 
 COPY package.json package-lock.json ./
-RUN npm ci --ignore-scripts --omit=dev --no-fund && npm cache clean --force
+RUN --mount=type=cache,id=foss-backend-npm,target=/root/.npm,sharing=locked \
+    npm ci --ignore-scripts --omit=dev --no-fund --prefer-offline
 
 COPY --from=builder /usr/src/app/dist ./dist
 

@@ -1,17 +1,18 @@
+@import '../styles/mad-foundation.css';
 @import 'tailwindcss';
 
 :root {
-  --background: #f8fafc;
-  --foreground: #1e293b;
-  --primary-navy: #1d3557;
-  --accent-gold: #f5a623;
+  --background: #f5f3ef;
+  --foreground: #1a1a18;
+  --primary-navy: #1a3c5e;
+  --accent-gold: #c9920d;
   --surface-white: #ffffff;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-inter);
   --font-mono: var(--font-geist-mono);
 }
 
@@ -20,7 +21,7 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family:
-    var(--font-geist-sans),
+    var(--font-inter),
     -apple-system,
     BlinkMacSystemFont,
     'Segoe UI',
@@ -38,7 +39,7 @@ body {
 
 /* Accessible focus styling adhering to WCAG 2.1 AA */
 :focus-visible {
-  outline: 2px solid #1d3557;
+  outline: 2px solid #1a3c5e;
   outline-offset: 2px;
 }
 
@@ -100,7 +101,7 @@ body {
   left: 16px;
   z-index: 100;
   padding: 8px 16px;
-  background: #1d3557;
+  background: #1a3c5e;
   color: #ffffff;
   font-weight: 600;
   border-radius: 8px;
@@ -109,4 +110,10 @@ body {
 
 .skip-link:focus {
   top: 16px;
+}
+
+.guest-shell__header [role='button'] {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
 }

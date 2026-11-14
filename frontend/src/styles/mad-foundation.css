@@ -1,0 +1,102 @@
+/* Shared visual foundations derived from MAD. Each service remains independently buildable. */
+:root {
+  --ui-brand: #1a3c5e;
+  --ui-brand-hover: #2e5f8a;
+  --ui-brand-light: #e8eef4;
+  --ui-accent: #c9920d;
+  --ui-canvas: #f5f3ef;
+  --ui-surface: #ffffff;
+  --ui-surface-alt: #f9f7f4;
+  --ui-border: #ddd8cf;
+  --ui-ink: #1a1a18;
+  --ui-muted: #5a5650;
+  --ui-radius-control: 6px;
+  --ui-radius-panel: 10px;
+  --ui-font: var(--font-inter, Inter), 'Segoe UI', Arial, sans-serif;
+}
+
+body {
+  font-family: var(--ui-font);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+:where(h1, h2, h3) {
+  text-wrap: balance;
+}
+:where(label, th) {
+  font-size: 12px;
+  font-weight: 500;
+}
+:where(input, select, textarea)::placeholder {
+  opacity: 0.75;
+}
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--ui-brand);
+  outline-offset: 3px;
+  scroll-margin-block: 5rem;
+}
+:where(button, input, select, textarea):disabled {
+  cursor: not-allowed;
+}
+
+/* Ant Design owns control sizing; these rules unify tables and panel surfaces. */
+.ant-card,
+.ant-modal-content,
+.ant-popover-inner {
+  box-shadow: none;
+}
+.ant-card .ant-card-head-title {
+  font-size: 14px;
+  font-weight: 500;
+}
+.ant-form-item .ant-form-item-label > label {
+  font-size: 12px;
+  font-weight: 500;
+}
+.ant-table-wrapper .ant-table {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.ant-table-wrapper .ant-table-thead > tr > th {
+  font-weight: 400;
+}
+.ant-table-wrapper .ant-table-tbody > tr:not(.ant-table-row-selected):nth-child(even) > td {
+  background: var(--ui-surface-alt);
+}
+.ant-table-wrapper .ant-table-tbody > tr:hover > td {
+  background: var(--ui-brand-light);
+}
+.ant-alert {
+  border-radius: var(--ui-radius-control);
+}
+
+/* Guest and worker views retain generous touch targets on phones/tablets. */
+@media (max-width: 767px) {
+  .ant-btn:not(.ant-btn-icon-only),
+  .ant-input-affix-wrapper,
+  .ant-select-single .ant-select-selector {
+    min-height: 44px;
+  }
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']),
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

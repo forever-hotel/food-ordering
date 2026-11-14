@@ -32,7 +32,7 @@ export function GuestShell({ children }: PropsWithChildren) {
   const showBottomNav = isAuthenticated && !pageHeader.hideBottomNav;
 
   return (
-    <Layout className="guest-shell min-h-screen !bg-[#F8FAFC] flex flex-col">
+    <Layout className="guest-shell min-h-screen !bg-[#f5f3ef] flex flex-col">
       {/* Skip to Content for Accessibility */}
       <a href="#main-content" className="skip-link">
         Skip to main content
@@ -41,9 +41,9 @@ export function GuestShell({ children }: PropsWithChildren) {
       {/* Network Status Offline Banner */}
       <OfflineBanner />
 
-      {/* Top Header - Dark Navy #1D3557 when authenticated per approved Figures 32, 36, 37, 38, 39 */}
+      {/* Top Header - Dark Navy #1a3c5e when authenticated per approved Figures 32, 36, 37, 38, 39 */}
       {showHeader && (
-        <Header className="guest-shell__header !px-4 !h-16 flex items-center justify-between sticky top-0 z-50 shadow-sm !bg-[#1D3557] !border-b !border-[#162A45]">
+        <Header className="guest-shell__header !px-4 !h-16 flex items-center justify-between sticky top-0 z-50 shadow-none !bg-[#1a3c5e] !border-b !border-[#12263a]">
           <div className="flex items-center gap-2.5 min-w-0">
             {pageHeader.showBackButton && pageHeader.onBack && (
               <button
@@ -68,7 +68,7 @@ export function GuestShell({ children }: PropsWithChildren) {
             )}
 
             <div className="flex flex-col min-w-0">
-              <h1 className="guest-shell__title !m-0 !text-base !font-bold leading-tight truncate !text-white">
+              <h1 className="guest-shell__title !m-0 !text-base !font-semibold leading-tight truncate !text-white">
                 {pageHeader.title}
               </h1>
               <span className="text-xs leading-tight truncate text-slate-200">
@@ -91,7 +91,7 @@ export function GuestShell({ children }: PropsWithChildren) {
                   role="button"
                   tabIndex={0}
                   aria-label={`Room ${guest.roomNumber}. Click to sign out.`}
-                  className="!bg-[#F5A623] !text-white !border-none !font-bold !px-3 !py-1 !text-xs !rounded-full shadow-xs cursor-pointer select-none hover:opacity-90 active:scale-95 transition-all"
+                  className="!bg-[#c9920d] !text-white !border-none !font-semibold !px-3 !py-1 !text-xs !rounded-full shadow-none cursor-pointer select-none hover:opacity-90 active:scale-95 transition-all"
                 >
                   Rm {guest.roomNumber}
                 </Tag>

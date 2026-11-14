@@ -61,16 +61,16 @@ export function MenuItemCard({ item, availability, onSelect, onQuickAdd }: MenuI
           onSelect(item);
         }
       }}
-      className={`!rounded-2xl !border-slate-100/90 !bg-white !shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden transition-all cursor-pointer select-none focus-visible:outline-2 focus-visible:outline-[#1D3557] ${
+      className={`!rounded-[10px] !border-[#ddd8cf]/90 !bg-white !shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden transition-all cursor-pointer select-none focus-visible:outline-2 focus-visible:outline-[#1a3c5e] ${
         isSoldOut || isCutoff
-          ? 'opacity-60 hover:border-slate-100'
-          : 'hover:border-slate-200 active:scale-[0.99]'
+          ? 'opacity-60 hover:border-[#ddd8cf]'
+          : 'hover:border-[#ddd8cf] active:scale-[0.99]'
       }`}
       styles={{ body: { padding: '12px 14px' } }}
     >
       <div className="flex gap-3.5 items-center">
         {/* Food Thumbnail (KMS image_url or neutral placeholder) */}
-        <div className="w-18 h-18 rounded-2xl bg-slate-100 border border-slate-200/80 flex-shrink-0 overflow-hidden relative shadow-2xs flex items-center justify-center">
+        <div className="w-18 h-18 rounded-[10px] bg-[#e8eef4] border border-[#ddd8cf]/80 flex-shrink-0 overflow-hidden relative shadow-2xs flex items-center justify-center">
           {hasValidImage ? (
             /* eslint-disable-next-line @next/next/no-img-element */
             <img
@@ -81,7 +81,7 @@ export function MenuItemCard({ item, availability, onSelect, onQuickAdd }: MenuI
             />
           ) : (
             <div
-              className="w-full h-full flex items-center justify-center bg-slate-100 text-slate-400 select-none"
+              className="w-full h-full flex items-center justify-center bg-[#e8eef4] text-[#5a5650] select-none"
               role="img"
               aria-label={`${item.name} placeholder`}
             >
@@ -96,7 +96,7 @@ export function MenuItemCard({ item, availability, onSelect, onQuickAdd }: MenuI
           <div className="flex items-start justify-between gap-1 mb-0.5">
             <Title
               level={4}
-              className="!text-sm !font-bold !text-[#1E293B] !mb-0 truncate leading-snug"
+              className="!text-sm !font-semibold !text-[#1a1a18] !mb-0 truncate leading-snug"
             >
               {item.name}
             </Title>
@@ -111,7 +111,7 @@ export function MenuItemCard({ item, availability, onSelect, onQuickAdd }: MenuI
           {item.description && (
             <Paragraph
               ellipsis={{ rows: 2 }}
-              className="!text-xs !text-slate-500 !mb-1.5 leading-relaxed"
+              className="!text-xs !text-[#5a5650] !mb-1.5 leading-relaxed"
             >
               {item.description}
             </Paragraph>
@@ -122,7 +122,7 @@ export function MenuItemCard({ item, availability, onSelect, onQuickAdd }: MenuI
             {item.dietaryFlags.map((flag) => (
               <span
                 key={flag}
-                className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-medium"
+                className="text-[10px] bg-[#e8eef4] text-[#5a5650] px-2 py-0.5 rounded-full font-medium"
               >
                 {formatDietaryTag(flag)}
               </span>
@@ -139,7 +139,7 @@ export function MenuItemCard({ item, availability, onSelect, onQuickAdd }: MenuI
 
           {/* Price and Add Button */}
           <div className="flex items-center justify-between pt-0.5">
-            <Text strong className="text-sm font-bold text-[#1D3557]">
+            <Text strong className="text-sm font-semibold text-[#1a3c5e]">
               {formatLkrPrice(item.price)}
             </Text>
 
@@ -148,12 +148,12 @@ export function MenuItemCard({ item, availability, onSelect, onQuickAdd }: MenuI
                 type="button"
                 aria-label={`Add ${item.name} to order`}
                 onClick={handleQuickAdd}
-                className="touch-target w-8 h-8 rounded-full bg-[#F5A623] hover:bg-[#d99018] active:scale-95 text-white flex items-center justify-center font-bold text-lg shadow-xs transition-all focus-visible:outline-2 focus-visible:outline-[#1D3557]"
+                className="touch-target w-8 h-8 rounded-full bg-[#c9920d] hover:bg-[#d99018] active:scale-95 text-white flex items-center justify-center font-semibold text-lg shadow-none transition-all focus-visible:outline-2 focus-visible:outline-[#1a3c5e]"
               >
                 +
               </button>
             ) : (
-              <span className="text-xs text-slate-400 font-medium">
+              <span className="text-xs text-[#5a5650] font-medium">
                 {badgeText || 'Unavailable'}
               </span>
             )}

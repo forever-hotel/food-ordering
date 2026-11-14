@@ -59,7 +59,7 @@ export function OfflineBanner() {
           type="warning"
           showIcon
           banner
-          className="!rounded-xl !border-amber-200 !bg-amber-50 text-xs font-medium text-amber-900 shadow-sm"
+          className="!rounded-[10px] !border-amber-200 !bg-amber-50 text-xs font-medium text-amber-900 shadow-none"
           title="You are currently offline"
           description="Check your internet connection. In-room dining and service requests will resume once reconnected."
         />
@@ -78,7 +78,7 @@ export function OfflineBanner() {
           type="success"
           showIcon
           banner
-          className="!rounded-xl !border-emerald-200 !bg-emerald-50 text-xs font-medium text-emerald-900 shadow-sm"
+          className="!rounded-[10px] !border-emerald-200 !bg-emerald-50 text-xs font-medium text-emerald-900 shadow-none"
           title="Back online"
           description="Connection restored. Ready to order and request services."
         />

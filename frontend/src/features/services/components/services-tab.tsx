@@ -414,7 +414,7 @@ export function ServicesTab() {
     >
       {/* WHAT DO YOU NEED? 2x3 Grid (Figure 38) */}
       <div>
-        <Text className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2 px-1">
+        <Text className="text-xs font-semibold text-[#5a5650] uppercase tracking-wider block mb-2 px-1">
           WHAT DO YOU NEED?
         </Text>
 
@@ -430,10 +430,10 @@ export function ServicesTab() {
                 aria-pressed={isSelected}
                 disabled={submitting}
                 onClick={() => setSelectedType(type)}
-                className={`touch-target p-3.5 rounded-2xl flex flex-col items-center justify-center gap-1.5 transition-all text-center border focus-visible:outline-2 focus-visible:outline-[#1D3557] active:scale-[0.98] ${
+                className={`touch-target p-3.5 rounded-[10px] flex flex-col items-center justify-center gap-1.5 transition-all text-center border focus-visible:outline-2 focus-visible:outline-[#1a3c5e] active:scale-[0.98] ${
                   isSelected
-                    ? 'bg-[#1D3557] text-white border-[#1D3557] shadow-sm scale-[1.01]'
-                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                    ? 'bg-[#1a3c5e] text-white border-[#1a3c5e] shadow-none scale-[1.01]'
+                    : 'bg-white text-[#1a1a18] border-[#ddd8cf] hover:bg-[#f9f7f4]'
                 }`}
               >
                 <span className="text-2xl flex items-center justify-center" aria-hidden="true">
@@ -455,16 +455,16 @@ export function ServicesTab() {
 
       {/* DESCRIPTION (OPTIONAL) Card (Figure 38) */}
       <Card
-        className="!rounded-3xl !border-slate-100 !bg-white !shadow-xs"
+        className="!rounded-[10px] !border-[#ddd8cf] !bg-white !shadow-none"
         styles={{ body: { padding: '16px 18px' } }}
       >
         <div className="flex items-center justify-between mb-2">
-          <Text className="text-xs font-semibold text-slate-500 uppercase tracking-wider block">
+          <Text className="text-xs font-semibold text-[#5a5650] uppercase tracking-wider block">
             DESCRIPTION (OPTIONAL)
           </Text>
           <span
             className={`text-[11px] font-mono tabular-nums ${
-              description.length >= 500 ? 'text-red-500 font-bold' : 'text-slate-400'
+              description.length >= 500 ? 'text-red-500 font-semibold' : 'text-[#5a5650]'
             }`}
           >
             {description.length}/500
@@ -478,7 +478,7 @@ export function ServicesTab() {
           maxLength={500}
           onChange={(e) => setDescription(e.target.value)}
           placeholder="e.g. AC not cooling properly..."
-          className="!rounded-2xl text-xs !bg-slate-50 !border-slate-200 focus:!bg-white"
+          className="!rounded-[10px] text-xs !bg-[#f9f7f4] !border-[#ddd8cf] focus:!bg-white"
         />
 
         {/* Submission Error Banner with Idempotent Retry */}
@@ -499,10 +499,10 @@ export function ServicesTab() {
           loading={submitting}
           disabled={submitting || selectedType.disabled}
           onClick={handleSubmit}
-          className={`!h-12 !rounded-2xl !font-bold text-sm mt-4 shadow-md ${
+          className={`!h-12 !rounded-[10px] !font-semibold text-sm mt-4 shadow-none ${
             selectedType.disabled
-              ? '!bg-slate-200 !text-slate-500 !border-slate-300 !cursor-not-allowed'
-              : '!bg-[#1D3557] hover:!bg-[#162a45] active:scale-[0.99]'
+              ? '!bg-slate-200 !text-[#5a5650] !border-[#ddd8cf] !cursor-not-allowed'
+              : '!bg-[#1a3c5e] hover:!bg-[#12263a] active:scale-[0.99]'
           }`}
         >
           {submitting
@@ -516,14 +516,14 @@ export function ServicesTab() {
       {/* ACTIVE REQUESTS (Figure 38) */}
       <div>
         <div className="flex items-center justify-between mb-2 px-1">
-          <Text className="text-xs font-bold text-slate-500 uppercase tracking-wider block">
+          <Text className="text-xs font-semibold text-[#5a5650] uppercase tracking-wider block">
             ACTIVE REQUESTS
           </Text>
           <Button
             type="link"
             size="small"
             onClick={() => loadRequests(true)}
-            className="text-[11px] text-[#1D3557] font-semibold !p-0 !h-auto"
+            className="text-[11px] text-[#1a3c5e] font-semibold !p-0 !h-auto"
           >
             Refresh
           </Button>
@@ -560,11 +560,11 @@ export function ServicesTab() {
                 <Card
                   key={req.requestId}
                   onClick={() => setExpandedRequestId(isExpanded ? null : req.requestId)}
-                  className="!rounded-2xl !border-slate-100 !bg-white !shadow-xs hover:border-slate-200 active:scale-[0.99] transition-all cursor-pointer"
+                  className="!rounded-[10px] !border-[#ddd8cf] !bg-white !shadow-none hover:border-[#ddd8cf] active:scale-[0.99] transition-all cursor-pointer"
                   styles={{ body: { padding: '14px 16px' } }}
                 >
                   <div className="flex items-center justify-between mb-1">
-                    <Title level={4} className="!text-sm !font-bold !text-[#1E293B] !mb-0">
+                    <Title level={4} className="!text-sm !font-semibold !text-[#1a1a18] !mb-0">
                       {getCategoryLabel(req.requestType)}
                     </Title>
                     {getStatusBadge(req)}
@@ -573,7 +573,7 @@ export function ServicesTab() {
                   {/* Subtitle matching Figure 38 */}
                   {req.status === 'ASSIGNED' && (
                     <Paragraph className="!text-xs !text-amber-800 !mb-0 font-medium">
-                      Worker en route → <strong className="font-bold">In Progress</strong>
+                      Worker en route → <strong className="font-semibold">In Progress</strong>
                     </Paragraph>
                   )}
                   {req.status === 'IN_PROGRESS' && (
@@ -582,26 +582,26 @@ export function ServicesTab() {
                     </Paragraph>
                   )}
                   {req.status === 'COMPLETED' && (
-                    <Paragraph className="!text-xs !text-slate-500 !mb-0">
+                    <Paragraph className="!text-xs !text-[#5a5650] !mb-0">
                       Completed {req.assignedStaff ? `by ${req.assignedStaff}` : ''}
                     </Paragraph>
                   )}
                   {req.status === 'SUBMITTED' && (
-                    <Paragraph className="!text-xs !text-slate-500 !mb-0">
+                    <Paragraph className="!text-xs !text-[#5a5650] !mb-0">
                       Request received by housekeeping desk
                     </Paragraph>
                   )}
 
                   {req.description && (
-                    <div className="mt-1 text-[11px] text-slate-400 truncate">
+                    <div className="mt-1 text-[11px] text-[#5a5650] truncate">
                       Note: {req.description}
                     </div>
                   )}
 
                   {/* Expandable 4-Stage Progression Timeline */}
                   {isExpanded && (
-                    <div className="mt-3 pt-3 border-t border-slate-100 space-y-2 animate-fade-in">
-                      <Text className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                    <div className="mt-3 pt-3 border-t border-[#ddd8cf] space-y-2 animate-fade-in">
+                      <Text className="text-[10px] font-semibold text-[#5a5650] uppercase tracking-wider block">
                         TASK PROGRESSION
                       </Text>
                       <div className="space-y-1.5 text-xs">
@@ -610,10 +610,10 @@ export function ServicesTab() {
                             <span
                               className={`flex items-center gap-1.5 font-medium ${
                                 step.completed
-                                  ? 'text-slate-800'
+                                  ? 'text-[#1a1a18]'
                                   : step.current
-                                    ? 'text-amber-700 font-bold'
-                                    : 'text-slate-400'
+                                    ? 'text-amber-700 font-semibold'
+                                    : 'text-[#5a5650]'
                               }`}
                             >
                               <span aria-hidden="true" className="inline-flex items-center">
@@ -626,7 +626,7 @@ export function ServicesTab() {
                               {step.label}
                             </span>
                             {formatTimelineTimestamp(step.timestamp, step.completed) && (
-                              <span className="text-[11px] text-slate-400">
+                              <span className="text-[11px] text-[#5a5650]">
                                 {formatTimelineTimestamp(step.timestamp, step.completed)}
                               </span>
                             )}

@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # Multi-stage Dockerfile for Forever Hotel FOSS Frontend (Next.js Standalone)
 # Stage 1: Dependencies installation
 FROM node:24-alpine AS deps
@@ -5,7 +6,8 @@ FROM node:24-alpine AS deps
 WORKDIR /app
 
 COPY package.json package-lock.json ./
-RUN npm ci --ignore-scripts --no-fund
+RUN --mount=type=cache,id=foss-frontend-npm,target=/root/.npm,sharing=locked \
+    npm ci --ignore-scripts --no-fund --prefer-offline
 
 # Stage 2: Production build
 FROM node:24-alpine AS builder

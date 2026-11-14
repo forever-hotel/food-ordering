@@ -327,12 +327,12 @@ export function QrScannerModal({ open, onClose, onScan, demoTokens = {} }: QrSca
         {cameraState === 'initializing' && (
           <div className="flex flex-col items-center justify-center py-12">
             <Spin size="large" />
-            <Text className="mt-4 text-slate-600">Accessing camera...</Text>
+            <Text className="mt-4 text-[#5a5650]">Accessing camera...</Text>
           </div>
         )}
 
         {cameraState === 'active' && (
-          <div className="relative w-full aspect-square max-w-[320px] bg-black rounded-xl overflow-hidden shadow-inner flex items-center justify-center">
+          <div className="relative w-full aspect-square max-w-[320px] bg-black rounded-[10px] overflow-hidden shadow-inner flex items-center justify-center">
             <video
               ref={(node) => {
                 videoRef.current = node;
@@ -385,8 +385,8 @@ export function QrScannerModal({ open, onClose, onScan, demoTokens = {} }: QrSca
 
         {/* Demo QR Simulator (operational ONLY in isolated frontend mock mode; hidden in live API mode) */}
         {!isProduction && getDataMode() === 'demo' && Object.keys(demoTokens).length > 0 && (
-          <div className="w-full mt-4 pt-3 border-t border-slate-100">
-            <Text className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-2 text-center">
+          <div className="w-full mt-4 pt-3 border-t border-[#ddd8cf]">
+            <Text className="text-xs font-semibold text-[#5a5650] uppercase tracking-wider block mb-2 text-center">
               Mock Mode QR Simulator
             </Text>
             <div className="grid grid-cols-2 gap-2">

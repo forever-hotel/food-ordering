@@ -43,7 +43,7 @@ export function AlertNotice({
             )}
           </div>
         }
-        className="!rounded-xl text-xs shadow-xs"
+        className="!rounded-[10px] text-xs shadow-none"
       />
     </div>
   );

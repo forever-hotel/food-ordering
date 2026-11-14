@@ -80,7 +80,7 @@ export function DemoModeToolbar() {
           type="button"
           aria-label="Toggle developer toolbar"
           onClick={() => setExpanded(true)}
-          className="opacity-30 hover:opacity-100 transition-opacity bg-slate-900/80 text-[10px] text-blue-300 px-2 py-0.5 rounded-full border border-slate-700/80 shadow-xs"
+          className="opacity-30 hover:opacity-100 transition-opacity bg-slate-900/80 text-[10px] text-blue-300 px-2 py-0.5 rounded-full border border-slate-700/80 shadow-none"
         >
           ⚙️ Dev
         </button>
@@ -93,7 +93,7 @@ export function DemoModeToolbar() {
       {contextHolder}
       <aside
         aria-label="Development Toolbar"
-        className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 px-3 py-1.5 bg-slate-900/95 text-white backdrop-blur-md rounded-full shadow-xl border border-slate-700 flex items-center gap-2 text-xs select-none max-w-[95vw] overflow-x-auto"
+        className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 px-3 py-1.5 bg-slate-900/95 text-white backdrop-blur-md rounded-full shadow-none border border-slate-700 flex items-center gap-2 text-xs select-none max-w-[95vw] overflow-x-auto"
       >
         <Tag
           color={isMockMode ? 'gold' : 'blue'}
@@ -113,7 +113,7 @@ export function DemoModeToolbar() {
                 <span>
                   Stay: {guest ? `Rm ${guest.roomNumber} (${guest.guestName})` : 'Select Mock Stay'}
                 </span>
-                <span className="text-[10px] text-slate-400">▾</span>
+                <span className="text-[10px] text-[#5a5650]">▾</span>
               </Space>
             </Button>
           </Dropdown>
@@ -149,7 +149,7 @@ export function DemoModeToolbar() {
           type="button"
           aria-label="Close developer toolbar"
           onClick={() => setExpanded(false)}
-          className="text-slate-400 hover:text-white ml-1 px-1.5 py-0.5 rounded-full hover:bg-white/10"
+          className="text-[#5a5650] hover:text-white ml-1 px-1.5 py-0.5 rounded-full hover:bg-white/10"
         >
           ✕
         </button>

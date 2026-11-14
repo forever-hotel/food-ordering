@@ -55,18 +55,18 @@ export class ErrorBoundary extends Component<Props, State> {
           className="w-full max-w-md mx-auto p-4 py-8 flex flex-col items-center justify-center min-h-[50vh]"
         >
           <Card
-            className="w-full !rounded-2xl !shadow-sm !border-slate-200 text-center !bg-white"
+            className="w-full !rounded-[10px] !shadow-none !border-[#ddd8cf] text-center !bg-white"
             styles={{ body: { padding: '28px 20px' } }}
           >
-            <div className="w-14 h-14 rounded-full bg-red-50 text-red-500 mx-auto mb-4 flex items-center justify-center text-2xl font-bold">
+            <div className="w-14 h-14 rounded-full bg-red-50 text-red-500 mx-auto mb-4 flex items-center justify-center text-2xl font-semibold">
               ⚠️
             </div>
 
-            <Title level={2} className="!text-lg !font-bold !text-[#1E293B] !mb-2">
+            <Title level={2} className="!text-lg !font-semibold !text-[#1a1a18] !mb-2">
               {this.props.fallbackTitle || 'Something went wrong'}
             </Title>
 
-            <Paragraph className="!text-slate-500 !text-sm !mb-6 leading-relaxed">
+            <Paragraph className="!text-[#5a5650] !text-sm !mb-6 leading-relaxed">
               We encountered an unexpected issue displaying this section. Your active stay and
               existing orders are safe.
             </Paragraph>
@@ -75,21 +75,21 @@ export class ErrorBoundary extends Component<Props, State> {
               <Button
                 type="primary"
                 onClick={this.handleReset}
-                className="w-full !h-11 !rounded-xl !bg-[#1D3557] hover:!bg-[#162a45] !font-semibold text-sm"
+                className="w-full !h-11 !rounded-[10px] !bg-[#1a3c5e] hover:!bg-[#12263a] !font-semibold text-sm"
               >
                 Try Again
               </Button>
               <Button
                 onClick={this.handleReload}
-                className="w-full !h-11 !rounded-xl text-slate-600 text-sm"
+                className="w-full !h-11 !rounded-[10px] text-[#5a5650] text-sm"
               >
                 Reload Page
               </Button>
             </div>
 
             {process.env.NODE_ENV !== 'production' && this.state.error && (
-              <details className="mt-4 text-left text-xs text-slate-400 bg-slate-50 p-2.5 rounded-lg border border-slate-200 overflow-auto max-h-32">
-                <summary className="cursor-pointer font-mono font-medium text-slate-600">
+              <details className="mt-4 text-left text-xs text-[#5a5650] bg-[#f9f7f4] p-2.5 rounded-lg border border-[#ddd8cf] overflow-auto max-h-32">
+                <summary className="cursor-pointer font-mono font-medium text-[#5a5650]">
                   Developer Error Details
                 </summary>
                 <Text className="font-mono block mt-1">{this.state.error.message}</Text>

@@ -27,7 +27,7 @@ export function QrScanCard() {
     <div className="w-full max-w-[390px] mx-auto px-4 py-8 flex flex-col items-center justify-center min-h-[90vh]">
       {/* Brand Header (Figure 31) */}
       <div className="text-center mb-6">
-        <span className="text-xs font-bold tracking-[0.28em] text-slate-700 uppercase block">
+        <span className="text-xs font-semibold tracking-[0.28em] text-[#1a1a18] uppercase block">
           FOREVER HOTEL
         </span>
       </div>
@@ -44,13 +44,13 @@ export function QrScanCard() {
               onClose={clearError}
               title={isExpired ? 'Session Expired' : 'Authentication Failed'}
               description={error}
-              className="text-xs !rounded-xl"
+              className="text-xs !rounded-[10px]"
             />
           </div>
         )}
 
         {/* Stylized QR Card Graphic with Gold Corner Brackets (Figure 31) */}
-        <div className="relative w-44 h-44 mb-6 flex items-center justify-center p-4 bg-white rounded-2xl shadow-sm border border-slate-100">
+        <div className="relative w-44 h-44 mb-6 flex items-center justify-center p-4 bg-white rounded-[10px] shadow-none border border-[#ddd8cf]">
           {/* Gold Corner Brackets matching Figure 31 */}
           <div className="absolute inset-0 pointer-events-none">
             {/* Top-left */}
@@ -65,7 +65,7 @@ export function QrScanCard() {
 
           {/* Stylized QR Code SVG graphic */}
           <svg
-            className="w-28 h-28 text-[#1D3557]"
+            className="w-28 h-28 text-[#1a3c5e]"
             viewBox="0 0 100 100"
             fill="currentColor"
             aria-hidden="true"
@@ -106,10 +106,10 @@ export function QrScanCard() {
         </div>
 
         {/* Headings (Figure 31) */}
-        <h2 className="text-xl font-extrabold text-[#1E293B] mb-1.5 mt-0 tracking-tight">
+        <h2 className="text-xl font-semibold text-[#1a1a18] mb-1.5 mt-0 tracking-tight">
           Scan Room QR Code
         </h2>
-        <p className="text-slate-500 text-xs mb-6 max-w-[260px] mx-auto leading-relaxed">
+        <p className="text-[#5a5650] text-xs mb-6 max-w-[260px] mx-auto leading-relaxed">
           Point your camera at the QR on your room desk to begin
         </p>
 
@@ -119,7 +119,7 @@ export function QrScanCard() {
           size="large"
           loading={isLoading}
           onClick={() => setScannerOpen(true)}
-          className="w-full max-w-[340px] !h-12 !rounded-2xl !bg-[#1D3557] hover:!bg-[#162A45] !font-bold !text-sm shadow-sm flex items-center justify-center gap-2 mb-3"
+          className="w-full max-w-[340px] !h-12 !rounded-[10px] !bg-[#1a3c5e] hover:!bg-[#12263a] !font-semibold !text-sm shadow-none flex items-center justify-center gap-2 mb-3"
         >
           {/* Camera SVG icon */}
           <svg
@@ -147,9 +147,9 @@ export function QrScanCard() {
 
         {/* Divider with 'or' */}
         <div className="w-full max-w-[340px] flex items-center my-3">
-          <div className="flex-1 border-t border-slate-200" />
-          <span className="px-3 text-xs text-slate-400">or</span>
-          <div className="flex-1 border-t border-slate-200" />
+          <div className="flex-1 border-t border-[#ddd8cf]" />
+          <span className="px-3 text-xs text-[#5a5650]">or</span>
+          <div className="flex-1 border-t border-[#ddd8cf]" />
         </div>
 
         {/* Secondary Manual Entry (Figure 31) */}
@@ -161,7 +161,7 @@ export function QrScanCard() {
       </div>
 
       {/* Footer Text (Figure 31) */}
-      <p className="text-[11px] text-slate-400 mt-6 text-center leading-normal">
+      <p className="text-[11px] text-[#5a5650] mt-6 text-center leading-normal">
         Session expires at check-out. No app install required.
       </p>
 

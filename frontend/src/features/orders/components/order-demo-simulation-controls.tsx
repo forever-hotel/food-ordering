@@ -68,8 +68,8 @@ export function OrderDemoSimulationControls({
   };
 
   return (
-    <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-2xl space-y-1.5 text-center">
-      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block">
+    <div className="p-3 bg-[#f9f7f4] border border-[#ddd8cf]/80 rounded-[10px] space-y-1.5 text-center">
+      <span className="text-[10px] font-semibold text-[#5a5650] uppercase tracking-widest block">
         DEMO SIMULATION: ADVANCE STATUS
       </span>
       <div className="flex items-center justify-center gap-1.5 flex-wrap">
@@ -77,7 +77,7 @@ export function OrderDemoSimulationControls({
           size="small"
           disabled={advancingDemo || currentStatus === 'IN_PREPARATION'}
           onClick={() => handleAdvanceStatus('IN_PREPARATION')}
-          className="text-[11px] !rounded-xl"
+          className="text-[11px] !rounded-[10px]"
         >
           In Kitchen
         </Button>
@@ -85,7 +85,7 @@ export function OrderDemoSimulationControls({
           size="small"
           disabled={advancingDemo || currentStatus === 'READY'}
           onClick={() => handleAdvanceStatus('READY')}
-          className="text-[11px] !rounded-xl"
+          className="text-[11px] !rounded-[10px]"
         >
           Ready
         </Button>
@@ -93,7 +93,7 @@ export function OrderDemoSimulationControls({
           size="small"
           disabled={advancingDemo || currentStatus === 'DELIVERED'}
           onClick={() => handleAdvanceStatus('DELIVERED')}
-          className="text-[11px] !rounded-xl"
+          className="text-[11px] !rounded-[10px]"
         >
           Delivered
         </Button>

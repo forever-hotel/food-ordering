@@ -133,7 +133,7 @@ export function MobileBottomNav() {
     <nav
       role="tablist"
       aria-label="Guest Services Navigation"
-      className="fixed bottom-0 inset-x-0 z-40 bg-white border-t border-slate-200/90 shadow-[0_-2px_10px_rgba(0,0,0,0.04)]"
+      className="fixed bottom-0 inset-x-0 z-40 bg-white border-t border-[#ddd8cf]/90 shadow-[0_-2px_10px_rgba(0,0,0,0.04)]"
     >
       <div className="w-full max-w-md mx-auto px-2 py-1.5 pb-safe flex items-center justify-around">
         {TABS.map((tab, index) => {
@@ -157,10 +157,10 @@ export function MobileBottomNav() {
                 setActiveTab(tab.id);
               }}
               onKeyDown={(e) => handleKeyDown(e, index)}
-              className={`touch-target flex flex-col items-center justify-center gap-1 rounded-xl px-3 py-1.5 transition-all focus-visible:outline-2 focus-visible:outline-[#1D3557] focus-visible:outline-offset-1 select-none ${
+              className={`touch-target flex flex-col items-center justify-center gap-1 rounded-[10px] px-3 py-1.5 transition-all focus-visible:outline-2 focus-visible:outline-[#1a3c5e] focus-visible:outline-offset-1 select-none ${
                 isActive
-                  ? 'bg-[#1D3557] text-white shadow-xs font-semibold'
-                  : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50 active:scale-95'
+                  ? 'bg-[#1a3c5e] text-white shadow-none font-semibold'
+                  : 'text-[#5a5650] hover:text-[#1a1a18] hover:bg-[#f9f7f4] active:scale-95'
               }`}
             >
               <span className={`transition-transform ${isActive ? 'scale-105' : ''}`}>

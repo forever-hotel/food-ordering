@@ -352,7 +352,7 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
       className="w-full max-w-md mx-auto space-y-4 pb-24 animate-fade-in"
     >
       {/* 1. Dark Blue Hero Status Banner (Figure 36) */}
-      <div className="w-full bg-[#1D3557] rounded-3xl p-5 text-white shadow-md space-y-2 relative overflow-hidden">
+      <div className="w-full bg-[#1a3c5e] rounded-[10px] p-5 text-white shadow-none space-y-2 relative overflow-hidden">
         <div className="flex items-center justify-between text-xs text-slate-300 font-medium">
           <span>
             {formattedOrderId} · Room {order?.roomNumber || guest?.roomNumber || '—'} · In-Room
@@ -367,14 +367,14 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
           </div>
         </div>
 
-        <Title level={3} className="!text-xl !font-extrabold !text-white !mb-0 tracking-tight">
+        <Title level={3} className="!text-xl !font-semibold !text-white !mb-0 tracking-tight">
           {getHeroTitle(currentStatus)}
         </Title>
       </div>
 
       {/* 2. Step-by-Step Status Timeline (Figure 36) */}
       <Card
-        className="!rounded-3xl !border-slate-100 !bg-white !shadow-xs"
+        className="!rounded-[10px] !border-[#ddd8cf] !bg-white !shadow-none"
         styles={{ body: { padding: '20px 18px' } }}
       >
         <div className="space-y-6 relative before:absolute before:left-4 before:top-3 before:bottom-3 before:w-0.5 before:bg-slate-200">
@@ -383,8 +383,8 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
             <div
               className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 z-10 ${
                 currentStatus !== 'CANCELLED'
-                  ? 'bg-[#1D3557] text-white shadow-xs'
-                  : 'bg-slate-200 text-slate-500'
+                  ? 'bg-[#1a3c5e] text-white shadow-none'
+                  : 'bg-slate-200 text-[#5a5650]'
               }`}
             >
               <svg
@@ -397,14 +397,14 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
             </div>
             <div className="flex-1 pt-0.5">
               <div className="flex items-center justify-between">
-                <Text strong className="text-sm text-slate-900 block font-bold">
+                <Text strong className="text-sm text-[#1a1a18] block font-semibold">
                   Order Placed
                 </Text>
                 {placedTime && (
-                  <span className="text-[11px] text-slate-400 font-medium">{placedTime}</span>
+                  <span className="text-[11px] text-[#5a5650] font-medium">{placedTime}</span>
                 )}
               </div>
-              <Text className="text-xs text-slate-500 block">Order received & KOT printed</Text>
+              <Text className="text-xs text-[#5a5650] block">Order received & KOT printed</Text>
             </div>
           </div>
 
@@ -415,8 +415,8 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
                 currentStatus === 'IN_PREPARATION'
                   ? 'bg-amber-100 border-2 border-amber-500 text-amber-600'
                   : currentStatus === 'READY' || currentStatus === 'DELIVERED'
-                    ? 'bg-[#1D3557] text-white'
-                    : 'bg-white border-2 border-slate-300 text-transparent'
+                    ? 'bg-[#1a3c5e] text-white'
+                    : 'bg-white border-2 border-[#ddd8cf] text-transparent'
               }`}
             >
               {currentStatus === 'READY' || currentStatus === 'DELIVERED' ? (
@@ -428,7 +428,7 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
                   <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                 </svg>
               ) : currentStatus === 'IN_PREPARATION' ? (
-                <span className="w-3 h-3 rounded-full bg-amber-500 shadow-xs" />
+                <span className="w-3 h-3 rounded-full bg-amber-500 shadow-none" />
               ) : (
                 <span className="w-2 h-2 rounded-full bg-transparent" />
               )}
@@ -437,19 +437,19 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
               <div className="flex items-center justify-between">
                 <Text
                   strong
-                  className={`text-sm block font-bold ${currentStatus === 'IN_PREPARATION' ? 'text-amber-800' : 'text-slate-900'}`}
+                  className={`text-sm block font-semibold ${currentStatus === 'IN_PREPARATION' ? 'text-amber-800' : 'text-[#1a1a18]'}`}
                 >
                   In Preparation
                 </Text>
                 {prepTime ? (
-                  <span className="text-[11px] text-slate-400 font-medium">{prepTime}</span>
+                  <span className="text-[11px] text-[#5a5650] font-medium">{prepTime}</span>
                 ) : currentStatus === 'IN_PREPARATION' ? (
-                  <span className="text-[11px] text-amber-800 font-bold bg-amber-50 px-2 py-0.5 rounded-full">
+                  <span className="text-[11px] text-amber-800 font-semibold bg-amber-50 px-2 py-0.5 rounded-full">
                     In Progress
                   </span>
                 ) : null}
               </div>
-              <Text className="text-xs text-slate-500 block leading-snug">
+              <Text className="text-xs text-[#5a5650] block leading-snug">
                 Kitchen acknowledged allergy notes and started cooking
               </Text>
             </div>
@@ -460,10 +460,10 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
             <div
               className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 z-10 ${
                 currentStatus === 'DELIVERED'
-                  ? 'bg-[#1D3557] text-white'
+                  ? 'bg-[#1a3c5e] text-white'
                   : currentStatus === 'READY'
                     ? 'bg-amber-100 border-2 border-amber-500 text-amber-600'
-                    : 'bg-white border-2 border-slate-300 text-transparent'
+                    : 'bg-white border-2 border-[#ddd8cf] text-transparent'
               }`}
             >
               {currentStatus === 'DELIVERED' ? (
@@ -484,15 +484,15 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
               <div className="flex items-center justify-between">
                 <Text
                   strong
-                  className={`text-sm block font-bold ${currentStatus === 'READY' ? 'text-amber-800' : 'text-slate-900'}`}
+                  className={`text-sm block font-semibold ${currentStatus === 'READY' ? 'text-amber-800' : 'text-[#1a1a18]'}`}
                 >
                   Ready for Delivery
                 </Text>
-                <span className="text-[11px] text-slate-400 font-medium">
+                <span className="text-[11px] text-[#5a5650] font-medium">
                   {getEstimatedReadyLabel()}
                 </span>
               </div>
-              <Text className="text-xs text-slate-500 block">Food prepared, worker assigned</Text>
+              <Text className="text-xs text-[#5a5650] block">Food prepared, worker assigned</Text>
             </div>
           </div>
 
@@ -501,8 +501,8 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
             <div
               className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 z-10 ${
                 currentStatus === 'DELIVERED'
-                  ? 'bg-emerald-600 text-white shadow-xs'
-                  : 'bg-white border-2 border-slate-300 text-transparent'
+                  ? 'bg-emerald-600 text-white shadow-none'
+                  : 'bg-white border-2 border-[#ddd8cf] text-transparent'
               }`}
             >
               {currentStatus === 'DELIVERED' && (
@@ -519,15 +519,15 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
               <div className="flex items-center justify-between">
                 <Text
                   strong
-                  className={`text-sm block font-bold ${currentStatus === 'DELIVERED' ? 'text-emerald-700' : 'text-slate-900'}`}
+                  className={`text-sm block font-semibold ${currentStatus === 'DELIVERED' ? 'text-emerald-700' : 'text-[#1a1a18]'}`}
                 >
                   Delivered
                 </Text>
                 {deliveredTime && (
-                  <span className="text-[11px] text-slate-400 font-medium">{deliveredTime}</span>
+                  <span className="text-[11px] text-[#5a5650] font-medium">{deliveredTime}</span>
                 )}
               </div>
-              <Text className="text-xs text-slate-500 block">
+              <Text className="text-xs text-[#5a5650] block">
                 Worker delivers to Room {order?.roomNumber || guest?.roomNumber || '—'}
               </Text>
             </div>
@@ -537,9 +537,9 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
 
       {/* 3. Cancellation Warning & Action Box (Figure 36) */}
       {order?.canCancel && secondsRemaining > 0 && (
-        <div className="w-full bg-amber-50 border border-amber-200/90 rounded-3xl p-4 space-y-3">
+        <div className="w-full bg-amber-50 border border-amber-200/90 rounded-[10px] p-4 space-y-3">
           <div className="space-y-0.5 text-center">
-            <div className="text-xs font-bold text-amber-950 flex items-center justify-center gap-1.5">
+            <div className="text-xs font-semibold text-amber-950 flex items-center justify-center gap-1.5">
               <span aria-hidden="true" className="text-sm">
                 ⏱
               </span>
@@ -555,7 +555,7 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
             block
             loading={cancelling}
             onClick={() => setCancelModalVisible(true)}
-            className="!rounded-2xl !h-10 text-xs font-bold shadow-xs"
+            className="!rounded-[10px] !h-10 text-xs font-semibold shadow-none"
           >
             Cancel Order
           </Button>
@@ -564,20 +564,20 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
 
       {/* 4. ORDER SUMMARY Card (Figure 36) */}
       <Card
-        className="!rounded-3xl !border-slate-100 !bg-white !shadow-xs"
+        className="!rounded-[10px] !border-[#ddd8cf] !bg-white !shadow-none"
         styles={{ body: { padding: '16px 18px' } }}
       >
-        <Text className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-3">
+        <Text className="text-xs font-semibold text-[#5a5650] uppercase tracking-wider block mb-3">
           ORDER SUMMARY
         </Text>
 
         <div className="divide-y divide-slate-100 space-y-2.5">
           {(order?.items || []).map((item) => (
             <div key={item.itemId} className="pt-2 flex items-center justify-between text-xs">
-              <span className="font-semibold text-slate-800">
+              <span className="font-semibold text-[#1a1a18]">
                 {item.name} × {item.quantity}
               </span>
-              <span className="font-bold text-slate-700">
+              <span className="font-semibold text-[#1a1a18]">
                 {formatLkrPrice(item.unitPrice * item.quantity)}
               </span>
             </div>
@@ -585,15 +585,15 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
 
           {order?.allergyNotes && (
             <div className="pt-2.5 text-xs">
-              <span className="text-[11px] font-bold text-amber-900 bg-amber-50 px-2 py-1 rounded-lg block">
+              <span className="text-[11px] font-semibold text-amber-900 bg-amber-50 px-2 py-1 rounded-lg block">
                 ⚠️ Allergy Note: {order.allergyNotes}
               </span>
             </div>
           )}
 
-          <div className="pt-3 flex items-center justify-between text-sm font-bold text-[#1D3557]">
-            <span className="text-base font-extrabold">Total</span>
-            <span className="text-base font-extrabold">
+          <div className="pt-3 flex items-center justify-between text-sm font-semibold text-[#1a3c5e]">
+            <span className="text-base font-semibold">Total</span>
+            <span className="text-base font-semibold">
               {formatLkrPrice(order?.totalAmount || 0)}
             </span>
           </div>
@@ -619,7 +619,7 @@ export function OrderStatusTracker({ orderId, onBack }: OrderStatusTrackerProps)
         cancelText="Keep Order"
         okButtonProps={{ danger: true, loading: cancelling }}
       >
-        <Paragraph className="text-xs text-slate-600 leading-relaxed mb-0">
+        <Paragraph className="text-xs text-[#5a5650] leading-relaxed mb-0">
           Are you sure you want to cancel Order <strong>{formattedOrderId}</strong>? This action
           cannot be reversed once the kitchen starts cooking.
         </Paragraph>

@@ -28,7 +28,7 @@ export default function HomePage() {
         aria-live="polite"
       >
         <Spin size="large" />
-        <span className="mt-4 text-sm text-slate-500 font-medium">
+        <span className="mt-4 text-sm text-[#5a5650] font-medium">
           Verifying guest stay session...
         </span>
       </div>

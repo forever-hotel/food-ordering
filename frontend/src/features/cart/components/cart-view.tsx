@@ -31,7 +31,7 @@ function CartItemThumbnail({ item }: { item: CartItem['item'] }) {
   const hasValidImage = isValidImageUrl(item.imageUrl) && !imgError;
 
   return (
-    <div className="w-14 h-14 rounded-2xl bg-slate-100 border border-slate-200/80 flex-shrink-0 flex items-center justify-center select-none overflow-hidden">
+    <div className="w-14 h-14 rounded-[10px] bg-[#e8eef4] border border-[#ddd8cf]/80 flex-shrink-0 flex items-center justify-center select-none overflow-hidden">
       {hasValidImage ? (
         /* eslint-disable-next-line @next/next/no-img-element */
         <img
@@ -189,7 +189,7 @@ export function CartView({ onBack, onPlaceOrder }: CartViewProps) {
 
       {/* Cart Items List */}
       <Card
-        className="!rounded-3xl !border-slate-100 !bg-white !shadow-xs divide-y divide-slate-100 overflow-hidden"
+        className="!rounded-[10px] !border-[#ddd8cf] !bg-white !shadow-none divide-y divide-slate-100 overflow-hidden"
         styles={{ body: { padding: '8px 16px' } }}
       >
         {items.map((cartItem) => {
@@ -203,15 +203,18 @@ export function CartView({ onBack, onPlaceOrder }: CartViewProps) {
 
               {/* Name & Calculated Line Total */}
               <div className="flex-1 min-w-0">
-                <Title level={4} className="!text-sm !font-bold !text-[#1E293B] !mb-0.5 truncate">
+                <Title
+                  level={4}
+                  className="!text-sm !font-semibold !text-[#1a1a18] !mb-0.5 truncate"
+                >
                   {cartItem.item.name}
                 </Title>
                 <div className="flex items-center gap-1.5 flex-wrap">
-                  <Text className="text-xs font-semibold text-slate-700">
+                  <Text className="text-xs font-semibold text-[#1a1a18]">
                     {formatLkrPrice(lineTotal)}
                   </Text>
                   {cartItem.quantity > 1 && (
-                    <span className="text-[11px] text-slate-400 font-medium">
+                    <span className="text-[11px] text-[#5a5650] font-medium">
                       ({formatLkrPrice(cartItem.item.price)} each)
                     </span>
                   )}
@@ -224,18 +227,18 @@ export function CartView({ onBack, onPlaceOrder }: CartViewProps) {
               </div>
 
               {/* +/- Stepper Controls (Figure 34) */}
-              <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-2xl p-1 flex-shrink-0">
+              <div className="flex items-center gap-2 bg-[#f9f7f4] border border-[#ddd8cf] rounded-[10px] p-1 flex-shrink-0">
                 <button
                   type="button"
                   aria-label={`Decrease quantity of ${cartItem.item.name}`}
                   disabled={submitting}
                   onClick={() => handleDecrement(cartItem)}
-                  className="touch-target w-8 h-8 rounded-xl bg-white text-slate-800 shadow-xs hover:bg-slate-100 active:scale-95 flex items-center justify-center font-bold text-base transition-all disabled:opacity-50"
+                  className="touch-target w-8 h-8 rounded-[10px] bg-white text-[#1a1a18] shadow-none hover:bg-[#e8eef4] active:scale-95 flex items-center justify-center font-semibold text-base transition-all disabled:opacity-50"
                 >
                   −
                 </button>
 
-                <span className="w-5 text-center text-sm font-bold text-slate-800 tabular-nums">
+                <span className="w-5 text-center text-sm font-semibold text-[#1a1a18] tabular-nums">
                   {cartItem.quantity}
                 </span>
 
@@ -244,9 +247,9 @@ export function CartView({ onBack, onPlaceOrder }: CartViewProps) {
                   aria-label={`Increase quantity of ${cartItem.item.name}`}
                   disabled={cartItem.quantity >= portionCap || submitting}
                   onClick={() => handleIncrement(cartItem)}
-                  className={`touch-target w-8 h-8 rounded-xl flex items-center justify-center font-bold text-base transition-all ${
+                  className={`touch-target w-8 h-8 rounded-[10px] flex items-center justify-center font-semibold text-base transition-all ${
                     cartItem.quantity < portionCap && !submitting
-                      ? 'bg-white text-slate-800 shadow-xs hover:bg-slate-100 active:scale-95'
+                      ? 'bg-white text-[#1a1a18] shadow-none hover:bg-[#e8eef4] active:scale-95'
                       : 'text-slate-300 cursor-not-allowed'
                   }`}
                 >
@@ -259,25 +262,25 @@ export function CartView({ onBack, onPlaceOrder }: CartViewProps) {
 
         {/* Subtotal row within cart card */}
         {items.length > 0 && (
-          <div className="pt-3 pb-1 flex items-center justify-between text-xs font-bold text-slate-700">
+          <div className="pt-3 pb-1 flex items-center justify-between text-xs font-semibold text-[#1a1a18]">
             <span>Subtotal</span>
-            <span className="text-sm text-[#1D3557]">{formatLkrPrice(totalAmount)}</span>
+            <span className="text-sm text-[#1a3c5e]">{formatLkrPrice(totalAmount)}</span>
           </div>
         )}
       </Card>
 
       {/* ALLERGY INFO & DIETARY PREFERENCES (Figure 34) */}
       <Card
-        className="!rounded-3xl !border-slate-100 !bg-white !shadow-xs"
+        className="!rounded-[10px] !border-[#ddd8cf] !bg-white !shadow-none"
         styles={{ body: { padding: '18px 16px' } }}
       >
         <div className="flex items-center justify-between mb-2">
-          <Text className="text-xs font-bold text-slate-500 uppercase tracking-wider block">
+          <Text className="text-xs font-semibold text-[#5a5650] uppercase tracking-wider block">
             ALLERGY INFO & DIETARY PREFERENCES
           </Text>
           <span
             className={`text-[11px] font-mono tabular-nums ${
-              allergyNote.length >= 300 ? 'text-red-500 font-bold' : 'text-slate-400'
+              allergyNote.length >= 300 ? 'text-red-500 font-semibold' : 'text-[#5a5650]'
             }`}
           >
             {allergyNote.length}/300 characters
@@ -291,11 +294,11 @@ export function CartView({ onBack, onPlaceOrder }: CartViewProps) {
           onChange={(e) => setAllergyNote(e.target.value)}
           maxLength={300}
           placeholder="e.g. I am allergic to peanuts. Please avoid any cross-contamination..."
-          className="!rounded-2xl text-xs !bg-slate-50 !border-slate-200 focus:!bg-white"
+          className="!rounded-[10px] text-xs !bg-[#f9f7f4] !border-[#ddd8cf] focus:!bg-white"
         />
 
         {/* High-visibility Kitchen Note Alert (Figure 34) */}
-        <div className="mt-3 p-3 bg-amber-50 border border-amber-200/80 rounded-2xl flex items-start gap-2">
+        <div className="mt-3 p-3 bg-amber-50 border border-amber-200/80 rounded-[10px] flex items-start gap-2">
           <span className="text-sm select-none" aria-hidden="true">
             ⚠️
           </span>
@@ -308,24 +311,24 @@ export function CartView({ onBack, onPlaceOrder }: CartViewProps) {
 
       {/* Subtotal & Total Summary Card (Figure 34) */}
       <Card
-        className="!rounded-3xl !border-slate-100 !bg-white !shadow-xs"
+        className="!rounded-[10px] !border-[#ddd8cf] !bg-white !shadow-none"
         styles={{ body: { padding: '16px 18px' } }}
       >
         <div className="space-y-2 text-xs">
-          <div className="flex items-center justify-between text-slate-500">
+          <div className="flex items-center justify-between text-[#5a5650]">
             <span>Subtotal</span>
-            <span className="font-semibold text-slate-700">{formatLkrPrice(totalAmount)}</span>
+            <span className="font-semibold text-[#1a1a18]">{formatLkrPrice(totalAmount)}</span>
           </div>
 
-          <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-sm font-bold text-[#1D3557]">
-            <span className="text-base font-extrabold">Total</span>
-            <span className="text-base font-extrabold">{formatLkrPrice(totalAmount)}</span>
+          <div className="pt-2 border-t border-[#ddd8cf] flex items-center justify-between text-sm font-semibold text-[#1a3c5e]">
+            <span className="text-base font-semibold">Total</span>
+            <span className="text-base font-semibold">{formatLkrPrice(totalAmount)}</span>
           </div>
         </div>
       </Card>
 
       {/* Place Order CTA Sticky Footer (Figure 34) */}
-      <div className="fixed bottom-0 inset-x-0 z-40 bg-white border-t border-slate-200 px-4 py-3 pb-safe shadow-[0_-4px_14px_rgba(0,0,0,0.06)]">
+      <div className="fixed bottom-0 inset-x-0 z-40 bg-white border-t border-[#ddd8cf] px-4 py-3 pb-safe shadow-[0_-4px_14px_rgba(0,0,0,0.06)]">
         <div className="w-full max-w-md mx-auto space-y-2">
           <Button
             type="primary"
@@ -334,12 +337,12 @@ export function CartView({ onBack, onPlaceOrder }: CartViewProps) {
             loading={submitting}
             disabled={items.length === 0 || submitting}
             onClick={handleSubmitOrder}
-            className="!h-12 !rounded-2xl !bg-[#1D3557] hover:!bg-[#162a45] active:scale-[0.99] !font-bold text-sm shadow-md"
+            className="!h-12 !rounded-[10px] !bg-[#1a3c5e] hover:!bg-[#12263a] active:scale-[0.99] !font-semibold text-sm shadow-none"
           >
             {submitting ? 'Placing Order...' : 'Place Order'}
           </Button>
 
-          <Paragraph className="!text-[11px] !text-slate-400 text-center !mb-0">
+          <Paragraph className="!text-[11px] !text-[#5a5650] text-center !mb-0">
             You can cancel within 10 minutes of placing
           </Paragraph>
         </div>
