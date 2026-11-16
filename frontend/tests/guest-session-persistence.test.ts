@@ -498,6 +498,7 @@ describe('FOSS Guest Session Persistence & Security Review (PR #137, Issue #136)
   it('Correction A: redeemQrToken succeeds when backend omits sessionToken, hydrating __COOKIE_SESSION__', async () => {
     const originalFetch = globalThis.fetch;
     const interceptedRequests: { url: string; credentials: any }[] = [];
+    const futureExpiry = new Date(Date.now() + 48 * 3600 * 1000).toISOString();
 
     // Backend responds without sessionToken, setting HttpOnly cookie in response headers
     globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
@@ -512,9 +513,9 @@ describe('FOSS Guest Session Persistence & Security Review (PR #137, Issue #136)
           bookingId: 'book-101',
           roomNumber: '101',
           guestName: 'Valued Guest',
-          stayStart: '2026-11-09T14:00:00.000Z',
-          stayEnd: '2026-11-13T11:00:00.000Z',
-          expiresAt: '2026-11-13T11:00:00.000Z',
+          stayStart: new Date(Date.now() - 24 * 3600 * 1000).toISOString(),
+          stayEnd: futureExpiry,
+          expiresAt: futureExpiry,
           active: true,
           // sessionToken is strictly omitted by backend
         }),
