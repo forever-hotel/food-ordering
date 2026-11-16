@@ -1,0 +1,14 @@
+node_modules
+.next
+dist
+build
+coverage
+coverage-components
+
+*.log
+
+.env
+.env.*
+!.env.example
+
+package-lock.json

@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+
+# Build output
+.next/
+dist/
+build/
+coverage/
+coverage-components/
+
+# Environment secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+
+# Local editor files
+.vscode/
+.idea/
+
+# Operating system files
+.DS_Store
+Thumbs.db
+
+docs/
+AGENTS.md
+scratch/
+
+# Reference documentation archive from the Front Desk subsystem.
+# Used locally for FOSS report formatting only; never commit this archive.
+Forever_Hotel_FDS_Subsystem_PDF_Reports.zip

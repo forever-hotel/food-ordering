@@ -1,0 +1,213 @@
+{
+  "summary": {
+    "totalScenarios": 8,
+    "totalBenchmarkRequests": 1490,
+    "cumulativeDurationMs": 5919.54,
+    "aggregateThroughputReqPerSec": 251.71,
+    "aggregateThroughputDefinition": "totalBenchmarkRequests / (cumulativeDurationMs / 1000); arithmetic mean of scenario rates rejected",
+    "overallErrorRatePercent": 0,
+    "allScenariosPassedNfr": true,
+    "environment": "Isolated local in-memory container & mocks (127.0.0.1; zero Neon / remote DB access)",
+    "status": "ISOLATED LOCAL MOCK BENCHMARK EXECUTED — INTEGRATED STAGING NOT VERIFIED"
+  },
+  "SC-PERF-01": {
+    "scenarioId": "SC-PERF-01",
+    "name": "Guest QR Activation",
+    "endpoint": "/guest-sessions/qr",
+    "method": "POST",
+    "concurrency": 25,
+    "totalRequests": 200,
+    "durationMs": 405.67,
+    "throughputReqPerSec": 493.02,
+    "latencies": {
+      "min": 23.22,
+      "max": 114.42,
+      "avg": 50.42,
+      "p50": 43.57,
+      "p90": 90.4,
+      "p95": 103.76,
+      "p99": 113.25
+    },
+    "httpStatusCodes": {
+      "200": 200
+    },
+    "errorRatePercent": 0,
+    "targetNfr": "p95 < 300 ms, 0% errors (200 OK authenticated)",
+    "passedNfr": true
+  },
+  "SC-PERF-02": {
+    "scenarioId": "SC-PERF-02",
+    "name": "Menu Catalog & Meal Windows Browsing",
+    "endpoint": "/menu, /menu/windows",
+    "method": "GET",
+    "concurrency": 50,
+    "totalRequests": 200,
+    "durationMs": 2210.17,
+    "throughputReqPerSec": 90.49,
+    "latencies": {
+      "min": 62.89,
+      "max": 494.53,
+      "avg": 446.48,
+      "p50": 454.79,
+      "p90": 487.31,
+      "p95": 490.64,
+      "p99": 493.67
+    },
+    "httpStatusCodes": {
+      "200": 200
+    },
+    "errorRatePercent": 0,
+    "targetNfr": "p95 < 500 ms (SRS NFR-01 target)",
+    "passedNfr": true
+  },
+  "SC-PERF-03": {
+    "scenarioId": "SC-PERF-03",
+    "name": "Food Order Placement (Idempotent)",
+    "endpoint": "/food-orders",
+    "method": "POST",
+    "concurrency": 25,
+    "totalRequests": 150,
+    "durationMs": 700.43,
+    "throughputReqPerSec": 214.15,
+    "latencies": {
+      "min": 68.75,
+      "max": 166.28,
+      "avg": 116.35,
+      "p50": 118.65,
+      "p90": 151.31,
+      "p95": 154.98,
+      "p99": 164.83
+    },
+    "httpStatusCodes": {
+      "201": 150
+    },
+    "errorRatePercent": 0,
+    "targetNfr": "p95 < 500 ms, 0 duplicate charges (NFR-01/05)",
+    "passedNfr": true
+  },
+  "SC-PERF-04": {
+    "scenarioId": "SC-PERF-04",
+    "name": "Order Status & Stay History",
+    "endpoint": "/food-orders",
+    "method": "GET",
+    "concurrency": 80,
+    "totalRequests": 240,
+    "durationMs": 401.88,
+    "throughputReqPerSec": 597.19,
+    "latencies": {
+      "min": 63.58,
+      "max": 198.75,
+      "avg": 123.99,
+      "p50": 127.27,
+      "p90": 158.13,
+      "p95": 186.39,
+      "p99": 197.37
+    },
+    "httpStatusCodes": {
+      "200": 240
+    },
+    "errorRatePercent": 0,
+    "targetNfr": "p95 < 500 ms (SRS NFR-01 target), room-isolated",
+    "passedNfr": true
+  },
+  "SC-PERF-05": {
+    "scenarioId": "SC-PERF-05",
+    "name": "Service Request Creation",
+    "endpoint": "/service-requests",
+    "method": "POST",
+    "concurrency": 25,
+    "totalRequests": 150,
+    "durationMs": 265.23,
+    "throughputReqPerSec": 565.54,
+    "latencies": {
+      "min": 19.3,
+      "max": 68.26,
+      "avg": 44.02,
+      "p50": 45.32,
+      "p90": 59.23,
+      "p95": 63.81,
+      "p99": 67.65
+    },
+    "httpStatusCodes": {
+      "201": 150
+    },
+    "errorRatePercent": 0,
+    "targetNfr": "p95 < 500 ms (SRS NFR-01 target), room auto-bound",
+    "passedNfr": true
+  },
+  "SC-PERF-06": {
+    "scenarioId": "SC-PERF-06",
+    "name": "Complaint Submission",
+    "endpoint": "/complaints",
+    "method": "POST",
+    "concurrency": 25,
+    "totalRequests": 150,
+    "durationMs": 234.18,
+    "throughputReqPerSec": 640.53,
+    "latencies": {
+      "min": 24.76,
+      "max": 49.52,
+      "avg": 38.83,
+      "p50": 39.37,
+      "p90": 42.77,
+      "p95": 45.43,
+      "p99": 48.94
+    },
+    "httpStatusCodes": {
+      "201": 150
+    },
+    "errorRatePercent": 0,
+    "targetNfr": "p95 < 500 ms (SRS NFR-01 target), reference assigned",
+    "passedNfr": true
+  },
+  "SC-PERF-07": {
+    "scenarioId": "SC-PERF-07",
+    "name": "Realtime Polling & Streaming",
+    "endpoint": "/realtime/events/poll",
+    "method": "GET",
+    "concurrency": 100,
+    "totalRequests": 300,
+    "durationMs": 572.85,
+    "throughputReqPerSec": 523.7,
+    "latencies": {
+      "min": 48.4,
+      "max": 296.94,
+      "avg": 181.26,
+      "p50": 175.58,
+      "p90": 266.59,
+      "p95": 281.69,
+      "p99": 295.15
+    },
+    "httpStatusCodes": {
+      "200": 300
+    },
+    "errorRatePercent": 0,
+    "targetNfr": "p95 < 500 ms, Heap < 256MB (NFR-14)",
+    "passedNfr": true
+  },
+  "SC-PERF-08": {
+    "scenarioId": "SC-PERF-08",
+    "name": "Cache Hit Latency Evaluation",
+    "endpoint": "/menu",
+    "method": "GET",
+    "concurrency": 25,
+    "totalRequests": 100,
+    "durationMs": 1129.13,
+    "throughputReqPerSec": 88.56,
+    "latencies": {
+      "min": 101.37,
+      "max": 271.24,
+      "avg": 209.42,
+      "p50": 223.12,
+      "p90": 270.3,
+      "p95": 270.67,
+      "p99": 271.24
+    },
+    "httpStatusCodes": {
+      "200": 100
+    },
+    "errorRatePercent": 0,
+    "targetNfr": "Warm p95 < 500 ms (SRS NFR-01; cold was 16.6ms)",
+    "passedNfr": true
+  }
+}

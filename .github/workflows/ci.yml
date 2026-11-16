@@ -1,0 +1,313 @@
+name: FOSS CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - develop
+      - main
+  push:
+    branches:
+      - develop
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  backend-quality:
+    name: Backend - Lint, Format, Test & Build
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: foss_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d foss_test"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/foss_test
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - name: Install backend dependencies
+        run: npm ci --ignore-scripts --no-fund
+
+      - name: Verify disposable test database target
+        run: npm run verify:db:ci
+
+      - name: Run database migrations (CI disposable database)
+        run: npm run migration:run:ci
+
+      - name: Run backend lint
+        run: npm run lint
+
+      - name: Check backend formatting
+        run: npm run format:check
+
+      - name: Run backend unit tests with coverage
+        run: npm run test:cov -- --runInBand
+
+      - name: Upload backend coverage report
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: foss-backend-coverage
+          path: backend/coverage/
+          if-no-files-found: ignore
+
+      - name: Run backend E2E tests
+        run: npm run test:e2e
+
+      - name: Build backend
+        run: npm run build
+
+  frontend-quality:
+    name: Frontend - Lint, Format, Test & Build
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - name: Install frontend dependencies
+        run: npm ci --ignore-scripts --no-fund
+
+      - name: Run frontend unit tests with coverage
+        run: npm run test:coverage
+        env:
+          NODE_V8_COVERAGE: coverage
+
+      - name: Upload frontend coverage report
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: foss-frontend-coverage
+          path: |
+            frontend/coverage/
+            frontend/coverage-components/
+          if-no-files-found: ignore
+
+      - name: Run frontend lint
+        run: npm run lint
+
+      - name: Check frontend formatting
+        run: npm run format:check
+
+      - name: Build frontend
+        run: npm run build
+
+  security:
+    name: Dependency Security Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - name: Audit backend dependencies
+        working-directory: backend
+        run: npm audit --audit-level=high
+
+      - name: Audit frontend dependencies
+        working-directory: frontend
+        run: npm audit --omit=dev --audit-level=high
+
+  container-build-verification:
+    name: Container Build Verification (Multi-Stage Dockerfiles)
+    runs-on: ubuntu-latest
+    needs:
+      - backend-quality
+      - frontend-quality
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Verify Backend Multi-Stage Dockerfile Build
+        run: docker build -t foss-backend:ci ./backend
+
+      - name: Verify Frontend Multi-Stage Dockerfile Build
+        run: docker build -t foss-frontend:ci ./frontend
+
+  publish-images:
+    name: Publish reviewed immutable images
+    needs: [backend-quality, frontend-quality, security, container-build-verification]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: read
+      pull-requests: read
+      packages: write
+    concurrency:
+      group: image-publication-${{ github.repository }}-develop
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Require peer approval on the release PR final code
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const prs = await github.paginate(github.rest.repos.listPullRequestsAssociatedWithCommit, { owner, repo, commit_sha: context.sha });
+            for (const pr of prs.filter(p => p.merged_at && p.base.ref === 'develop' && p.merge_commit_sha === context.sha)) {
+              const reviews = await github.paginate(github.rest.pulls.listReviews, { owner, repo, pull_number: pr.number });
+              const latest = new Map();
+              for (const review of reviews) {
+                if (review.user && ['APPROVED', 'CHANGES_REQUESTED', 'DISMISSED'].includes(review.state)) latest.set(review.user.login, review);
+              }
+              const decisions = [...latest.values()];
+              if (decisions.some(r => r.state === 'APPROVED' && r.commit_id === pr.head.sha && r.user.login !== pr.user.login) &&
+                  !decisions.some(r => r.state === 'CHANGES_REQUESTED')) return;
+            }
+            throw new Error('Publication requires a reviewed PR merge into develop with approval on the final code.');
+      - name: Validate frontend public build configuration
+        env:
+          PUBLIC_API_ORIGIN: ${{ vars.PUBLIC_API_ORIGIN }}
+          PUBLIC_SOCKET_ORIGIN: ${{ vars.PUBLIC_SOCKET_ORIGIN || vars.PUBLIC_API_ORIGIN }}
+        run: |
+          node - <<'NODE'
+          for (const name of ['PUBLIC_API_ORIGIN', 'PUBLIC_SOCKET_ORIGIN']) {
+            const value = process.env[name];
+            if (!value) throw new Error(`Repository variable ${name} is required`);
+            const url = new URL(value);
+            if (url.protocol !== 'https:' || url.origin !== value || url.username || url.password || /localhost|127\.0\.0\.1/.test(url.hostname))
+              throw new Error(`${name} must be a public HTTPS origin without path or trailing slash`);
+          }
+          NODE
+      - name: Prepare temporary registry authentication and builder
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          export DOCKER_CONFIG="$RUNNER_TEMP/publication-auth"
+          install -d -m 700 "$DOCKER_CONFIG"
+          echo "DOCKER_CONFIG=$DOCKER_CONFIG" >> "$GITHUB_ENV"
+          printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          docker buildx create --name service-release --driver docker-container --use
+          docker buildx inspect --bootstrap
+      - name: Build and publish images tagged by source commit
+        env:
+          PUBLIC_API_ORIGIN: ${{ vars.PUBLIC_API_ORIGIN }}
+          PUBLIC_SOCKET_ORIGIN: ${{ vars.PUBLIC_SOCKET_ORIGIN || vars.PUBLIC_API_ORIGIN }}
+          ROOM_IMAGE_HOSTS: ${{ vars.STAGING_ROOM_IMAGE_HOSTS }}
+        run: |
+          set -euo pipefail
+          repository="${GITHUB_REPOSITORY,,}"
+          for component in backend frontend; do
+            image="ghcr.io/$repository/$component"
+            args=()
+            if test "$component" = frontend; then
+              args+=(--build-arg "NEXT_PUBLIC_API_URL=$PUBLIC_API_ORIGIN/foss")
+              args+=(--build-arg "NEXT_PUBLIC_GATEWAY_URL=$PUBLIC_SOCKET_ORIGIN")
+              args+=(--build-arg "NEXT_PUBLIC_DATA_MODE=api")
+              args+=(--build-arg "NEXT_PUBLIC_ALLOW_DEMO_PREVIEW=false")
+            fi
+            docker buildx build --platform linux/amd64 --push \
+              --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+              --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+              --tag "$image:$GITHUB_SHA" \
+              --metadata-file "$RUNNER_TEMP/$component-image.json" \
+              "${args[@]}" "$component"
+            digest=$(jq -er '."containerimage.digest"' "$RUNNER_TEMP/$component-image.json")
+            [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
+            printf '%s=%s@%s\n' "$component" "$image" "$digest" >> "$RUNNER_TEMP/images.txt"
+          done
+          jq -n --arg commit "$GITHUB_SHA" \
+            --arg frontend "$(sed -n 's/^frontend=//p' "$RUNNER_TEMP/images.txt")" \
+            --arg backend "$(sed -n 's/^backend=//p' "$RUNNER_TEMP/images.txt")" \
+            '{commit:$commit,frontend:$frontend,backend:$backend}' > release-images.json
+          printf '### Published release images\n```json\n' >> "$GITHUB_STEP_SUMMARY"
+          cat release-images.json >> "$GITHUB_STEP_SUMMARY"
+          printf '\n```\n' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-images
+          path: release-images.json
+          if-no-files-found: error
+          overwrite: true
+      - name: Remove temporary registry login
+        if: always()
+        run: |
+          if test -n "${DOCKER_CONFIG:-}"; then docker logout ghcr.io || true; fi
+
+  deploy-staging:
+    name: Deploy food-ordering to staging
+    needs: publish-images
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop' && vars.SERVICE_STAGING_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: staging
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    concurrency:
+      group: foss-staging-release
+      cancel-in-progress: false
+    steps:
+      - name: Deploy this run's reviewed immutable images
+        uses: forever-hotel/infra/.github/actions/deploy-service@ec9d483c73910945b224bd66682b69b2a15eb10c
+        with:
+          service: foss
+          artifact: release-images
+          host: ${{ vars.STAGING_HOST }}
+          user: ${{ vars.STAGING_USER }}
+          ssh-key: ${{ secrets.STAGING_SSH_KEY }}
+          known-hosts: ${{ secrets.STAGING_KNOWN_HOSTS }}
+      - name: Retain service deployment receipt
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: foss-staging-receipt
+          path: ${{ runner.temp }}/service-release/receipt.json
+          if-no-files-found: warn
+          overwrite: true

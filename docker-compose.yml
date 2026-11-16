@@ -1,0 +1,103 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: foss-backend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:4300:4300"
+    env_file:
+      - path: ./backend/.env
+        required: false
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - PORT=${PORT:-4300}
+      - HOST=0.0.0.0
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
+      - MOCK_EXTERNAL_SERVICES=${MOCK_EXTERNAL_SERVICES:-true}
+      - DEMO_MODE=${DEMO_MODE:-true}
+      - RABBITMQ_URL=${RABBITMQ_URL:-amqp://rabbitmq:5672}
+      - RABBITMQ_ENABLED=${RABBITMQ_ENABLED:-true}
+      - REDIS_ENABLED=${REDIS_ENABLED:-false}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+    depends_on:
+      rabbitmq:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:4300/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:4300}
+        - NEXT_PUBLIC_GATEWAY_URL=${NEXT_PUBLIC_GATEWAY_URL:-http://localhost:8080}
+    container_name: foss-frontend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      - NODE_ENV=${NODE_ENV:-production}
+      - PORT=3000
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:4300}
+      - NEXT_PUBLIC_GATEWAY_URL=${NEXT_PUBLIC_GATEWAY_URL:-http://localhost:8080}
+      - INTERNAL_API_URL=http://backend:4300
+      - DEMO_MODE=${DEMO_MODE:-true}
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3000/"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  postgres:
+    profiles: ["local-db"]
+    image: postgres:16
+    container_name: foss-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: food_ordering
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: foss-rabbitmq
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5672:5672"
+      - "127.0.0.1:15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+
+  redis:
+    profiles: ["redis"]
+    image: redis:7-alpine
+    container_name: foss-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    volumes:
+      - redis_data:/data
+
+volumes:
+  postgres_data:
+  rabbitmq_data:
+  redis_data:

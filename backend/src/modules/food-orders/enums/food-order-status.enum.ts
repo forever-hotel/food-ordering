@@ -1,0 +1,7 @@
+export enum FoodOrderStatus {
+  PLACED = 'PLACED',
+  IN_PREPARATION = 'IN_PREPARATION',
+  READY = 'READY',
+  DELIVERED = 'DELIVERED',
+  CANCELLED = 'CANCELLED',
+}
